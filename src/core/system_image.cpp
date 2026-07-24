@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cctype>
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
@@ -60,6 +61,12 @@ namespace CoreDeck {
             }
             progress->DetailText = line;
         }
+
+        bool IsDeviceProfileId(const std::string &line) {
+            return !line.empty() && std::ranges::all_of(line, [](const char c) {
+                       return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.';
+                   });
+        }
     }
 
     std::vector<DeviceProfile> ListDeviceProfiles(const SdkInfo &sdk) {
@@ -69,7 +76,12 @@ namespace CoreDeck {
             return devices;
         }
 
-        const std::string output = RunCommandArgs(sdk.AvdManagerPath, {"list", "device", "-c"});
+        const std::string output = RunCommandArgsWithEnv(
+            sdk.AvdManagerPath,
+            {"list", "device", "-c"},
+            "",
+            BuildAndroidToolEnvironment(sdk)
+        );
         std::istringstream stream(output);
         std::string line;
         while (std::getline(stream, line)) {
@@ -79,7 +91,7 @@ namespace CoreDeck {
             while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
                 line.pop_back();
             }
-            if (line.empty()) {
+            if (!IsDeviceProfileId(line)) {
                 continue;
             }
 
@@ -168,7 +180,12 @@ namespace CoreDeck {
             return results;
         }
 
-        const std::string output = RunCommandArgs(sdk.SdkManagerPath, {"--list"});
+        const std::string output = RunCommandArgsWithEnv(
+            sdk.SdkManagerPath,
+            {"--list"},
+            "",
+            BuildAndroidToolEnvironment(sdk)
+        );
 
         std::unordered_map<std::string, bool> installedSet;
         for (const auto &img: installedImages) {
@@ -264,10 +281,11 @@ namespace CoreDeck {
             progress->Percent = 0.0F;
         }
 
-        StreamCommandArgs(
+        StreamCommandArgsWithEnv(
             sdk.SdkManagerPath,
             {"--install", packagePath},
             "",
+            BuildAndroidToolEnvironment(sdk),
             [&progress](const std::string &line) {
                 ParseProgressLine(line, progress);
             }
@@ -295,7 +313,12 @@ namespace CoreDeck {
             return false;
         }
 
-        RunCommandArgs(sdk.SdkManagerPath, {"--uninstall", packagePath}, "y\n");
+        RunCommandArgsWithEnv(
+            sdk.SdkManagerPath,
+            {"--uninstall", packagePath},
+            "y\n",
+            BuildAndroidToolEnvironment(sdk)
+        );
 
         std::string fsPath = packagePath;
         std::ranges::replace(fsPath, ';', '/');
@@ -308,7 +331,12 @@ namespace CoreDeck {
             return LicenseStatus::CheckFailed;
         }
 
-        const std::string output = RunCommandArgs(sdk.SdkManagerPath, {"--licenses"}, "N\n");
+        const std::string output = RunCommandArgsWithEnv(
+            sdk.SdkManagerPath,
+            {"--licenses"},
+            "N\n",
+            BuildAndroidToolEnvironment(sdk)
+        );
 
         if (output.find("All SDK package licenses accepted") != std::string::npos) {
             return LicenseStatus::AllAccepted;
@@ -330,7 +358,12 @@ namespace CoreDeck {
             yes += "y\n";
         }
 
-        const std::string output = RunCommandArgs(sdk.SdkManagerPath, {"--licenses"}, yes);
+        const std::string output = RunCommandArgsWithEnv(
+            sdk.SdkManagerPath,
+            {"--licenses"},
+            yes,
+            BuildAndroidToolEnvironment(sdk)
+        );
         return output.find("All SDK package licenses accepted") != std::string::npos;
     }
 }

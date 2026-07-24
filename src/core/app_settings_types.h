@@ -5,6 +5,8 @@
 #ifndef COREDECK_APP_SETTINGS_TYPES_H
 #define COREDECK_APP_SETTINGS_TYPES_H
 
+#include <string>
+
 namespace CoreDeck {
     struct AppSettings {
         int SchemaVersion = 1;
@@ -18,6 +20,7 @@ namespace CoreDeck {
         bool ShowLogPanel = true;
         int AvdSortMode = 0;
         bool AvdSortAscending = true;
+        std::string JavaHomePath;
     };
 }
 

@@ -302,7 +302,7 @@ namespace CoreDeck {
             args.emplace_back("-d");
             args.push_back(data.DeviceId);
         }
-        RunCommandArgs(sdk.AvdManagerPath, args, "no\n");
+        RunCommandArgsWithEnv(sdk.AvdManagerPath, args, "no\n", BuildAndroidToolEnvironment(sdk));
 
         const std::string avdDir = Paths::GetAvdDirectory();
         const std::string configPath = Paths::JoinPaths({avdDir, data.Name + ".avd", "config.ini"});
@@ -341,7 +341,12 @@ namespace CoreDeck {
             return false;
         }
 
-        RunCommandArgs(sdk.AvdManagerPath, {"delete", "avd", "-n", avdName});
+        RunCommandArgsWithEnv(
+            sdk.AvdManagerPath,
+            {"delete", "avd", "-n", avdName},
+            "",
+            BuildAndroidToolEnvironment(sdk)
+        );
 
         const std::string avdDir = Paths::GetAvdDirectory();
         const std::string avdFolder = Paths::JoinPaths({avdDir, avdName + ".avd"});

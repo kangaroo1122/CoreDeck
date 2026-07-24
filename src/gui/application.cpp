@@ -462,6 +462,7 @@ namespace CoreDeck {
         s.ConfirmBeforeDeleteAvd = context.Prefs.ConfirmBeforeDeleteAvd;
         s.ConfirmBeforeWipeAndRun = context.Prefs.ConfirmBeforeWipeAndRun;
         s.CrashReportingEnabled = context.Prefs.CrashReportingEnabled;
+        s.JavaHomePath = context.Prefs.JavaHomePath;
         s.ShowAvdListPanel = context.UI.ShowAvdListPanel;
         s.ShowOptionsPanel = context.UI.ShowOptionsPanel;
         s.ShowDetailsPanel = context.UI.ShowDetailsPanel;
@@ -476,6 +477,9 @@ namespace CoreDeck {
         context.Prefs.ConfirmBeforeDeleteAvd = settings.ConfirmBeforeDeleteAvd;
         context.Prefs.ConfirmBeforeWipeAndRun = settings.ConfirmBeforeWipeAndRun;
         context.Prefs.CrashReportingEnabled = settings.CrashReportingEnabled;
+        context.Prefs.JavaHomePath = settings.JavaHomePath;
+        context.Host.Sdk.JavaHomePath = settings.JavaHomePath;
+        context.Host.Manager.SetSdk(context.Host.Sdk);
         context.UI.ShowAvdListPanel = settings.ShowAvdListPanel;
         context.UI.ShowOptionsPanel = settings.ShowOptionsPanel;
         context.UI.ShowDetailsPanel = settings.ShowDetailsPanel;

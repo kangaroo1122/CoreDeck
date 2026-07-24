@@ -105,6 +105,7 @@ namespace CoreDeck {
             bool ConfirmBeforeDeleteAvd = true;
             bool ConfirmBeforeWipeAndRun = true;
             bool CrashReportingEnabled = true;
+            std::string JavaHomePath;
         } Prefs;
 
         struct UI {

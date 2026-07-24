@@ -3,7 +3,11 @@
 //
 
 #include "process.h"
+#include <algorithm>
 #include <array>
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
 #if defined(_WIN32)
@@ -21,8 +25,16 @@
 #include <thread>
 #endif
 
-namespace CoreDeck {
 #if defined(_WIN32)
+namespace CoreDeck {
+    namespace {
+        bool EnvKeyEquals(const std::string &a, const std::string &b) {
+            return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](const char lhs, const char rhs) {
+                       return std::toupper(static_cast<unsigned char>(lhs)) == std::toupper(static_cast<unsigned char>(rhs));
+                   });
+        }
+    }
+
     static std::string QuoteArg(const std::string &arg) {
         if (!arg.empty() && arg.find_first_of(" \t\"") == std::string::npos) return arg;
         std::string out = "\"";
@@ -64,12 +76,59 @@ namespace CoreDeck {
         if (IsBatchFile(path)) return "cmd.exe /S /C \"" + cmd + "\"";
         return cmd;
     }
+
+    static bool EnvironmentContainsKey(const ProcessEnvironment &environment, const std::string &key) {
+        return std::ranges::any_of(environment, [&](const auto &entry) {
+            return EnvKeyEquals(entry.first, key);
+        });
+    }
+
+    static std::vector<char> BuildEnvironmentBlock(const ProcessEnvironment &environment) {
+        std::vector<char> block;
+        if (environment.empty()) {
+            return block;
+        }
+
+        LPCH rawEnv = GetEnvironmentStringsA();
+        if (rawEnv != nullptr) {
+            for (LPCH current = rawEnv; *current != '\0'; current += std::strlen(current) + 1) {
+                const std::string entry = current;
+                if (!entry.empty() && entry[0] == '=') {
+                    block.insert(block.end(), entry.begin(), entry.end());
+                    block.push_back('\0');
+                    continue;
+                }
+
+                const auto equals = entry.find('=');
+                const std::string key = equals == std::string::npos ? entry : entry.substr(0, equals);
+                if (!EnvironmentContainsKey(environment, key)) {
+                    block.insert(block.end(), entry.begin(), entry.end());
+                    block.push_back('\0');
+                }
+            }
+            FreeEnvironmentStringsA(rawEnv);
+        }
+
+        for (const auto &[key, value]: environment) {
+            if (key.empty()) {
+                continue;
+            }
+            const std::string entry = key + "=" + value;
+            block.insert(block.end(), entry.begin(), entry.end());
+            block.push_back('\0');
+        }
+        block.push_back('\0');
+        return block;
+    }
+}
 #endif
 
-    void StreamCommandArgs(
+namespace CoreDeck {
+    void StreamCommandArgsWithEnv(
         const std::string &path,
         const std::vector<std::string> &args,
         const std::string &stdinData,
+        const ProcessEnvironment &environment,
         const std::function<void(const std::string &)> &onLine
     ) {
 #if defined(_WIN32)
@@ -89,6 +148,7 @@ namespace CoreDeck {
         SetHandleInformation(hInW, HANDLE_FLAG_INHERIT, 0);
 
         std::string cmdLine = BuildCommandLine(path, args);
+        std::vector<char> environmentBlock = BuildEnvironmentBlock(environment);
 
         STARTUPINFOA si = {};
         si.cb = sizeof(si);
@@ -98,7 +158,18 @@ namespace CoreDeck {
         si.hStdError = hOutW;
 
         PROCESS_INFORMATION pi = {};
-        if (!CreateProcessA(nullptr, const_cast<char *>(cmdLine.c_str()), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        if (!CreateProcessA(
+                nullptr,
+                const_cast<char *>(cmdLine.c_str()),
+                nullptr,
+                nullptr,
+                TRUE,
+                CREATE_NO_WINDOW,
+                environmentBlock.empty() ? nullptr : environmentBlock.data(),
+                nullptr,
+                &si,
+                &pi
+            )) {
             CloseHandle(hOutR);
             CloseHandle(hOutW);
             CloseHandle(hInR);
@@ -163,6 +234,12 @@ namespace CoreDeck {
             close(outPipe[1]);
             close(inPipe[0]);
 
+            for (const auto &[key, value]: environment) {
+                if (!key.empty()) {
+                    setenv(key.c_str(), value.c_str(), 1);
+                }
+            }
+
             std::vector<const char *> argv;
             argv.push_back(path.c_str());
             for (const auto &a: args) {
@@ -205,13 +282,31 @@ namespace CoreDeck {
 #endif
     }
 
-    std::string RunCommandArgs(const std::string &path, const std::vector<std::string> &args, const std::string &stdinData) {
+    void StreamCommandArgs(
+        const std::string &path,
+        const std::vector<std::string> &args,
+        const std::string &stdinData,
+        const std::function<void(const std::string &)> &onLine
+    ) {
+        StreamCommandArgsWithEnv(path, args, stdinData, {}, onLine);
+    }
+
+    std::string RunCommandArgsWithEnv(
+        const std::string &path,
+        const std::vector<std::string> &args,
+        const std::string &stdinData,
+        const ProcessEnvironment &environment
+    ) {
         std::string out;
-        StreamCommandArgs(path, args, stdinData, [&out](const std::string &line) {
+        StreamCommandArgsWithEnv(path, args, stdinData, environment, [&out](const std::string &line) {
             out += line;
             out.push_back('\n');
         });
         return out;
+    }
+
+    std::string RunCommandArgs(const std::string &path, const std::vector<std::string> &args, const std::string &stdinData) {
+        return RunCommandArgsWithEnv(path, args, stdinData, {});
     }
 
     ProcessId SpawnProcessWithPipe(const std::string &path, const std::vector<std::string> &args, int &outputFd) {

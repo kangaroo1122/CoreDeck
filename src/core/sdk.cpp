@@ -3,6 +3,7 @@
 //
 
 #include <filesystem>
+#include <cstdlib>
 
 #include "sdk.h"
 #include "paths.h"
@@ -82,5 +83,33 @@ namespace CoreDeck {
             sdk.IsFound = true;
         }
         return sdk;
+    }
+
+    ProcessEnvironment BuildAndroidToolEnvironment(const SdkInfo &sdk) {
+        ProcessEnvironment environment;
+        if (sdk.JavaHomePath.empty()) {
+            return environment;
+        }
+
+        const std::string javaBin = Paths::JoinPaths({sdk.JavaHomePath, "bin"});
+        std::string pathValue = javaBin;
+        const char *currentPath = std::getenv("PATH"); // NOLINT(concurrency-mt-unsafe)
+#if defined(_WIN32)
+        if (currentPath == nullptr) {
+            currentPath = std::getenv("Path"); // NOLINT(concurrency-mt-unsafe)
+        }
+#endif
+        if (currentPath != nullptr) {
+#if defined(_WIN32)
+            pathValue += ";";
+#else
+            pathValue += ":";
+#endif
+            pathValue += currentPath;
+        }
+
+        environment.emplace_back("JAVA_HOME", sdk.JavaHomePath);
+        environment.emplace_back("PATH", pathValue);
+        return environment;
     }
 }

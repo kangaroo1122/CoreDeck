@@ -11,6 +11,7 @@ using namespace CoreDeck;
 TEST_CASE("AppSettings enables wipe-and-run confirmation by default", "[app_settings][defaults]") {
     const AppSettings settings;
     REQUIRE(settings.ConfirmBeforeWipeAndRun);
+    REQUIRE(settings.JavaHomePath.empty());
 }
 
 TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[app_settings][migration]") {
@@ -39,4 +40,5 @@ TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[ap
     REQUIRE(settings.ShowLogPanel);
     REQUIRE(settings.AvdSortMode == 2);
     REQUIRE_FALSE(settings.AvdSortAscending);
+    REQUIRE(settings.JavaHomePath.empty());
 }

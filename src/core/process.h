@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if defined(_WIN32)
@@ -18,16 +19,33 @@ using ProcessId = pid_t;
 #endif
 
 namespace CoreDeck {
+    using ProcessEnvironment = std::vector<std::pair<std::string, std::string>>;
+
     std::string RunCommandArgs(
         const std::string &path,
         const std::vector<std::string> &args,
         const std::string &stdinData = ""
     );
 
+    std::string RunCommandArgsWithEnv(
+        const std::string &path,
+        const std::vector<std::string> &args,
+        const std::string &stdinData,
+        const ProcessEnvironment &environment
+    );
+
     void StreamCommandArgs(
         const std::string &path,
         const std::vector<std::string> &args,
         const std::string &stdinData,
+        const std::function<void(const std::string &)> &onLine
+    );
+
+    void StreamCommandArgsWithEnv(
+        const std::string &path,
+        const std::vector<std::string> &args,
+        const std::string &stdinData,
+        const ProcessEnvironment &environment,
         const std::function<void(const std::string &)> &onLine
     );
 

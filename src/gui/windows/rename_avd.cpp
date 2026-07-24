@@ -74,11 +74,6 @@ namespace CoreDeck {
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
             const float halfWidth = (ImGui::GetContentRegionAvail().x - spacing) * 0.5F;
 
-            if (PrimaryButton("Cancel", true, ImVec2(halfWidth, 0))) {
-                context.UI.ShowRenameAvdDialog = false;
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
             if (PositiveButton("Save", true, ImVec2(halfWidth, 0))) {
                 const std::string targetName = context.AvdRenameWork.TargetName;
                 const std::string targetPath = context.AvdRenameWork.TargetPath;
@@ -92,6 +87,11 @@ namespace CoreDeck {
                 } else {
                     context.AvdRenameWork.Error = "Failed to update the AVD config file.";
                 }
+            }
+            ImGui::SameLine();
+            if (PrimaryButton("Cancel", true, ImVec2(halfWidth, 0))) {
+                context.UI.ShowRenameAvdDialog = false;
+                ImGui::CloseCurrentPopup();
             }
 
             ImGui::EndPopup();

@@ -8,7 +8,6 @@
 #include "imgui.h"
 
 #include "avd_info.h"
-#include "rename_avd.h"
 #include "../widgets.h"
 #include "../theme.h"
 #include "../../core/process_stats.h"
@@ -148,28 +147,6 @@ namespace CoreDeck {
             }
         }
 
-        void EditableDisplayNameRow(Context &context, const AvdInfo &avd) {
-            const float buttonSize = ImGui::GetFrameHeight();
-            if (ImGui::BeginTable("##DisplayNameRow", 3, ImGuiTableFlags_SizingStretchProp)) {
-                ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, Em(14.0F));
-                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, buttonSize);
-
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextDisabled("Display Name");
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextWrapped("%s", avd.DisplayName.c_str());
-                ImGui::TableSetColumnIndex(2);
-                if (PrimaryButton(Icons::PENCIL, true, ImVec2(buttonSize, 0))) {
-                    OpenRenameAvdDialog(context, avd);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Rename display name");
-                }
-                ImGui::EndTable();
-            }
-        }
     }
 
     // NOLINTNEXTLINE(readability-function-size)
@@ -209,7 +186,7 @@ namespace CoreDeck {
         ImGui::Separator();
         ImGui::Spacing();
 
-        EditableDisplayNameRow(context, avd);
+        PropertyText("Display Name", displayName.c_str(), false, true);
         PropertyText("Internal Name", name.c_str(), false, true);
 
         ImGui::Spacing();

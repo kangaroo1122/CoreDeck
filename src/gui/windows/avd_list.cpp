@@ -342,25 +342,23 @@ namespace CoreDeck {
             const ImVec4 avdStatusColor = isRunning ? HexColor(Colors::POSITIVE) : HexColor(Colors::TEXT_MUTED);
             const std::string avdRightText = StrConcat(AvdTypeLabel(avd), " - ", avdStatusText);
             const auto [Icon, Color] = DeviceIconStyleFor(avd.Device);
-            if (SelectableItem(avd.DisplayName.c_str(), isSelected, avdRightText.c_str(), avdStatusColor, Icon, HexColor(Color))) {
+            bool renameClicked = false;
+            if (SelectableItem(
+                avd.DisplayName.c_str(),
+                isSelected,
+                avdRightText.c_str(),
+                avdStatusColor,
+                Icon,
+                HexColor(Color),
+                Icons::PENCIL,
+                "Rename display name",
+                &renameClicked
+            )) {
                 context.Catalog.SelectedAvd = i;
             }
-            if (ImGui::BeginPopupContextItem("##AvdListContextMenu")) {
+            if (renameClicked) {
                 context.Catalog.SelectedAvd = i;
-                MenuStyle ms;
-                if (RoundedMenuItem(IconWithLabel(Icons::PENCIL, "Rename Display Name").c_str())) {
-                    OpenRenameAvdDialog(context, avd);
-                    ImGui::CloseCurrentPopup();
-                }
-                if (RoundedMenuItem(IconWithLabel(Icons::TRASH, "Delete").c_str())) {
-                    if (context.Prefs.ConfirmBeforeDeleteAvd) {
-                        context.UI.ShowDeleteAvdDialog = true;
-                    } else {
-                        StartDeleteAvdAsync(context, avd.Name);
-                    }
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::EndPopup();
+                OpenRenameAvdDialog(context, avd);
             }
             ImGui::PopID();
         }

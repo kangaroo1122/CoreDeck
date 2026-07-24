@@ -178,10 +178,17 @@ namespace CoreDeck {
         const char *rightText,
         const ImVec4 &rightColor,
         const char *leftIcon,
-        const ImVec4 &leftIconColor
+        const ImVec4 &leftIconColor,
+        const char *rightActionIcon,
+        const char *rightActionTooltip,
+        bool *rightActionClicked
     ) {
         StyleColor sc;
         StyleVar sv;
+
+        if (rightActionClicked != nullptr) {
+            *rightActionClicked = false;
+        }
 
         if (isSelected) {
             sc.Push(ImGuiCol_Button, HexColor(Colors::SURFACE3, 0.4F));
@@ -207,11 +214,17 @@ namespace CoreDeck {
         }
 
         const bool clicked = ImGui::Button(buttonLabel.c_str(), ImVec2(-1.0F, 0.0F));
+        const ImVec2 itemMin = ImGui::GetItemRectMin();
+        const ImVec2 itemMax = ImGui::GetItemRectMax();
+        const ImVec2 padding = ImGui::GetStyle().FramePadding;
+
+        bool actionClicked = false;
+        const bool hasRightAction = rightActionIcon && rightActionIcon[0] != '\0' && rightActionClicked != nullptr;
+        const float itemHeight = itemMax.y - itemMin.y;
+        const float actionSize = hasRightAction ? itemHeight : 0.0F;
+        const float rightReserve = hasRightAction ? actionSize + padding.x : 0.0F;
 
         if (leftIcon && leftIcon[0] != '\0') {
-            const ImVec2 itemMin = ImGui::GetItemRectMin();
-            const ImVec2 itemMax = ImGui::GetItemRectMax();
-            const ImVec2 padding = ImGui::GetStyle().FramePadding;
             const ImVec2 iconSize = ImGui::CalcTextSize(leftIcon);
 
             const auto iconPos = ImVec2(
@@ -228,12 +241,9 @@ namespace CoreDeck {
 
         if (rightText && rightText[0] != '\0') {
             const ImVec2 textSize = ImGui::CalcTextSize(rightText);
-            const ImVec2 itemMin = ImGui::GetItemRectMin();
-            const ImVec2 itemMax = ImGui::GetItemRectMax();
-            const ImVec2 padding = ImGui::GetStyle().FramePadding;
 
             const auto textPos = ImVec2(
-                itemMax.x - textSize.x - padding.x,
+                itemMax.x - textSize.x - padding.x - rightReserve,
                 itemMin.y + ((itemMax.y - itemMin.y - textSize.y) * 0.5F)
             );
 
@@ -244,7 +254,41 @@ namespace CoreDeck {
             );
         }
 
-        return clicked;
+        if (hasRightAction) {
+            const ImVec2 actionMin(itemMax.x - actionSize, itemMin.y);
+            const ImVec2 actionMax(itemMax.x, itemMax.y);
+            const bool isActionHovered = ImGui::IsMouseHoveringRect(actionMin, actionMax);
+            const ImVec2 actionIconSize = ImGui::CalcTextSize(rightActionIcon);
+            const ImVec2 actionIconPos(
+                actionMin.x + ((actionSize - actionIconSize.x) * 0.5F),
+                itemMin.y + ((itemHeight - actionIconSize.y) * 0.5F)
+            );
+
+            if (isActionHovered) {
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    actionMin,
+                    actionMax,
+                    ImGui::ColorConvertFloat4ToU32(HexColor(Colors::SURFACE4, 0.35F)),
+                    6.0F
+                );
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                if (rightActionTooltip && rightActionTooltip[0] != '\0') {
+                    ImGui::SetTooltip("%s", rightActionTooltip);
+                }
+                if (clicked) {
+                    actionClicked = true;
+                    *rightActionClicked = true;
+                }
+            }
+
+            ImGui::GetWindowDrawList()->AddText(
+                actionIconPos,
+                ImGui::ColorConvertFloat4ToU32(isActionHovered ? HexColor(Colors::TEXT_PRIMARY) : HexColor(Colors::TEXT_MUTED)),
+                rightActionIcon
+            );
+        }
+
+        return clicked && !actionClicked;
     }
 
     bool PropertyText(const char *label, const char *value, const bool isClickable, const bool hasSpaceBetween) {

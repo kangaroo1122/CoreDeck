@@ -29,6 +29,11 @@ jobs:
           - os: windows-latest
             artifact_name: coredeck-windows-x86-64
             asset_name: coredeck-windows-x86-64
+            target_arch: x86-64
+          - os: windows-11-arm
+            artifact_name: coredeck-windows-arm64
+            asset_name: coredeck-windows-arm64
+            target_arch: arm64
           - os: macos-latest
             artifact_name: coredeck-darwin-arm64
             asset_name: coredeck-darwin-arm64-unsigned.dmg
@@ -41,13 +46,13 @@ jobs:
           fetch-depth: 0
 
       - name: Set up CMake
-        if: matrix.os != 'windows-latest'
+        if: runner.os != 'Windows'
         uses: jwlawson/actions-setup-cmake@v2
         with:
           cmake-version: '3.23.0'
 
       - name: Setup ccache
-        if: matrix.os != 'windows-latest'
+        if: runner.os != 'Windows'
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.os }}-${{ matrix.artifact_name }}
@@ -62,14 +67,25 @@ jobs:
         env:
           COREDECK_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           COREDECK_VERSION_REF: ${{ inputs.version || github.ref_name }}
+          COREDECK_TARGET_ARCH: ${{ matrix.target_arch || '' }}
         run: |
           if [[ "$RUNNER_OS" != "Windows" ]]; then
             export CMAKE_C_COMPILER_LAUNCHER=ccache
             export CMAKE_CXX_COMPILER_LAUNCHER=ccache
           fi
-          cmake -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCOREDECK_SENTRY_DSN="$COREDECK_SENTRY_DSN" \
+          cmake_args=(
+            -B build
+            -DCMAKE_BUILD_TYPE=Release
+            -DCOREDECK_SENTRY_DSN="$COREDECK_SENTRY_DSN"
             -DCOREDECK_VERSION_OVERRIDE="$COREDECK_VERSION_REF"
+            -DCOREDECK_TARGET_ARCH="$COREDECK_TARGET_ARCH"
+          )
+          if [[ "$RUNNER_OS" == "Windows" && "$COREDECK_TARGET_ARCH" == "arm64" ]]; then
+            cmake_args+=(-A ARM64)
+          elif [[ "$RUNNER_OS" == "Windows" && "$COREDECK_TARGET_ARCH" == "x86-64" ]]; then
+            cmake_args+=(-A x64)
+          fi
+          cmake "${cmake_args[@]}"
         shell: bash
 
       - name: Build
@@ -129,31 +145,31 @@ jobs:
           mv "$DMG_BUILT" "release/${{ matrix.asset_name }}"
 
       - name: Install WiX Toolset (Windows)
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         run: choco install wixtoolset
 
       - name: Package artifacts (Windows)
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         shell: cmd
         run: |
           cd build
           cpack -G ZIP
           cpack -G WIX
           mkdir ..\release
-          for %%i in (*.msi) do copy "%%i" "..\release\coredeck-windows-x86-64.msi"
-          for %%i in (*.zip) do copy "%%i" "..\release\coredeck-windows-x86-64.zip"
+          for %%i in (*.msi) do copy "%%i" "..\release\${{ matrix.asset_name }}.msi"
+          for %%i in (*.zip) do copy "%%i" "..\release\${{ matrix.asset_name }}.zip"
 
       - name: Upload artifacts (Windows)
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            release/coredeck-windows-x86-64.msi
-            release/coredeck-windows-x86-64.zip
+            release/${{ matrix.asset_name }}.msi
+            release/${{ matrix.asset_name }}.zip
 
       - name: Upload artifacts (Linux and macOS)
-        if: matrix.os != 'windows-latest'
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
@@ -230,6 +246,10 @@ jobs:
             **Windows (x86-64):**
             - `coredeck-windows-x86-64.msi` - Professional installer (recommended)
             - `coredeck-windows-x86-64.zip` - Portable version
+
+            **Windows (ARM64):**
+            - `coredeck-windows-arm64.msi` - Professional installer (recommended)
+            - `coredeck-windows-arm64.zip` - Portable version
 
             **macOS (Apple Silicon):** `coredeck-darwin-arm64-unsigned.dmg`
 

@@ -1,5 +1,6 @@
 ## [Unreleased]
 
+- Add Windows ARM64 release artifacts
 - Point update checks and release downloads to the forked GitHub releases page
 - Add display-name renaming for AVDs from Details and the AVD list context menu
 - Add a default-on preference to confirm before using Wipe & Run from the AVD list

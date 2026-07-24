@@ -54,7 +54,7 @@ namespace CoreDeck {
             if (PropertyText("Website", "coredeck.dev", true)) {
                 OpenUrl(COREDECK_WEBSITE);
             }
-            if (PropertyText("GitHub", "github.com/devmuaz/CoreDeck", true)) {
+            if (PropertyText("GitHub", "github.com/kangaroo1122/CoreDeck", true)) {
                 OpenUrl(COREDECK_GITHUB);
             }
             PropertyText("Built with", "C++20, Dear ImGui, GLFW, OpenGL");

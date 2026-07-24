@@ -253,7 +253,7 @@ namespace CoreDeck {
 #if defined(_WIN32)
         const std::string ua = StrConcat("CoreDeck/", COREDECK_VERSION);
         std::wstring userAgent(ua.begin(), ua.end());
-        auto fetched = HttpGet(L"api.github.com", L"/repos/devmuaz/CoreDeck/releases/latest", userAgent);
+        auto fetched = HttpGet(L"api.github.com", L"/repos/kangaroo1122/CoreDeck/releases/latest", userAgent);
 #else
         const std::string userAgent = StrConcat("CoreDeck/", COREDECK_VERSION);
         auto fetched = HttpGet(COREDECK_GITHUB_API, userAgent);

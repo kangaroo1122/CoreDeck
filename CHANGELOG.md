@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+- Point update checks and release downloads to the forked GitHub releases page
+- Add display-name renaming for AVDs from Details and the AVD list context menu
 - Add a default-on preference to confirm before using Wipe & Run from the AVD list
 - Add manual release workflow runs and package macOS release artifacts as unsigned DMGs
 

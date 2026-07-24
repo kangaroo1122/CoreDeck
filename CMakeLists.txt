@@ -162,8 +162,9 @@ target_compile_definitions(coredeck_core PUBLIC
     COREDECK_YEAR="${CURRENT_YEAR}"
     COREDECK_WEBSITE="https://coredeck.dev"
     COREDECK_AUTHOR_WEBSITE="https://devmuaz.com"
-    COREDECK_GITHUB="https://github.com/devmuaz/CoreDeck"
-    COREDECK_GITHUB_API="https://api.github.com/repos/devmuaz/${PROJECT_NAME}/releases/latest"
+    COREDECK_GITHUB="https://github.com/kangaroo1122/CoreDeck"
+    COREDECK_GITHUB_RELEASES="https://github.com/kangaroo1122/CoreDeck/releases"
+    COREDECK_GITHUB_API="https://api.github.com/repos/kangaroo1122/${PROJECT_NAME}/releases/latest"
     COREDECK_COPYRIGHT="${APP_COPYRIGHT}"
 )
 
@@ -196,6 +197,7 @@ add_executable(${PROJECT_NAME}
     src/gui/windows/main_menu_bar.cpp
     src/gui/windows/onboarding.cpp
     src/gui/windows/preferences.cpp
+    src/gui/windows/rename_avd.cpp
     src/gui/windows/sdk_banner.cpp
     src/gui/windows/skin.cpp
     src/gui/windows/storage.cpp
@@ -365,7 +367,7 @@ if(WIN32)
     set(CPACK_CREATE_DESKTOP_LINKS "${PROJECT_NAME}")
     set(CPACK_WIX_UPGRADE_GUID "B8F3E5D2-4A7C-4D2B-9E1F-6C8A5B3D7E9F")
     set(CPACK_WIX_PROGRAM_MENU_FOLDER "${PROJECT_NAME}")
-    set(CPACK_WIX_PROPERTY_ARPURLINFOABOUT "https://github.com/devmuaz")
+    set(CPACK_WIX_PROPERTY_ARPURLINFOABOUT "https://github.com/kangaroo1122/CoreDeck")
     set(CPACK_WIX_LICENSE_RTF "${CMAKE_SOURCE_DIR}/LICENSE.rtf")
     if(EXISTS "${CMAKE_SOURCE_DIR}/assets/icons/icon.ico")
         set(CPACK_WIX_PRODUCT_ICON "${CMAKE_SOURCE_DIR}/assets/icons/icon.ico")

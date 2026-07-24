@@ -194,7 +194,7 @@ jobs:
           # Trim leading/trailing blank lines.
           NOTES=$(printf '%s\n' "$NOTES" | sed -e '/./,$!d' | tac | sed -e '/./,$!d' | tac)
           if [ -z "$NOTES" ]; then
-            NOTES="_See [CHANGELOG.md](https://github.com/devmuaz/CoreDeck/blob/main/CHANGELOG.md) for details._"
+            NOTES="_See [CHANGELOG.md](https://github.com/kangaroo1122/CoreDeck/blob/main/CHANGELOG.md) for details._"
           fi
           {
             echo "notes<<__EOF__"

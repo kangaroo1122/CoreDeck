@@ -41,6 +41,7 @@
 #include "windows/main_menu_bar.h"
 #include "windows/onboarding.h"
 #include "windows/preferences.h"
+#include "windows/rename_avd.h"
 #include "windows/sdk_banner.h"
 #include "windows/storage.h"
 #include "windows/update.h"
@@ -175,6 +176,7 @@ namespace CoreDeck {
         BuildAvdOptionsWindow(m_Context);
         BuildAvdListWindow(m_Context);
         BuildAvdInfoWindow(m_Context);
+        BuildRenameAvdWindow(m_Context);
         BuildAvdLogsWindow(m_Context);
         BuildAboutWindow(m_Context);
         BuildPreferencesWindow(m_Context);

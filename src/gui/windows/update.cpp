@@ -124,7 +124,7 @@ namespace CoreDeck {
             const float half = (ImGui::GetContentRegionAvail().x - spacing) * 0.5F;
 
             if (PositiveButton("Download", true, ImVec2(half, 0))) {
-                OpenUrl(COREDECK_WEBSITE);
+                OpenUrl(COREDECK_GITHUB_RELEASES);
                 context.Updates.ShowNewVersionModal = false;
                 ImGui::CloseCurrentPopup();
             }

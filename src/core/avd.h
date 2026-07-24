@@ -54,6 +54,8 @@ namespace CoreDeck {
     bool CreateAvd(const SdkInfo &sdk, const AvdCreationData &data);
 
     bool DeleteAvd(const SdkInfo &sdk, const std::string &avdName);
+
+    bool SetAvdDisplayName(const std::string &avdPath, const std::string &displayName);
 }
 
 #endif // EMU_LAUNCHER_AVD_INFO_H

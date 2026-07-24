@@ -111,6 +111,7 @@ namespace CoreDeck {
             bool ShowAboutDialog = false;
             bool ShowDeleteAvdDialog = false;
             bool ShowWipeAndRunDialog = false;
+            bool ShowRenameAvdDialog = false;
             bool ShowCreateAvdDialog = false;
             bool ShowDeviceProfileDialog = false;
             bool ShowSkinDialog = false;
@@ -126,6 +127,13 @@ namespace CoreDeck {
             GLFWwindow *MainWindow = nullptr;
             bool HideInvalidSdkPathBanner = false;
         } UI;
+
+        struct AvdRenameWork {
+            std::string TargetName;
+            std::string TargetPath;
+            char DisplayNameBuffer[128] = {};
+            std::string Error;
+        } AvdRenameWork;
 
         struct AvdCreationWork {
             std::vector<SystemImage> SystemImages;

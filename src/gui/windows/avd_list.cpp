@@ -6,6 +6,7 @@
 
 #include "avd_list.h"
 #include "delete_avd.h"
+#include "rename_avd.h"
 #include "../application.h"
 #include "../widgets.h"
 #include "../theme.h"
@@ -343,6 +344,23 @@ namespace CoreDeck {
             const auto [Icon, Color] = DeviceIconStyleFor(avd.Device);
             if (SelectableItem(avd.DisplayName.c_str(), isSelected, avdRightText.c_str(), avdStatusColor, Icon, HexColor(Color))) {
                 context.Catalog.SelectedAvd = i;
+            }
+            if (ImGui::BeginPopupContextItem("##AvdListContextMenu")) {
+                context.Catalog.SelectedAvd = i;
+                MenuStyle ms;
+                if (RoundedMenuItem(IconWithLabel(Icons::PENCIL, "Rename Display Name").c_str())) {
+                    OpenRenameAvdDialog(context, avd);
+                    ImGui::CloseCurrentPopup();
+                }
+                if (RoundedMenuItem(IconWithLabel(Icons::TRASH, "Delete").c_str())) {
+                    if (context.Prefs.ConfirmBeforeDeleteAvd) {
+                        context.UI.ShowDeleteAvdDialog = true;
+                    } else {
+                        StartDeleteAvdAsync(context, avd.Name);
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
             }
             ImGui::PopID();
         }

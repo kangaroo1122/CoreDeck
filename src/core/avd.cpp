@@ -58,6 +58,30 @@ namespace CoreDeck {
             return config;
         }
 
+        std::string TrimCopy(std::string value) {
+            while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+                value.pop_back();
+            }
+            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+                value.erase(value.begin());
+            }
+            return value;
+        }
+
+        bool IsConfigKey(const std::string &line, const std::string &key) {
+            const auto eq = line.find('=');
+            if (eq == std::string::npos) {
+                return false;
+            }
+            return TrimCopy(line.substr(0, eq)) == key;
+        }
+
+        std::string SanitizeConfigValue(std::string value) {
+            std::erase(value, '\r');
+            std::erase(value, '\n');
+            return value;
+        }
+
         std::vector<std::string> SplitConfigList(const std::string &value) {
             std::vector<std::string> items;
             std::stringstream stream(value);
@@ -322,5 +346,58 @@ namespace CoreDeck {
         const std::string avdDir = Paths::GetAvdDirectory();
         const std::string avdFolder = Paths::JoinPaths({avdDir, avdName + ".avd"});
         return !std::filesystem::exists(avdFolder);
+    }
+
+    bool SetAvdDisplayName(const std::string &avdPath, const std::string &displayName) {
+        if (avdPath.empty()) {
+            return false;
+        }
+
+        const std::string configPath = Paths::JoinPaths({avdPath, "config.ini"});
+        if (!std::filesystem::exists(configPath)) {
+            return false;
+        }
+
+        std::ifstream input(configPath);
+        if (!input.is_open()) {
+            return false;
+        }
+
+        constexpr const char *DISPLAY_NAME_KEY = "avd.ini.displayname";
+        std::vector<std::string> lines;
+        std::string line;
+        bool foundDisplayName = false;
+        const std::string cleanDisplayName = SanitizeConfigValue(displayName);
+
+        while (std::getline(input, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+
+            if (IsConfigKey(line, DISPLAY_NAME_KEY)) {
+                if (!foundDisplayName && !cleanDisplayName.empty()) {
+                    lines.push_back(StrConcat(DISPLAY_NAME_KEY, "=", cleanDisplayName));
+                }
+                foundDisplayName = true;
+                continue;
+            }
+
+            lines.push_back(std::move(line));
+        }
+        input.close();
+
+        if (!foundDisplayName && !cleanDisplayName.empty()) {
+            lines.push_back(StrConcat(DISPLAY_NAME_KEY, "=", cleanDisplayName));
+        }
+
+        std::ofstream output(configPath, std::ios::trunc);
+        if (!output.is_open()) {
+            return false;
+        }
+
+        for (const auto &savedLine: lines) {
+            output << savedLine << '\n';
+        }
+        return true;
     }
 }

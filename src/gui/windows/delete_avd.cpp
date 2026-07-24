@@ -35,8 +35,8 @@ namespace CoreDeck {
             return;
         }
 
-        const auto &avdName = context.Catalog.Avds[context.Catalog.SelectedAvd].Name;
-        const std::string title = "Delete \"" + avdName + "\"?";
+        const auto &avd = context.Catalog.Avds[context.Catalog.SelectedAvd];
+        const std::string title = "Delete \"" + avd.DisplayName + "\"?";
         const bool isDeleting = context.Jobs.AvdDeletion.Busy.load();
         const DialogResult result = SimpleDialog(
             {.Id = "Delete###DeleteAvdDialog",
@@ -51,7 +51,7 @@ namespace CoreDeck {
         );
 
         if (result == DialogResult::Confirmed) {
-            StartDeleteAvdAsync(context, avdName);
+            StartDeleteAvdAsync(context, avd.Name);
         }
     }
 }

@@ -13,8 +13,24 @@ jobs:
 
     strategy:
       matrix:
-        os: [ windows-latest, macos-latest, ubuntu-latest, ubuntu-24.04-arm ]
-        build_type: [ Release ]
+        include:
+          - os: windows-latest
+            build_type: Release
+            artifact_name: coredeck-windows-x86-64
+            target_arch: x86-64
+          - os: windows-11-arm
+            build_type: Release
+            artifact_name: coredeck-windows-arm64
+            target_arch: arm64
+          - os: macos-latest
+            build_type: Release
+            artifact_name: coredeck-darwin-arm64
+          - os: ubuntu-latest
+            build_type: Release
+            artifact_name: coredeck-linux-x86-64
+          - os: ubuntu-24.04-arm
+            build_type: Release
+            artifact_name: coredeck-linux-arm64
 
     steps:
       - name: Checkout code
@@ -24,7 +40,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up CMake
-        if: matrix.os != 'windows-latest'
+        if: runner.os != 'Windows'
         uses: jwlawson/actions-setup-cmake@v2
         with:
           cmake-version: '3.23.0'
@@ -38,7 +54,21 @@ jobs:
       - name: Configure CMake
         env:
           COREDECK_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCOREDECK_BUILD_TESTS=ON -DCOREDECK_SENTRY_DSN=$COREDECK_SENTRY_DSN
+          COREDECK_TARGET_ARCH: ${{ matrix.target_arch || '' }}
+        run: |
+          cmake_args=(
+            -B build
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+            -DCOREDECK_BUILD_TESTS=ON
+            -DCOREDECK_SENTRY_DSN="$COREDECK_SENTRY_DSN"
+            -DCOREDECK_TARGET_ARCH="$COREDECK_TARGET_ARCH"
+          )
+          if [[ "$RUNNER_OS" == "Windows" && "$COREDECK_TARGET_ARCH" == "arm64" ]]; then
+            cmake_args+=(-A ARM64)
+          elif [[ "$RUNNER_OS" == "Windows" && "$COREDECK_TARGET_ARCH" == "x86-64" ]]; then
+            cmake_args+=(-A x64)
+          fi
+          cmake "${cmake_args[@]}"
         shell: bash
 
       - name: Build
@@ -50,7 +80,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: coredeck-${{ matrix.os }}-${{ matrix.build_type }}
+          name: ${{ matrix.artifact_name }}-${{ matrix.build_type }}
           path: |
             build/CoreDeck*
             build/assets/

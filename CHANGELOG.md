@@ -1,3 +1,8 @@
+## [Unreleased]
+
+- Add a default-on preference to confirm before using Wipe & Run from the AVD list
+- Add manual release workflow runs and package macOS release artifacts as unsigned DMGs
+
 ## [v0.8.0-beta.1](https://github.com/devmuaz/CoreDeck/releases/tag/v0.8.0-beta.1) — 2026-06-02
 
 - Fix live resource usage CPU always showing 0% on Windows by aggregating stats across the emulator process tree (thanks [@sjoerdev](https://github.com/sjoerdev), [#27](https://github.com/devmuaz/CoreDeck/issues/27))

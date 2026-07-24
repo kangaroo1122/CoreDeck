@@ -103,12 +103,14 @@ namespace CoreDeck {
 
         struct Prefs {
             bool ConfirmBeforeDeleteAvd = true;
+            bool ConfirmBeforeWipeAndRun = true;
             bool CrashReportingEnabled = true;
         } Prefs;
 
         struct UI {
             bool ShowAboutDialog = false;
             bool ShowDeleteAvdDialog = false;
+            bool ShowWipeAndRunDialog = false;
             bool ShowCreateAvdDialog = false;
             bool ShowDeviceProfileDialog = false;
             bool ShowSkinDialog = false;

@@ -123,6 +123,42 @@ namespace CoreDeck {
 
         constexpr const char *SORT_MODE_LABELS[] = {"Name", "API Level", "Device"};
         constexpr int SORT_MODE_COUNT = 3;
+
+        void LaunchAvd(Context &context, const AvdInfo &avd, const bool wipeData) {
+            auto args = BuildArgs(avd.Name, GetDefaultAvdOptions(context));
+            if (wipeData) {
+                args.emplace_back("-wipe-data");
+            }
+            context.Host.Manager.Launch(avd.Name, args);
+        }
+
+        void BuildWipeAndRunDialog(Context &context) {
+            if (context.Catalog.SelectedAvd < 0 || context.Catalog.SelectedAvd >= static_cast<int>(context.Catalog.Avds.size())) {
+                return;
+            }
+            if (!context.UI.ShowWipeAndRunDialog) {
+                return;
+            }
+
+            const auto &avd = context.Catalog.Avds[context.Catalog.SelectedAvd];
+            const std::string title = "Wipe and run \"" + avd.DisplayName + "\"?";
+            const DialogResult result = SimpleDialog(
+                {.Id = "WipeAndRun###WipeAndRunDialog",
+                 .IsOpen = context.UI.ShowWipeAndRunDialog,
+                 .Title = title.c_str(),
+                 .Message = "This will reset the selected AVD to factory defaults before launching it. User data cannot be recovered.",
+                 .ConfirmButtonTitle = "Wipe & Run",
+                 .CancelButtonTitle = "Cancel",
+                 .BusyButtonTitle = "Starting...",
+                 .Type = DialogType::Negative,
+                 .IsBusy = false}
+            );
+
+            if (result == DialogResult::Confirmed) {
+                context.UI.ShowWipeAndRunDialog = false;
+                LaunchAvd(context, avd, true);
+            }
+        }
     }
 
     // NOLINTNEXTLINE(readability-function-size)
@@ -181,7 +217,6 @@ namespace CoreDeck {
         if (context.Catalog.SelectedAvd >= 0) {
             const auto &avd = context.Catalog.Avds[context.Catalog.SelectedAvd];
             const bool isRunning = context.Host.Manager.IsRunning(avd.Name);
-            const auto args = BuildArgs(avd.Name, GetDefaultAvdOptions(context));
 
             ImGui::SameLine();
             if (isRunning) {
@@ -192,16 +227,18 @@ namespace CoreDeck {
                 }
             } else {
                 if (PositiveButton(Icons::PLAY)) {
-                    context.Host.Manager.Launch(avd.Name, args);
+                    LaunchAvd(context, avd, false);
                 }
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("Run the selected AVD");
                 }
                 ImGui::SameLine();
                 if (WarningButton(IconWithLabel(Icons::TERMINAL, "Wipe & Run").c_str())) {
-                    auto wipeArgs = args;
-                    wipeArgs.emplace_back("-wipe-data");
-                    context.Host.Manager.Launch(avd.Name, wipeArgs);
+                    if (context.Prefs.ConfirmBeforeWipeAndRun) {
+                        context.UI.ShowWipeAndRunDialog = true;
+                    } else {
+                        LaunchAvd(context, avd, true);
+                    }
                 }
                 ImGui::SameLine();
                 if (NegativeButton(Icons::TRASH)) {
@@ -216,6 +253,8 @@ namespace CoreDeck {
                 }
             }
         }
+
+        BuildWipeAndRunDialog(context);
 
         ImGui::Separator();
 

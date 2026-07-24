@@ -458,6 +458,7 @@ namespace CoreDeck {
         s.SchemaVersion = 1;
         s.AutoScroll = context.Logs.AutoScroll;
         s.ConfirmBeforeDeleteAvd = context.Prefs.ConfirmBeforeDeleteAvd;
+        s.ConfirmBeforeWipeAndRun = context.Prefs.ConfirmBeforeWipeAndRun;
         s.CrashReportingEnabled = context.Prefs.CrashReportingEnabled;
         s.ShowAvdListPanel = context.UI.ShowAvdListPanel;
         s.ShowOptionsPanel = context.UI.ShowOptionsPanel;
@@ -471,6 +472,7 @@ namespace CoreDeck {
     void ApplyAppSettingsToContext(Context &context, const AppSettings &settings) {
         context.Logs.AutoScroll = settings.AutoScroll;
         context.Prefs.ConfirmBeforeDeleteAvd = settings.ConfirmBeforeDeleteAvd;
+        context.Prefs.ConfirmBeforeWipeAndRun = settings.ConfirmBeforeWipeAndRun;
         context.Prefs.CrashReportingEnabled = settings.CrashReportingEnabled;
         context.UI.ShowAvdListPanel = settings.ShowAvdListPanel;
         context.UI.ShowOptionsPanel = settings.ShowOptionsPanel;

@@ -10,6 +10,7 @@ namespace CoreDeck {
         int SchemaVersion = 1;
         bool AutoScroll = true;
         bool ConfirmBeforeDeleteAvd = true;
+        bool ConfirmBeforeWipeAndRun = true;
         bool CrashReportingEnabled = true;
         bool ShowAvdListPanel = true;
         bool ShowOptionsPanel = true;

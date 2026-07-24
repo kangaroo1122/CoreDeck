@@ -131,6 +131,17 @@ namespace CoreDeck {
             ImGui::Dummy(ImVec2(0, 4));
 
             if (SubtitledCheckbox(
+                    "ConfirmWipeAndRun",
+                    &context.Prefs.ConfirmBeforeWipeAndRun,
+                    "Confirm before wiping and running an AVD",
+                    "Show a confirmation dialog before launching an AVD with wiped user data."
+                )) {
+                PersistAppSettings(context);
+            }
+
+            ImGui::Dummy(ImVec2(0, 4));
+
+            if (SubtitledCheckbox(
                     "CrashReporting",
                     &context.Prefs.CrashReportingEnabled,
                     "Send crash reports and diagnostics to " COREDECK_TITLE,

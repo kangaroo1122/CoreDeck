@@ -3,6 +3,7 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/extern/catch2 ${CMAKE_BINARY_DIR}/extern/ca
 add_executable(coredeck_tests
         test_utilities.cpp
         test_paths.cpp
+        test_app_settings.cpp
         test_log_buffer.cpp
         test_log_filter.cpp
         test_skin.cpp

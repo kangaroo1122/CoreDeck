@@ -64,8 +64,19 @@ namespace CoreDeck {
             return ContainsIgnoreCase(searchable, filter);
         }
 
-        bool MatchesImageFilters(const RemoteSystemImage &img, const char *filter, const ImageCategory category) {
-            return MatchesImageCategory(img, category) && MatchesImageFilter(img, filter);
+        bool MatchesImageInstallFilter(const RemoteSystemImage &img, const ImageInstallFilter filter) {
+            return filter == ImageInstallFilter::All || img.IsInstalled;
+        }
+
+        bool MatchesImageFilters(
+            const RemoteSystemImage &img,
+            const char *filter,
+            const ImageCategory category,
+            const ImageInstallFilter installFilter
+        ) {
+            return MatchesImageInstallFilter(img, installFilter) &&
+                   MatchesImageCategory(img, category) &&
+                   MatchesImageFilter(img, filter);
         }
 
         void StartInstall(Context &context, const std::string &pkgPath) {
@@ -275,6 +286,19 @@ namespace CoreDeck {
                 ImGui::InputTextWithHint("##RemoteImageSearch", searchHint.c_str(), work.SearchFilter, sizeof(work.SearchFilter));
 
                 ImGui::Spacing();
+                ImGui::TextDisabled("Images");
+
+                if (CategoryChip("All###ImageInstallFilterAll", work.InstallFilter == ImageInstallFilter::All)) {
+                    work.InstallFilter = ImageInstallFilter::All;
+                    work.SelectedImage = -1;
+                }
+                ImGui::SameLine();
+                if (CategoryChip("Installed###ImageInstallFilterInstalled", work.InstallFilter == ImageInstallFilter::Installed)) {
+                    work.InstallFilter = ImageInstallFilter::Installed;
+                    work.SelectedImage = -1;
+                }
+
+                ImGui::Spacing();
                 ImGui::TextDisabled("Categories");
 
                 static constexpr ImageCategoryOption CATEGORY_OPTIONS[] = {
@@ -301,7 +325,7 @@ namespace CoreDeck {
                 }
 
                 ImGui::Spacing();
-                ImGui::Text("Available System Images");
+                ImGui::Text("System Images");
                 if (isLoading) {
                     ImGui::SameLine();
                     ImGui::TextDisabled("Fetching available images from SDK manager...");
@@ -332,7 +356,7 @@ namespace CoreDeck {
                         } else {
                             for (int i = 0; i < static_cast<int>(work.RemoteImages.size()); i++) {
                                 const auto &img = work.RemoteImages[i];
-                                if (!MatchesImageFilters(img, work.SearchFilter, work.SelectedCategory)) {
+                                if (!MatchesImageFilters(img, work.SearchFilter, work.SelectedCategory, work.InstallFilter)) {
                                     continue;
                                 }
 
@@ -341,6 +365,12 @@ namespace CoreDeck {
                                 const auto [_, Label, Color] = SystemImageTypeStyleFor(img);
 
                                 ImGui::TableNextRow();
+                                if (isSelected) {
+                                    ImGui::TableSetBgColor(
+                                        ImGuiTableBgTarget_RowBg0,
+                                        ImGui::GetColorU32(HexColor(Colors::POSITIVE_FILL, 0.16F))
+                                    );
+                                }
                                 ImGui::TableNextColumn();
 
                                 const std::string label = StrConcat(
@@ -377,7 +407,7 @@ namespace CoreDeck {
                         if (!isLoading && !work.RemoteImages.empty() && visibleCount == 0) {
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::TextDisabled(" No system images available!");
+                            ImGui::TextDisabled(" No system images match the current filters.");
                         }
 
                         ImGui::EndTable();
@@ -442,7 +472,12 @@ namespace CoreDeck {
                 const bool hasVisibleSelection =
                     work.SelectedImage >= 0 &&
                     work.SelectedImage < static_cast<int>(work.RemoteImages.size()) &&
-                    MatchesImageFilters(work.RemoteImages[work.SelectedImage], work.SearchFilter, work.SelectedCategory);
+                    MatchesImageFilters(
+                        work.RemoteImages[work.SelectedImage],
+                        work.SearchFilter,
+                        work.SelectedCategory,
+                        work.InstallFilter
+                    );
 
                 const bool selectedInstalled = hasVisibleSelection && work.RemoteImages[work.SelectedImage].IsInstalled;
                 const bool canUseSelected = !isLoading && !isInstalling && !removalBusy && selectedInstalled;

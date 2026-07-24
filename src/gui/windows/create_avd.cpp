@@ -16,18 +16,36 @@
 namespace CoreDeck {
     namespace {
         void OpenSystemImagePicker(Context &context) {
+            std::string selectedPackagePath;
+            const auto &creation = context.AvdCreationWork;
+            if (!creation.SystemImages.empty() &&
+                creation.SelectedSystemImage >= 0 &&
+                creation.SelectedSystemImage < static_cast<int>(creation.SystemImages.size())) {
+                selectedPackagePath = creation.SystemImages[creation.SelectedSystemImage].PackagePath;
+            }
+
             context.ImageInstallationWork.SelectedImage = -1;
-            context.ImageInstallationWork.SelectedCategory = ImageCategory::PhoneTablet;
+            context.ImageInstallationWork.SelectedCategory = selectedPackagePath.empty() ? ImageCategory::PhoneTablet : ImageCategory::All;
+            context.ImageInstallationWork.InstallFilter = ImageInstallFilter::Installed;
             context.ImageInstallationWork.SearchFilter[0] = '\0';
             context.ImageInstallationWork.Progress.reset();
             context.ImageInstallationWork.Prefetch.Ready = false;
             context.ImageInstallationWork.Prefetch.Loading = true;
             context.UI.ShowInstallImageDialog = true;
 
-            context.ImageInstallationWork.Prefetch.Future = std::async(std::launch::async, [&context] {
+            context.ImageInstallationWork.Prefetch.Future = std::async(std::launch::async, [&context, selectedPackagePath] {
                 const auto localImages = ListSystemImages(context.Host.Sdk);
                 auto remoteImages = ListRemoteSystemImages(context.Host.Sdk, localImages);
+                int selectedImage = -1;
+                for (int i = 0; i < static_cast<int>(remoteImages.size()); i++) {
+                    if (remoteImages[i].PackagePath == selectedPackagePath) {
+                        selectedImage = i;
+                        break;
+                    }
+                }
+
                 context.AvdCreationWork.SystemImages = localImages;
+                context.ImageInstallationWork.SelectedImage = selectedImage;
                 context.ImageInstallationWork.RemoteImages = std::move(remoteImages);
                 context.ImageInstallationWork.Prefetch.Loading = false;
                 context.ImageInstallationWork.Prefetch.Ready = true;

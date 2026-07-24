@@ -45,6 +45,11 @@ namespace CoreDeck {
         Other,
     };
 
+    enum class ImageInstallFilter : uint8_t {
+        All,
+        Installed,
+    };
+
     enum class DeviceCategory : uint8_t {
         All,
         Phone,
@@ -171,6 +176,7 @@ namespace CoreDeck {
             std::vector<RemoteSystemImage> RemoteImages;
             int SelectedImage = -1;
             ImageCategory SelectedCategory = ImageCategory::PhoneTablet;
+            ImageInstallFilter InstallFilter = ImageInstallFilter::Installed;
             char SearchFilter[128] = {};
 
             struct {

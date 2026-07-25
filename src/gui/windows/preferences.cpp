@@ -20,10 +20,9 @@
 namespace CoreDeck {
     namespace {
         enum class PrefsSection : uint8_t {
-            General,
             Appearance,
+            General,
             AndroidSdk,
-            Jdk,
         };
 
         struct SidebarItem {
@@ -33,10 +32,9 @@ namespace CoreDeck {
         };
 
         constexpr SidebarItem SIDEBAR_ITEMS[] = {
-            {.Section = PrefsSection::General, .Icon = Icons::GEAR, .Label = "General"},
             {.Section = PrefsSection::Appearance, .Icon = Icons::CIRCLE, .Label = "Appearance"},
-            {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android SDK"},
-            {.Section = PrefsSection::Jdk, .Icon = Icons::TERMINAL, .Label = "JDK"},
+            {.Section = PrefsSection::General, .Icon = Icons::GEAR, .Label = "General"},
+            {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android JDK/SDK"},
         };
 
         struct JavaVersionState {
@@ -488,18 +486,19 @@ namespace CoreDeck {
                     DrawAppearanceSection(context);
                     break;
                 case PrefsSection::AndroidSdk:
-                    DrawAndroidSdkSection(
-                        context,
-                        sdkPathBuffer,
-                        sizeof(sdkPathBuffer)
-                    );
-                    break;
-                case PrefsSection::Jdk:
                     DrawJdkSection(
                         context,
                         javaHomeBuffer,
                         sizeof(javaHomeBuffer),
                         javaVersionState
+                    );
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                    DrawAndroidSdkSection(
+                        context,
+                        sdkPathBuffer,
+                        sizeof(sdkPathBuffer)
                     );
                     break;
             }

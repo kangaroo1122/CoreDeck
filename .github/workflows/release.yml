@@ -146,7 +146,31 @@ jobs:
 
       - name: Install WiX Toolset (Windows)
         if: runner.os == 'Windows'
-        run: choco install wixtoolset
+        shell: pwsh
+        run: |
+          choco install wixtoolset --yes --no-progress
+
+          $roots = @(
+            [Environment]::GetFolderPath('ProgramFilesX86'),
+            [Environment]::GetFolderPath('ProgramFiles')
+          ) | Where-Object { $_ }
+
+          $wixRoot = Get-ChildItem -Path $roots -Directory -Filter 'WiX Toolset v*' -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName 'bin\candle.exe') } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if (-not $wixRoot) {
+            throw 'WiX Toolset was installed, but candle.exe was not found.'
+          }
+
+          $wixBin = Join-Path $wixRoot.FullName 'bin'
+          $env:PATH = "$wixBin;$env:PATH"
+          Add-Content -Path $env:GITHUB_ENV -Value "WIX=$($wixRoot.FullName)"
+          Add-Content -Path $env:GITHUB_PATH -Value $wixBin
+
+          where.exe candle
+          where.exe light
 
       - name: Package artifacts (Windows)
         if: runner.os == 'Windows'

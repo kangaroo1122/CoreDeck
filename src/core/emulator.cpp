@@ -38,6 +38,26 @@ namespace CoreDeck {
             return !EmulatorConsole::IsAvailable(port, 200);
         }
 
+        bool IsManagedPortFlag(const std::string &flag) {
+            return flag == "-port" || flag == "-ports";
+        }
+
+        std::vector<std::string> StripManagedPortArgs(const std::vector<std::string> &args) {
+            std::vector<std::string> filtered;
+            filtered.reserve(args.size());
+
+            for (std::size_t i = 0; i < args.size(); i++) {
+                if (IsManagedPortFlag(args[i])) {
+                    if (i + 1 < args.size()) {
+                        i++;
+                    }
+                    continue;
+                }
+                filtered.push_back(args[i]);
+            }
+
+            return filtered;
+        }
 
         void RunOutputReader(const int outputFd, const std::shared_ptr<LogBuffer> &log, const std::shared_ptr<std::atomic<bool>> &stopFlag) {
             std::array<char, 1024> buf{};
@@ -169,30 +189,60 @@ namespace CoreDeck {
         }
     }
 
+    std::vector<int> EmulatorManager::m_ReservedOrRunningConsolePortsLocked() const {
+        std::vector<int> ports = m_ReservedConsolePorts;
+        for (const auto &instance: m_Instances | std::views::values) {
+            if (instance.ConsolePort > 0 && (instance.IsRunning || instance.Stopping)) {
+                ports.push_back(instance.ConsolePort);
+            }
+        }
+        return ports;
+    }
+
+    void EmulatorManager::m_ReleaseLaunchReservation(const std::string &avdName, const int consolePort) {
+        std::lock_guard lock(m_Mutex);
+        std::erase(m_ReservedConsolePorts, consolePort);
+        std::erase(m_PendingLaunchAvds, avdName);
+    }
+
     bool EmulatorManager::Launch(const std::string &avdName, const std::vector<std::string> &args) {
+        if (EmulatorConsole::FindAvdConsolePort(avdName) > 0) {
+            return false;
+        }
+
+        int consolePort = -1;
         {
             std::lock_guard lock(m_Mutex);
             if (const auto it = m_Instances.find(avdName); it != m_Instances.end() && it->second.IsRunning) {
                 return false;
             }
+            if (std::ranges::find(m_PendingLaunchAvds, avdName) != m_PendingLaunchAvds.end()) {
+                return false;
+            }
+
+            consolePort = EmulatorConsole::FindFreePort(5554, 5584, m_ReservedOrRunningConsolePortsLocked());
+            if (consolePort <= 0) {
+                return false;
+            }
+            m_ReservedConsolePorts.push_back(consolePort);
+            m_PendingLaunchAvds.push_back(avdName);
         }
 
-        const int consolePort = EmulatorConsole::FindFreePort();
-        std::vector<std::string> finalArgs = args;
-        if (consolePort > 0) {
-            finalArgs.emplace_back("-port");
-            finalArgs.emplace_back(std::to_string(consolePort));
-        }
+        std::vector<std::string> finalArgs = StripManagedPortArgs(args);
+        finalArgs.emplace_back("-port");
+        finalArgs.emplace_back(std::to_string(consolePort));
 
         int outputFd = -1;
         const ProcessId pid = SpawnProcessWithPipe(m_Sdk.EmulatorPath, finalArgs, outputFd);
 
 #if defined(_WIN32)
         if (pid == 0) {
+            m_ReleaseLaunchReservation(avdName, consolePort);
             return false;
         }
 #else
         if (pid <= 0) {
+            m_ReleaseLaunchReservation(avdName, consolePort);
             return false;
         }
 #endif
@@ -213,6 +263,8 @@ namespace CoreDeck {
             instance.Log = std::move(log);
             instance.ReaderThread = std::move(reader);
             instance.StopRequested = std::move(stopFlag);
+            std::erase(m_ReservedConsolePorts, consolePort);
+            std::erase(m_PendingLaunchAvds, avdName);
             m_Instances[avdName] = std::move(instance);
         }
 

@@ -10,6 +10,7 @@
 #include <thread>
 #include <atomic>
 #include <memory>
+#include <vector>
 
 #include "log_buffer.h"
 #include "sdk.h"
@@ -62,9 +63,15 @@ namespace CoreDeck {
     private:
         void m_EvictExistingInstance(const std::string &avdName);
 
+        std::vector<int> m_ReservedOrRunningConsolePortsLocked() const;
+
+        void m_ReleaseLaunchReservation(const std::string &avdName, int consolePort);
+
         SdkInfo m_Sdk;
         mutable std::mutex m_Mutex;
         std::unordered_map<std::string, EmulatorInstance> m_Instances;
+        std::vector<int> m_ReservedConsolePorts;
+        std::vector<std::string> m_PendingLaunchAvds;
         ProcessStatsSampler m_Stats;
     };
 }

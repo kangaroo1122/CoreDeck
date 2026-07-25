@@ -20,6 +20,10 @@ namespace CoreDeck {
             }
             return value.c_str();
         }
+
+        bool IsManagedPortFlag(const std::string &flag) {
+            return flag == "-port" || flag == "-ports";
+        }
     }
 
     const std::vector<OptionValueLabel> &GpuModeOptions() {
@@ -321,22 +325,6 @@ namespace CoreDeck {
                     .Category = OptionCategory::NETWORK,
                     .Hint = "e.g., /tmp/emulator.pcap",
                 },
-                {
-                    .Flag = "-port",
-                    .DisplayName = "Console Port",
-                    .Description = "TCP port used for the emulator console (adb port is console + 1)",
-                    .Type = OptionType::TextInput,
-                    .Category = OptionCategory::NETWORK,
-                    .Hint = "e.g., 5554",
-                },
-                {
-                    .Flag = "-ports",
-                    .DisplayName = "Console + ADB Ports",
-                    .Description = "TCP ports used for the console and adb bridge",
-                    .Type = OptionType::TextInput,
-                    .Category = OptionCategory::NETWORK,
-                    .Hint = "e.g., 5554,5555",
-                },
             };
         }
 
@@ -561,7 +549,7 @@ namespace CoreDeck {
 
     std::vector<EmulatorOption> GetEmulatorOptions() {
         std::vector<EmulatorOption> result;
-        result.reserve(52);
+        result.reserve(50);
 
         for (const auto &group: {
                  DisplayOptions(),
@@ -586,6 +574,9 @@ namespace CoreDeck {
 
         for (const auto &option: options) {
             if (!option.Enabled) {
+                continue;
+            }
+            if (IsManagedPortFlag(option.Flag)) {
                 continue;
             }
 

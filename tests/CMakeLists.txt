@@ -7,6 +7,7 @@ add_executable(coredeck_tests
         test_app_settings.cpp
         test_log_buffer.cpp
         test_log_filter.cpp
+        test_options.cpp
         test_skin.cpp
         test_version_check.cpp
 )

@@ -1,3 +1,8 @@
+## [v0.8.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.3) — 2026-07-25
+
+- Fix emulator port allocation when launching multiple or externally started AVDs
+- Update About author attribution and website link
+
 ## [v0.8.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.2) — 2026-07-25
 
 - Add manual Light/Dark theme switching in Appearance preferences

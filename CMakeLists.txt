@@ -54,7 +54,7 @@ project(CoreDeck VERSION ${PROJECT_VERSION})
 
 string(TIMESTAMP CURRENT_YEAR "%Y")
 
-set(APP_VENDOR "AbdulMuaz Aqeel")
+set(APP_VENDOR "AbdulMuaz Aqeel, kangaroo.")
 set(APP_DESCRIPTION "A native desktop application around your Android SDK’s official emulator, avdmanager, and sdkmanager binaries. Use it for everyday work without opening Android Studio. Built with C++20 and Dear ImGui.")
 set(APP_DESCRIPTION_SHORT "Official tools, polished workflow — in a friendly GUI.")
 set(APP_BUNDLE_ID "com.devmuaz.coredeck")
@@ -162,7 +162,7 @@ target_compile_definitions(coredeck_core PUBLIC
     COREDECK_DESCRIPTION="${APP_DESCRIPTION_SHORT}"
     COREDECK_YEAR="${CURRENT_YEAR}"
     COREDECK_WEBSITE="https://coredeck.dev"
-    COREDECK_AUTHOR_WEBSITE="https://devmuaz.com"
+    COREDECK_AUTHOR_WEBSITE="https://www.kangaroohy.com"
     COREDECK_GITHUB="https://github.com/kangaroo1122/CoreDeck"
     COREDECK_GITHUB_RELEASES="https://github.com/kangaroo1122/CoreDeck/releases"
     COREDECK_GITHUB_API="https://api.github.com/repos/kangaroo1122/${PROJECT_NAME}/releases/latest"

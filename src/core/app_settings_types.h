@@ -14,6 +14,7 @@ namespace CoreDeck {
         bool ConfirmBeforeDeleteAvd = true;
         bool ConfirmBeforeWipeAndRun = true;
         bool CrashReportingEnabled = true;
+        int ThemeMode = 0;
         bool ShowAvdListPanel = true;
         bool ShowOptionsPanel = true;
         bool ShowDetailsPanel = true;

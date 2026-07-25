@@ -19,6 +19,7 @@
 #include "../core/sdk.h"
 #include "../core/skin.h"
 #include "../core/system_image.h"
+#include "theme.h"
 
 struct GLFWwindow;
 
@@ -110,6 +111,7 @@ namespace CoreDeck {
             bool ConfirmBeforeDeleteAvd = true;
             bool ConfirmBeforeWipeAndRun = true;
             bool CrashReportingEnabled = true;
+            ThemeMode Theme = ThemeMode::Dark;
             std::string JavaHomePath;
         } Prefs;
 

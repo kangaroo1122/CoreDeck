@@ -84,8 +84,7 @@ namespace CoreDeck {
         m_ApplyDpiScale();
         m_LoadFonts();
 
-        ImGui::StyleColorsDark();
-        ApplyCustomImGuiTheme(m_DpiScale);
+        ApplyCustomImGuiTheme(m_Context.Prefs.Theme, m_DpiScale);
 
         const char *glslVersion = "#version 330";
         ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
@@ -339,8 +338,7 @@ namespace CoreDeck {
             self->m_LoadFonts();
             io.Fonts->Build();
 
-            ImGui::StyleColorsDark();
-            ApplyCustomImGuiTheme(self->m_DpiScale);
+            ApplyCustomImGuiTheme(self->m_Context.Prefs.Theme, self->m_DpiScale);
         });
 #endif
 
@@ -360,7 +358,8 @@ namespace CoreDeck {
             self->m_Build();
 
             ImGui::Render();
-            glClearColor(0.06F, 0.06F, 0.07F, 1.0F);
+            const ImVec4 clearColor = GetAppClearColor();
+            glClearColor(clearColor.x, clearColor.y, clearColor.z, clearColor.w);
             glClear(GL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(w);
@@ -385,7 +384,8 @@ namespace CoreDeck {
             int displayH = 0;
             glfwGetFramebufferSize(m_Window, &displayW, &displayH);
             glViewport(0, 0, displayW, displayH);
-            glClearColor(0.1F, 0.1F, 0.1F, 1.0F);
+            const ImVec4 clearColor = GetAppClearColor();
+            glClearColor(clearColor.x, clearColor.y, clearColor.z, clearColor.w);
             glClear(GL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(m_Window);
@@ -462,6 +462,7 @@ namespace CoreDeck {
         s.ConfirmBeforeDeleteAvd = context.Prefs.ConfirmBeforeDeleteAvd;
         s.ConfirmBeforeWipeAndRun = context.Prefs.ConfirmBeforeWipeAndRun;
         s.CrashReportingEnabled = context.Prefs.CrashReportingEnabled;
+        s.ThemeMode = static_cast<int>(context.Prefs.Theme);
         s.JavaHomePath = context.Prefs.JavaHomePath;
         s.ShowAvdListPanel = context.UI.ShowAvdListPanel;
         s.ShowOptionsPanel = context.UI.ShowOptionsPanel;
@@ -477,6 +478,7 @@ namespace CoreDeck {
         context.Prefs.ConfirmBeforeDeleteAvd = settings.ConfirmBeforeDeleteAvd;
         context.Prefs.ConfirmBeforeWipeAndRun = settings.ConfirmBeforeWipeAndRun;
         context.Prefs.CrashReportingEnabled = settings.CrashReportingEnabled;
+        context.Prefs.Theme = settings.ThemeMode == static_cast<int>(ThemeMode::Light) ? ThemeMode::Light : ThemeMode::Dark;
         context.Prefs.JavaHomePath = settings.JavaHomePath;
         context.Host.Sdk.JavaHomePath = settings.JavaHomePath;
         context.Host.Manager.SetSdk(context.Host.Sdk);

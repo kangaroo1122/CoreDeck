@@ -21,6 +21,7 @@ namespace CoreDeck {
     namespace {
         enum class PrefsSection : uint8_t {
             General,
+            Appearance,
             AndroidSdk,
             Jdk,
         };
@@ -33,6 +34,7 @@ namespace CoreDeck {
 
         constexpr SidebarItem SIDEBAR_ITEMS[] = {
             {.Section = PrefsSection::General, .Icon = Icons::GEAR, .Label = "General"},
+            {.Section = PrefsSection::Appearance, .Icon = Icons::CIRCLE, .Label = "Appearance"},
             {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android SDK"},
             {.Section = PrefsSection::Jdk, .Icon = Icons::TERMINAL, .Label = "JDK"},
         };
@@ -76,7 +78,7 @@ namespace CoreDeck {
             if (selected) {
                 const ImVec2 a(bb.Min.x, bb.Min.y);
                 const ImVec2 b(bb.Min.x + 4.0F, bb.Max.y);
-                window->DrawList->AddRectFilled(a, b, IM_COL32_WHITE);
+                window->DrawList->AddRectFilled(a, b, ImGui::GetColorU32(HexColor(Colors::ACCENT_INFO)));
             }
 
             const ImU32 textColor = ImGui::GetColorU32(selected ? HexColor(Colors::TEXT_PRIMARY) : HexColor(Colors::TEXT_SUBTLE));
@@ -180,6 +182,28 @@ namespace CoreDeck {
             const std::string output = RunCommandArgs(javaPath, {"-version"});
             const std::string firstLine = FirstNonEmptyLine(output);
             state.Text = firstLine.empty() ? "Unable to read Java version." : firstLine;
+        }
+
+        void DrawAppearanceSection(Context &context) {
+            SectionHeader("Appearance", "Visual preferences for CoreDeck.");
+
+            ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_PRIMARY));
+            ImGui::TextUnformatted("Theme");
+            ImGui::PopStyleColor();
+
+            if (CategoryChip("Dark###ThemeDark", context.Prefs.Theme == ThemeMode::Dark)) {
+                context.Prefs.Theme = ThemeMode::Dark;
+                ApplyCustomImGuiTheme(context.Prefs.Theme, GetDpiScale());
+                PersistAppSettings(context);
+            }
+            ImGui::SameLine();
+            if (CategoryChip("Light###ThemeLight", context.Prefs.Theme == ThemeMode::Light)) {
+                context.Prefs.Theme = ThemeMode::Light;
+                ApplyCustomImGuiTheme(context.Prefs.Theme, GetDpiScale());
+                PersistAppSettings(context);
+            }
+
+            ImGui::Dummy(ImVec2(0, 4));
         }
 
         void DrawGeneralSection(Context &context) {
@@ -459,6 +483,9 @@ namespace CoreDeck {
             switch (activeSection) {
                 case PrefsSection::General:
                     DrawGeneralSection(context);
+                    break;
+                case PrefsSection::Appearance:
+                    DrawAppearanceSection(context);
                     break;
                 case PrefsSection::AndroidSdk:
                     DrawAndroidSdkSection(

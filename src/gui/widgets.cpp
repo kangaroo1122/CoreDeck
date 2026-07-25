@@ -140,9 +140,9 @@ namespace CoreDeck {
     bool ToggleButton(const char *label, bool &isToggled, const ImVec2 size) {
         StyleColor sc;
         if (isToggled) {
-            sc.Push(ImGuiCol_Button, HexColor(Colors::WHITE, 0.10F));
-            sc.Push(ImGuiCol_Border, HexColor(Colors::WHITE, 0.75F));
-            sc.Push(ImGuiCol_Text, HexColor(Colors::WHITE));
+            sc.Push(ImGuiCol_Button, HexColor(Colors::ACCENT_INFO, 0.10F));
+            sc.Push(ImGuiCol_Border, HexColor(Colors::ACCENT_INFO, 0.75F));
+            sc.Push(ImGuiCol_Text, HexColor(Colors::ACCENT_INFO));
         }
         const bool clicked = ImGui::Button(label, size);
         if (clicked) {

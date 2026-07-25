@@ -5,6 +5,7 @@
 #include "imgui.h"
 
 #include "sdk_banner.h"
+#include "../theme.h"
 #include "../widgets.h"
 
 namespace CoreDeck {
@@ -27,7 +28,7 @@ namespace CoreDeck {
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_NoNavFocus;
 
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.32F, 0.18F, 0.10F, 1.0F));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, HexColor(Colors::WARNING, 0.24F));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0F, 8.0F));
         ImGui::Begin("##SdkMissingBanner", nullptr, FLAGS);
 

@@ -7,13 +7,208 @@
 #include "theme.h"
 
 namespace CoreDeck {
-    namespace {
-        float ds = 1.0F;
+    namespace Colors {
+        const char *WHITE = "#FFFFFF";
+        const char *POSITIVE = "#33CC47";
+        const char *POSITIVE_FILL = "#26B333";
+        const char *NEGATIVE = "#E64D40";
+        const char *NEGATIVE_STRONG = "#CC261F";
+        const char *WARNING = "#D9B31A";
+        const char *WARNING_STRONG = "#E6BF26";
+
+        const char *ACCENT_PHONE = "#4FC3F7";
+        const char *ACCENT_TABLET = "#22D3EE";
+        const char *ACCENT_WEAR = "#F5A623";
+        const char *ACCENT_TV = "#7E57C2";
+        const char *ACCENT_INFO = "#4D9AFF";
+        const char *ACCENT_INFO_SOFT = "#7AB8FF";
+
+        const char *STORAGE_AVD = "#2980B9";
+        const char *STORAGE_SYSTEM_IMAGE = "#27AE60";
+
+        const char *TEXT_PRIMARY = "#F2F2F2";
+        const char *TEXT_MUTED = "#66666B";
+        const char *TEXT_SUBTLE = "#A7A7AD";
+        const char *TEXT_ON_DARK = "#CCCCCC";
+        const char *TEXT_ON_BRIGHT = "#969696";
+        const char *TEXT_HINT = "#CFCFD4";
+
+        const char *SHADOW = "#000000";
+        const char *SURFACE0 = "#0F0F12";
+        const char *SURFACE1 = "#141417";
+        const char *SURFACE2 = "#1A1A1C";
+        const char *SURFACE3 = "#29292B";
+        const char *SURFACE4 = "#2E2E33";
+
+        const char *BORDER_SUBTLE = "#3F3F42";
+        const char *BORDER = "#47474A";
+        const char *BORDER_STRONG = "#4D4D4F";
+        const char *BORDER_HOVER = "#5C5C5E";
     }
 
-    void ApplyCustomImGuiTheme(const float dpiScale) {
+    namespace {
+        float ds = 1.0F;
+
+        struct ThemePalette {
+            const char *White;
+            const char *Positive;
+            const char *PositiveFill;
+            const char *Negative;
+            const char *NegativeStrong;
+            const char *Warning;
+            const char *WarningStrong;
+
+            const char *AccentPhone;
+            const char *AccentTablet;
+            const char *AccentWear;
+            const char *AccentTv;
+            const char *AccentInfo;
+            const char *AccentInfoSoft;
+
+            const char *StorageAvd;
+            const char *StorageSystemImage;
+
+            const char *TextPrimary;
+            const char *TextMuted;
+            const char *TextSubtle;
+            const char *TextOnDark;
+            const char *TextOnBright;
+            const char *TextHint;
+
+            const char *Shadow;
+            const char *Surface0;
+            const char *Surface1;
+            const char *Surface2;
+            const char *Surface3;
+            const char *Surface4;
+
+            const char *BorderSubtle;
+            const char *Border;
+            const char *BorderStrong;
+            const char *BorderHover;
+        };
+
+        constexpr ThemePalette DARK_PALETTE = {
+            .White = "#FFFFFF",
+            .Positive = "#33CC47",
+            .PositiveFill = "#26B333",
+            .Negative = "#E64D40",
+            .NegativeStrong = "#CC261F",
+            .Warning = "#D9B31A",
+            .WarningStrong = "#E6BF26",
+            .AccentPhone = "#4FC3F7",
+            .AccentTablet = "#22D3EE",
+            .AccentWear = "#F5A623",
+            .AccentTv = "#7E57C2",
+            .AccentInfo = "#4D9AFF",
+            .AccentInfoSoft = "#7AB8FF",
+            .StorageAvd = "#2980B9",
+            .StorageSystemImage = "#27AE60",
+            .TextPrimary = "#F2F2F2",
+            .TextMuted = "#66666B",
+            .TextSubtle = "#A7A7AD",
+            .TextOnDark = "#CCCCCC",
+            .TextOnBright = "#969696",
+            .TextHint = "#CFCFD4",
+            .Shadow = "#000000",
+            .Surface0 = "#0F0F12",
+            .Surface1 = "#141417",
+            .Surface2 = "#1A1A1C",
+            .Surface3 = "#29292B",
+            .Surface4 = "#2E2E33",
+            .BorderSubtle = "#3F3F42",
+            .Border = "#47474A",
+            .BorderStrong = "#4D4D4F",
+            .BorderHover = "#5C5C5E",
+        };
+
+        constexpr ThemePalette LIGHT_PALETTE = {
+            .White = "#FFFFFF",
+            .Positive = "#1F8F38",
+            .PositiveFill = "#2EAD4A",
+            .Negative = "#C93A32",
+            .NegativeStrong = "#A82620",
+            .Warning = "#9A7412",
+            .WarningStrong = "#7A5D0C",
+            .AccentPhone = "#0277BD",
+            .AccentTablet = "#0891B2",
+            .AccentWear = "#B26A00",
+            .AccentTv = "#673AB7",
+            .AccentInfo = "#0B63CE",
+            .AccentInfoSoft = "#2F80ED",
+            .StorageAvd = "#1F6F9F",
+            .StorageSystemImage = "#1E8F4D",
+            .TextPrimary = "#202124",
+            .TextMuted = "#6B7280",
+            .TextSubtle = "#4B5563",
+            .TextOnDark = "#F2F4F8",
+            .TextOnBright = "#30343B",
+            .TextHint = "#687385",
+            .Shadow = "#000000",
+            .Surface0 = "#F7F8FA",
+            .Surface1 = "#FFFFFF",
+            .Surface2 = "#EEF1F5",
+            .Surface3 = "#E2E6EC",
+            .Surface4 = "#D2D8E1",
+            .BorderSubtle = "#D6DCE5",
+            .Border = "#C6CED8",
+            .BorderStrong = "#AEB7C4",
+            .BorderHover = "#8F9BAD",
+        };
+
+        void ApplyColorPalette(const ThemePalette &palette) {
+            Colors::WHITE = palette.White;
+            Colors::POSITIVE = palette.Positive;
+            Colors::POSITIVE_FILL = palette.PositiveFill;
+            Colors::NEGATIVE = palette.Negative;
+            Colors::NEGATIVE_STRONG = palette.NegativeStrong;
+            Colors::WARNING = palette.Warning;
+            Colors::WARNING_STRONG = palette.WarningStrong;
+
+            Colors::ACCENT_PHONE = palette.AccentPhone;
+            Colors::ACCENT_TABLET = palette.AccentTablet;
+            Colors::ACCENT_WEAR = palette.AccentWear;
+            Colors::ACCENT_TV = palette.AccentTv;
+            Colors::ACCENT_INFO = palette.AccentInfo;
+            Colors::ACCENT_INFO_SOFT = palette.AccentInfoSoft;
+
+            Colors::STORAGE_AVD = palette.StorageAvd;
+            Colors::STORAGE_SYSTEM_IMAGE = palette.StorageSystemImage;
+
+            Colors::TEXT_PRIMARY = palette.TextPrimary;
+            Colors::TEXT_MUTED = palette.TextMuted;
+            Colors::TEXT_SUBTLE = palette.TextSubtle;
+            Colors::TEXT_ON_DARK = palette.TextOnDark;
+            Colors::TEXT_ON_BRIGHT = palette.TextOnBright;
+            Colors::TEXT_HINT = palette.TextHint;
+
+            Colors::SHADOW = palette.Shadow;
+            Colors::SURFACE0 = palette.Surface0;
+            Colors::SURFACE1 = palette.Surface1;
+            Colors::SURFACE2 = palette.Surface2;
+            Colors::SURFACE3 = palette.Surface3;
+            Colors::SURFACE4 = palette.Surface4;
+
+            Colors::BORDER_SUBTLE = palette.BorderSubtle;
+            Colors::BORDER = palette.Border;
+            Colors::BORDER_STRONG = palette.BorderStrong;
+            Colors::BORDER_HOVER = palette.BorderHover;
+        }
+    }
+
+    void ApplyCustomImGuiTheme(const ThemeMode themeMode, const float dpiScale) {
         ds = dpiScale;
+        ApplyColorPalette(themeMode == ThemeMode::Light ? LIGHT_PALETTE : DARK_PALETTE);
+
         auto &style = ImGui::GetStyle();
+        style = ImGuiStyle();
+
+        if (themeMode == ThemeMode::Light) {
+            ImGui::StyleColorsLight();
+        } else {
+            ImGui::StyleColorsDark();
+        }
+
         const float s = dpiScale;
 
         style.WindowRounding = 6.0F * s;
@@ -114,6 +309,10 @@ namespace CoreDeck {
         c[ImGuiCol_ResizeGrip] = HexColor(Colors::SURFACE4, 0.25F);
         c[ImGuiCol_ResizeGripHovered] = HexColor(Colors::BORDER_STRONG, 0.65F);
         c[ImGuiCol_ResizeGripActive] = HexColor(Colors::TEXT_MUTED, 0.95F);
+    }
+
+    ImVec4 GetAppClearColor() {
+        return HexColor(Colors::SURFACE0);
     }
 
     float GetDpiScale() {

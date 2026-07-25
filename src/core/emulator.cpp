@@ -10,6 +10,7 @@
 #include <array>
 #include <chrono>
 #include <cerrno>
+#include <algorithm>
 
 #include "emulator.h"
 #include "process.h"
@@ -40,6 +41,48 @@ namespace CoreDeck {
 
         bool IsManagedPortFlag(const std::string &flag) {
             return flag == "-port" || flag == "-ports";
+        }
+
+        bool HasFlag(const std::vector<std::string> &args, const std::string &flag) {
+            return std::ranges::find(args, flag) != args.end();
+        }
+
+        bool IsValidProcessId(const ProcessId pid) {
+#if defined(_WIN32)
+            return pid != 0;
+#else
+            return pid > 0;
+#endif
+        }
+
+        void CloseOutputFd(const int outputFd) {
+            if (outputFd < 0) {
+                return;
+            }
+#if defined(_WIN32)
+            _close(outputFd);
+#else
+            close(outputFd);
+#endif
+        }
+
+        void ResetOfflineAdbConnections(const std::string &adbPath) {
+            if (adbPath.empty()) {
+                return;
+            }
+
+            int outputFd = -1;
+            const ProcessId pid = SpawnProcessWithPipe(adbPath, {"reconnect", "offline"}, outputFd);
+            if (!IsValidProcessId(pid)) {
+                CloseOutputFd(outputFd);
+                return;
+            }
+
+            if (!WaitForProcessExit(pid, 2000)) {
+                KillProcess(pid);
+                WaitForProcessExit(pid, 500);
+            }
+            CloseOutputFd(outputFd);
         }
 
         std::vector<std::string> StripManagedPortArgs(const std::vector<std::string> &args) {
@@ -229,8 +272,14 @@ namespace CoreDeck {
         }
 
         std::vector<std::string> finalArgs = StripManagedPortArgs(args);
+        if (!m_Sdk.AdbPath.empty() && !HasFlag(finalArgs, "-adb-path")) {
+            finalArgs.emplace_back("-adb-path");
+            finalArgs.emplace_back(m_Sdk.AdbPath);
+        }
         finalArgs.emplace_back("-port");
         finalArgs.emplace_back(std::to_string(consolePort));
+
+        ResetOfflineAdbConnections(m_Sdk.AdbPath);
 
         int outputFd = -1;
         const ProcessId pid = SpawnProcessWithPipe(m_Sdk.EmulatorPath, finalArgs, outputFd);

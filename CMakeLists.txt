@@ -204,6 +204,8 @@ add_executable(${PROJECT_NAME}
     src/gui/windows/storage.cpp
     src/gui/windows/update.cpp
     src/gui/application.cpp
+    src/gui/fonts.cpp
+    src/gui/localization.cpp
     src/gui/theme.cpp
     src/gui/widgets.cpp
 )

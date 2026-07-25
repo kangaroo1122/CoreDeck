@@ -15,6 +15,8 @@ namespace CoreDeck {
         bool ConfirmBeforeWipeAndRun = true;
         bool CrashReportingEnabled = true;
         int ThemeMode = 0;
+        int Language = 0;
+        std::string CustomCjkFontPath;
         bool ShowAvdListPanel = true;
         bool ShowOptionsPanel = true;
         bool ShowDetailsPanel = true;

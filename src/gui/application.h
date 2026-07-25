@@ -40,6 +40,10 @@ namespace CoreDeck {
 
         void m_LoadFonts() const;
 
+        void m_RebuildFonts();
+
+        void m_HandleFontReloadRequest();
+
         void m_ApplyDpiScale();
 
         void m_SetupCallbacks();

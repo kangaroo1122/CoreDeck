@@ -1,9 +1,14 @@
-## [Unreleased]
+## [v0.8.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.2) — 2026-07-25
 
-- Add Windows ARM64 release artifacts
+- Add manual Light/Dark theme switching in Appearance preferences
+- Add Simplified Chinese language switching with CJK font fallback selection
+- Add configurable JDK home for Android SDK command-line tools
+- Add Installed/All filtering and current-image highlighting to the system image picker
+- Add AVD display-name renaming from the AVD list row
 - Point update checks and release downloads to the forked GitHub releases page
-- Add display-name renaming for AVDs from Details and the AVD list context menu
 - Add a default-on preference to confirm before using Wipe & Run from the AVD list
+- Add Windows ARM64 build validation and release artifacts
+- Fix WiX setup for Windows MSI packaging
 - Add manual release workflow runs and package macOS release artifacts as unsigned DMGs
 
 ## [v0.8.0-beta.1](https://github.com/devmuaz/CoreDeck/releases/tag/v0.8.0-beta.1) — 2026-06-02

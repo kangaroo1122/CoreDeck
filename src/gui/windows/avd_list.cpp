@@ -8,6 +8,7 @@
 #include "delete_avd.h"
 #include "rename_avd.h"
 #include "../application.h"
+#include "../localization.h"
 #include "../widgets.h"
 #include "../theme.h"
 
@@ -142,7 +143,7 @@ namespace CoreDeck {
             }
 
             const auto &avd = context.Catalog.Avds[context.Catalog.SelectedAvd];
-            const std::string title = "Wipe and run \"" + avd.DisplayName + "\"?";
+            const std::string title = StrConcat(Tr("Wipe and run"), " \"", avd.DisplayName, "\"?");
             const DialogResult result = SimpleDialog(
                 {.Id = "WipeAndRun###WipeAndRunDialog",
                  .IsOpen = context.UI.ShowWipeAndRunDialog,
@@ -169,7 +170,8 @@ namespace CoreDeck {
         }
 
         constexpr ImGuiWindowFlags FLAGS = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
-        ImGui::Begin("Available AVDs (Android Virtual Device)###AVDs", nullptr, FLAGS);
+        const std::string windowTitle = TrLabel("Available AVDs (Android Virtual Device)###AVDs");
+        ImGui::Begin(windowTitle.c_str(), nullptr, FLAGS);
 
         auto openCreateAvdDialog = [&context] {
             context.AvdCreationWork.CreationData = {};
@@ -203,7 +205,7 @@ namespace CoreDeck {
             RefreshAvds(context);
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Refresh the AVD list");
+            ImGui::SetTooltip("%s", Tr("Refresh the AVD list"));
         }
 
         ImGui::SameLine();
@@ -212,7 +214,7 @@ namespace CoreDeck {
             openCreateAvdDialog();
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Create new AVD");
+            ImGui::SetTooltip("%s", Tr("Create new AVD"));
         }
 
         if (context.Catalog.SelectedAvd >= 0) {
@@ -231,7 +233,7 @@ namespace CoreDeck {
                     LaunchAvd(context, avd, false);
                 }
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Run the selected AVD");
+                    ImGui::SetTooltip("%s", Tr("Run the selected AVD"));
                 }
                 ImGui::SameLine();
                 if (WarningButton(IconWithLabel(Icons::TERMINAL, "Wipe & Run").c_str())) {
@@ -250,7 +252,7 @@ namespace CoreDeck {
                     }
                 }
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Delete currently selected AVD");
+                    ImGui::SetTooltip("%s", Tr("Delete currently selected AVD"));
                 }
             }
         }
@@ -260,7 +262,7 @@ namespace CoreDeck {
         ImGui::Separator();
 
         if (context.Catalog.Avds.empty()) {
-            ImGui::TextDisabled("No AVDs found");
+            ImGui::TextDisabled("%s", Tr("No AVDs found"));
             ImGui::End();
             return;
         }
@@ -273,7 +275,7 @@ namespace CoreDeck {
             PersistAppSettings(context);
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", sortDirTooltip);
+            ImGui::SetTooltip("%s", Tr(sortDirTooltip));
         }
 
         ImGui::SameLine();
@@ -282,7 +284,7 @@ namespace CoreDeck {
         const int currentSortIdx = static_cast<int>(context.Catalog.SortMode);
         {
             ComboStyle cs;
-            if (ImGui::BeginCombo("##AvdSort", SORT_MODE_LABELS[currentSortIdx])) {
+            if (ImGui::BeginCombo("##AvdSort", Tr(SORT_MODE_LABELS[currentSortIdx]))) {
                 for (int i = 0; i < SORT_MODE_COUNT; i++) {
                     const bool selected = currentSortIdx == i;
                     if (RoundedSelectable(SORT_MODE_LABELS[i], selected)) {
@@ -326,7 +328,7 @@ namespace CoreDeck {
         }
 
         if (filtered.empty()) {
-            ImGui::TextDisabled("No matching AVDs");
+            ImGui::TextDisabled("%s", Tr("No matching AVDs"));
             ImGui::End();
             return;
         }
@@ -340,7 +342,7 @@ namespace CoreDeck {
             ImGui::PushID(i);
             const char *avdStatusText = isRunning ? "Running..." : "Ready";
             const ImVec4 avdStatusColor = isRunning ? HexColor(Colors::POSITIVE) : HexColor(Colors::TEXT_MUTED);
-            const std::string avdRightText = StrConcat(AvdTypeLabel(avd), " - ", avdStatusText);
+            const std::string avdRightText = StrConcat(Tr(AvdTypeLabel(avd)), " - ", Tr(avdStatusText));
             const auto [Icon, Color] = DeviceIconStyleFor(avd.Device);
             bool renameClicked = false;
             if (SelectableItem(

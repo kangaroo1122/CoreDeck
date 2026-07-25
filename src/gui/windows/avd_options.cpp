@@ -7,6 +7,7 @@
 #include "avd_options.h"
 #include <cstddef>
 #include "../application.h"
+#include "../localization.h"
 #include "../widgets.h"
 
 namespace CoreDeck {
@@ -17,15 +18,15 @@ namespace CoreDeck {
 
         constexpr ImGuiWindowFlags FLAGS = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
 
-        std::string panelTitle = "Options";
+        std::string panelTitle = Tr("Options");
         if (context.Catalog.SelectedAvd >= 0 && context.Catalog.SelectedAvd < context.Catalog.Avds.size()) {
-            panelTitle = "Options - " + context.Catalog.Avds[context.Catalog.SelectedAvd].DisplayName;
+            panelTitle = StrConcat(Tr("Options"), " - ", context.Catalog.Avds[context.Catalog.SelectedAvd].DisplayName);
         }
 
         ImGui::Begin((panelTitle + "###Options").c_str(), nullptr, FLAGS);
 
         if (context.Catalog.SelectedAvd < 0) {
-            ImGui::TextDisabled("Select an AVD to configure options");
+            ImGui::TextDisabled("%s", Tr("Select an AVD to configure options"));
             ImGui::End();
             return;
         }
@@ -64,7 +65,7 @@ namespace CoreDeck {
                                 char buffer[256];
                                 strncpy(buffer, TextInput.c_str(), sizeof(buffer) - 1);
                                 buffer[sizeof(buffer) - 1] = '\0';
-                                if (ImGui::InputTextWithHint("##val", Hint.c_str(), buffer, sizeof(buffer))) {
+                                if (ImGui::InputTextWithHint("##val", Tr(Hint.c_str()), buffer, sizeof(buffer))) {
                                     TextInput = buffer;
                                     optionsChanged = true;
                                 }
@@ -75,7 +76,7 @@ namespace CoreDeck {
                                 ImGui::SetNextItemWidth(-1.0F);
                                 const char *selectedLabel = EmulatorOptionItemDisplayLabel(Flag, Items[SelectedItem]);
                                 ComboStyle cs;
-                                if (ImGui::BeginCombo("##selection", selectedLabel)) {
+                                if (ImGui::BeginCombo("##selection", Tr(selectedLabel))) {
                                     for (int i = 0; i < Items.size(); ++i) {
                                         const bool isSelected = SelectedItem == i;
                                         const char *itemLabel = EmulatorOptionItemDisplayLabel(Flag, Items[i]);

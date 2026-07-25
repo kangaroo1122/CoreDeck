@@ -19,6 +19,7 @@
 #include "../core/sdk.h"
 #include "../core/skin.h"
 #include "../core/system_image.h"
+#include "localization.h"
 #include "theme.h"
 
 struct GLFWwindow;
@@ -112,6 +113,8 @@ namespace CoreDeck {
             bool ConfirmBeforeWipeAndRun = true;
             bool CrashReportingEnabled = true;
             ThemeMode Theme = ThemeMode::Dark;
+            AppLanguage Language = AppLanguage::English;
+            std::string CustomCjkFontPath;
             std::string JavaHomePath;
         } Prefs;
 
@@ -134,6 +137,7 @@ namespace CoreDeck {
             bool ShowLogPanel = true;
             GLFWwindow *MainWindow = nullptr;
             bool HideInvalidSdkPathBanner = false;
+            bool FontReloadRequested = false;
         } UI;
 
         struct AvdRenameWork {

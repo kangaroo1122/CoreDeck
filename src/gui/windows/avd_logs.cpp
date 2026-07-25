@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cstddef>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@
 
 #include "avd_logs.h"
 #include "../context.h"
+#include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"
 #include "../../core/log_filter.h"
@@ -54,11 +56,13 @@ namespace CoreDeck {
         PanelView BuildView(const PanelInputs &inputs, const Context::LogViewState &state) {
             PanelView view;
             if (!inputs.HasSelection) {
-                view.Placeholder = "Select an AVD to view logs";
+                view.Placeholder = Tr("Select an AVD to view logs");
                 return view;
             }
             if (!inputs.Log) {
-                view.Placeholder = "Run the \"" + inputs.AvdName + "\" AVD to view logs";
+                char buffer[256];
+                std::snprintf(buffer, sizeof(buffer), Tr("Run the \"%s\" AVD to view logs"), inputs.AvdName.c_str());
+                view.Placeholder = buffer;
                 return view;
             }
 
@@ -70,7 +74,7 @@ namespace CoreDeck {
             view.HasContent = !view.Filter.Joined.empty();
 
             if (!view.HasContent) {
-                view.Placeholder = lines.empty() ? "No available logs to view" : "No matching log entries found";
+                view.Placeholder = lines.empty() ? Tr("No available logs to view") : Tr("No matching log entries found");
             }
             return view;
         }
@@ -155,7 +159,7 @@ namespace CoreDeck {
                 ImGui::PopStyleColor();
             }
             if (regexInvalid && ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Invalid regex: %s", view.Filter.RegexError.c_str());
+                ImGui::SetTooltip(Tr("Invalid regex: %s"), view.Filter.RegexError.c_str());
             }
             if (edited) {
                 state.Search = searchBuffer;
@@ -293,7 +297,8 @@ namespace CoreDeck {
             return;
         }
 
-        ImGui::Begin("Output Log");
+        const std::string title = TrLabel("Output Log###Output Log");
+        ImGui::Begin(title.c_str());
 
         const PanelInputs inputs = ResolveInputs(context);
         Context::LogViewState scratch{};

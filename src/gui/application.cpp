@@ -27,6 +27,8 @@
 #endif
 
 #include "application.h"
+#include "fonts.h"
+#include "localization.h"
 #include "theme.h"
 #include "../core/app_settings.h"
 #include "../core/paths.h"
@@ -256,7 +258,7 @@ namespace CoreDeck {
     }
 
     void Application::m_LoadFonts() const {
-        const ImGuiIO &io = ImGui::GetIO();
+        ImGuiIO &io = ImGui::GetIO();
 
         const std::string resourcesDir = Paths::GetResourcesDirectory();
         const std::string textFontPath = Paths::JoinPaths(
@@ -271,6 +273,7 @@ namespace CoreDeck {
         constexpr float BASE_ICON_SIZE = 12.0F;
         constexpr float BASE_GLYPH_MIN_ADVANCE = 16.0F;
 
+        ImFont *textFont = nullptr;
         if (std::filesystem::exists(textFontPath)) {
             static constexpr ImWchar TEXT_RANGES[] = {
                 0x0020,
@@ -279,7 +282,32 @@ namespace CoreDeck {
                 0x206F,
                 0,
             };
-            io.Fonts->AddFontFromFileTTF(textFontPath.c_str(), BASE_TEXT_SIZE * dpi, nullptr, TEXT_RANGES);
+            textFont = io.Fonts->AddFontFromFileTTF(textFontPath.c_str(), BASE_TEXT_SIZE * dpi, nullptr, TEXT_RANGES);
+        }
+
+        const bool hasValidCustomCjkFont = IsSupportedFontPath(m_Context.Prefs.CustomCjkFontPath);
+        const std::string automaticCjkFontPath = FindSystemCjkFontPath();
+        const std::string cjkFontPath = hasValidCustomCjkFont
+                                            ? m_Context.Prefs.CustomCjkFontPath
+                                            : automaticCjkFontPath;
+
+        if (IsSupportedFontPath(cjkFontPath)) {
+            static ImVector<ImWchar> cjkGlyphRanges;
+            ImFontGlyphRangesBuilder glyphBuilder;
+            glyphBuilder.AddRanges(io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+            glyphBuilder.AddText(SimplifiedChineseGlyphText());
+            cjkGlyphRanges.clear();
+            glyphBuilder.BuildRanges(&cjkGlyphRanges);
+
+            ImFontConfig cjkConfig;
+            cjkConfig.MergeMode = textFont != nullptr;
+            cjkConfig.PixelSnapH = true;
+            io.Fonts->AddFontFromFileTTF(
+                cjkFontPath.c_str(),
+                BASE_TEXT_SIZE * dpi,
+                &cjkConfig,
+                cjkGlyphRanges.Data
+            );
         }
 
         if (std::filesystem::exists(iconFontPath)) {
@@ -291,6 +319,20 @@ namespace CoreDeck {
             static constexpr ImWchar ICON_RANGES[] = {0xf000, 0xf8ff, 0};
             io.Fonts->AddFontFromFileTTF(iconFontPath.c_str(), BASE_ICON_SIZE * dpi, &iconConfig, ICON_RANGES);
         }
+    }
+
+    void Application::m_RebuildFonts() {
+        ImGuiIO &io = ImGui::GetIO();
+        io.Fonts->Clear();
+        m_LoadFonts();
+    }
+
+    void Application::m_HandleFontReloadRequest() {
+        if (!m_Context.UI.FontReloadRequested) {
+            return;
+        }
+        m_Context.UI.FontReloadRequested = false;
+        m_RebuildFonts();
     }
 
     void Application::m_ApplyDpiScale() {
@@ -333,10 +375,7 @@ namespace CoreDeck {
             self->m_FontPixelScale = xscale;
             ImGui::GetStyle().FontScaleDpi = 1.0F;
 
-            ImGuiIO &io = ImGui::GetIO();
-            io.Fonts->Clear();
-            self->m_LoadFonts();
-            io.Fonts->Build();
+            self->m_RebuildFonts();
 
             ApplyCustomImGuiTheme(self->m_Context.Prefs.Theme, self->m_DpiScale);
         });
@@ -348,6 +387,8 @@ namespace CoreDeck {
             }
 
             auto *self = static_cast<Application *>(glfwGetWindowUserPointer(w));
+
+            self->m_HandleFontReloadRequest();
 
             glViewport(0, 0, width, height);
 
@@ -372,6 +413,8 @@ namespace CoreDeck {
             const bool hovered = glfwGetWindowAttrib(m_Window, GLFW_HOVERED) != 0;
             const double timeout = focused && hovered ? 1.0 / 60.0 : 0.25;
             glfwWaitEventsTimeout(timeout);
+
+            m_HandleFontReloadRequest();
 
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
@@ -463,6 +506,8 @@ namespace CoreDeck {
         s.ConfirmBeforeWipeAndRun = context.Prefs.ConfirmBeforeWipeAndRun;
         s.CrashReportingEnabled = context.Prefs.CrashReportingEnabled;
         s.ThemeMode = static_cast<int>(context.Prefs.Theme);
+        s.Language = static_cast<int>(context.Prefs.Language);
+        s.CustomCjkFontPath = context.Prefs.CustomCjkFontPath;
         s.JavaHomePath = context.Prefs.JavaHomePath;
         s.ShowAvdListPanel = context.UI.ShowAvdListPanel;
         s.ShowOptionsPanel = context.UI.ShowOptionsPanel;
@@ -479,6 +524,11 @@ namespace CoreDeck {
         context.Prefs.ConfirmBeforeWipeAndRun = settings.ConfirmBeforeWipeAndRun;
         context.Prefs.CrashReportingEnabled = settings.CrashReportingEnabled;
         context.Prefs.Theme = settings.ThemeMode == static_cast<int>(ThemeMode::Light) ? ThemeMode::Light : ThemeMode::Dark;
+        context.Prefs.Language = settings.Language == static_cast<int>(AppLanguage::SimplifiedChinese)
+                                     ? AppLanguage::SimplifiedChinese
+                                     : AppLanguage::English;
+        SetCurrentLanguage(context.Prefs.Language);
+        context.Prefs.CustomCjkFontPath = settings.CustomCjkFontPath;
         context.Prefs.JavaHomePath = settings.JavaHomePath;
         context.Host.Sdk.JavaHomePath = settings.JavaHomePath;
         context.Host.Manager.SetSdk(context.Host.Sdk);

@@ -6,13 +6,15 @@
 
 #include "../widgets.h"
 #include "../context.h"
+#include "../localization.h"
 #include "../theme.h"
 #include "about.h"
 
 namespace CoreDeck {
     void BuildAboutWindow(Context &context) {
-        if (context.UI.ShowAboutDialog && !ImGui::IsPopupOpen("About CoreDeck")) {
-            ImGui::OpenPopup("About CoreDeck");
+        constexpr const char *TITLE = "About CoreDeck###About CoreDeck";
+        if (context.UI.ShowAboutDialog && !ImGui::IsPopupOpen(TITLE)) {
+            ImGui::OpenPopup(TITLE);
         }
 
         const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
@@ -20,7 +22,7 @@ namespace CoreDeck {
         ImGui::SetNextWindowSize(ImVec2(Em(65.0F), 0), ImGuiCond_Appearing);
 
 
-        if (RoundedBeginPopupModal("About CoreDeck", &context.UI.ShowAboutDialog, WINDOW_NO_RESIZE_FLAGS)) {
+        if (RoundedBeginPopupModal(TITLE, &context.UI.ShowAboutDialog, WINDOW_NO_RESIZE_FLAGS)) {
             const auto centerCursor = [](const float textWidth) {
                 ImGui::SetCursorPosX(
                     ((ImGui::GetContentRegionAvail().x - textWidth) * 0.5F) + ImGui::GetCursorStartPos().x
@@ -32,7 +34,16 @@ namespace CoreDeck {
             ImGui::TextColored(HexColor(Colors::TEXT_PRIMARY), COREDECK_TITLE);
             ImGui::PopFont();
 
-            const std::string version = "Version " COREDECK_VERSION " (Build " COREDECK_BUILD_NUMBER ")";
+            const std::string version = StrConcat(
+                Tr("Version"),
+                " ",
+                COREDECK_VERSION,
+                " (",
+                Tr("Build"),
+                " ",
+                COREDECK_BUILD_NUMBER,
+                ")"
+            );
             centerCursor(ImGui::CalcTextSize(version.c_str()).x);
             ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "%s", version.c_str());
 
@@ -42,7 +53,7 @@ namespace CoreDeck {
 
             const auto *const desc = COREDECK_DESCRIPTION;
             centerCursor(ImGui::CalcTextSize(desc).x);
-            ImGui::TextUnformatted(desc);
+            ImGui::TextUnformatted(Tr(desc));
 
             ImGui::Spacing();
             ImGui::Spacing();

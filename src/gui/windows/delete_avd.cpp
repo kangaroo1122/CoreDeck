@@ -4,6 +4,7 @@
 
 #include "delete_avd.h"
 #include "../application.h"
+#include "../localization.h"
 #include "../widgets.h"
 #include "../../core/avd.h"
 
@@ -36,7 +37,7 @@ namespace CoreDeck {
         }
 
         const auto &avd = context.Catalog.Avds[context.Catalog.SelectedAvd];
-        const std::string title = "Delete \"" + avd.DisplayName + "\"?";
+        const std::string title = StrConcat(Tr("Delete"), " \"", avd.DisplayName, "\"?");
         const bool isDeleting = context.Jobs.AvdDeletion.Busy.load();
         const DialogResult result = SimpleDialog(
             {.Id = "Delete###DeleteAvdDialog",

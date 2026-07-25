@@ -8,6 +8,7 @@
 
 #include "rename_avd.h"
 #include "../application.h"
+#include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"
 #include "../../core/avd.h"
@@ -51,21 +52,21 @@ namespace CoreDeck {
         ImGui::SetNextWindowSize(ImVec2(Em(54.0F), 0), ImGuiCond_Appearing);
 
         if (RoundedBeginPopupModal(TITLE, &context.UI.ShowRenameAvdDialog, WINDOW_AUTO_RESIZE_FLAGS)) {
-            ImGui::Text("Display Name");
+            ImGui::Text("%s", Tr("Display Name"));
             ImGui::SetNextItemWidth(-1.0F);
             ImGui::InputTextWithHint(
                 "##AvdDisplayName",
-                "Leave empty to use the internal name",
+                Tr("Leave empty to use the internal name"),
                 context.AvdRenameWork.DisplayNameBuffer,
                 IM_ARRAYSIZE(context.AvdRenameWork.DisplayNameBuffer)
             );
 
             ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_SUBTLE));
-            ImGui::TextWrapped("Internal name remains unchanged: %s", context.AvdRenameWork.TargetName.c_str());
+            ImGui::TextWrapped(Tr("Internal name remains unchanged: %s"), context.AvdRenameWork.TargetName.c_str());
             ImGui::PopStyleColor();
 
             if (!context.AvdRenameWork.Error.empty()) {
-                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", context.AvdRenameWork.Error.c_str());
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(context.AvdRenameWork.Error.c_str()));
             }
 
             ImGui::Spacing();

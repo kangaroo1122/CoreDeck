@@ -8,6 +8,7 @@
 #include "imgui.h"
 
 #include "skin.h"
+#include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"
 #include "../../core/utilities.h"
@@ -37,11 +38,11 @@ namespace CoreDeck {
     std::string SkinPreviewLabel(const Context &context) {
         const auto &work = context.AvdCreationWork;
         if (work.SelectedSkin <= 0 || work.Skins.empty()) {
-            return "No skin (plain emulator window)";
+            return Tr("No skin (plain emulator window)");
         }
         const int idx = std::clamp(work.SelectedSkin - 1, 0, static_cast<int>(work.Skins.size()) - 1);
         const auto &s = work.Skins[idx];
-        return StrConcat(s.DisplayName, " - ", SkinSourceLabel(s.Source));
+        return StrConcat(s.DisplayName, " - ", Tr(SkinSourceLabel(s.Source)));
     }
 
 
@@ -74,7 +75,7 @@ namespace CoreDeck {
             );
 
             ImGui::Spacing();
-            ImGui::Text("Skins");
+            ImGui::Text("%s", Tr("Skins"));
             ImGui::Spacing();
 
             {
@@ -83,8 +84,9 @@ namespace CoreDeck {
                 ImGui::BeginChild("##SkinTableFrame", ImVec2(-1.0F, Eh(16.0F)), 1, ImGuiWindowFlags_NoScrollbar);
                 if (ImGui::BeginTable("##SkinTable", 2, PICKER_TABLE_FLAGS, ImVec2(-1.0F, -1.0F))) {
                     ImGui::TableSetupScrollFreeze(0, 1);
-                    ImGui::TableSetupColumn("  Name", ImGuiTableColumnFlags_WidthStretch, 2.8F);
-                    ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed, Em(15.0F));
+                    const std::string nameColumn = StrConcat("  ", Tr("Name"));
+                    ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 2.8F);
+                    ImGui::TableSetupColumn(Tr("Source"), ImGuiTableColumnFlags_WidthFixed, Em(15.0F));
                     ImGui::TableHeadersRow();
 
                     int visibleCount = 0;
@@ -92,7 +94,7 @@ namespace CoreDeck {
                     const bool noSkinSelected = work.PendingSelectedSkin == 0;
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
-                    const std::string noSkinLabel = StrConcat("  ", Icons::GEAR, "  No skin (plain emulator window)##SkinNone");
+                    const std::string noSkinLabel = StrConcat("  ", Icons::GEAR, "  ", Tr("No skin (plain emulator window)"), "##SkinNone");
                     if (ImGui::Selectable(noSkinLabel.c_str(), noSkinSelected, ImGuiSelectableFlags_SpanAllColumns)) {
                         work.PendingSelectedSkin = 0;
                     }
@@ -123,14 +125,14 @@ namespace CoreDeck {
                         }
 
                         ImGui::TableNextColumn();
-                        ImGui::TextColored(HexColor(SourceColor(skin.Source)), "%s", SkinSourceLabel(skin.Source));
+                        ImGui::TextColored(HexColor(SourceColor(skin.Source)), "%s", Tr(SkinSourceLabel(skin.Source)));
                         visibleCount++;
                     }
 
                     if (visibleCount == 0) {
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
-                        ImGui::TextDisabled("No skins match the search.");
+                        ImGui::TextDisabled("%s", Tr("No skins match the search."));
                     }
 
                     ImGui::EndTable();
@@ -140,7 +142,7 @@ namespace CoreDeck {
 
             if (work.Skins.empty()) {
                 ImGui::Spacing();
-                ImGui::TextWrapped("No skins were found in your SDK. Skins typically ship with system images and the SDK skins folder.");
+                ImGui::TextWrapped("%s", Tr("No skins were found in your SDK. Skins typically ship with system images and the SDK skins folder."));
             }
 
             ImGui::Spacing();

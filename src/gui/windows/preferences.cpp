@@ -2,14 +2,19 @@
 // Created by AbdulMuaz Aqeel on 18/04/2026.
 //
 
+#include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <sstream>
+#include <vector>
 
 #include "imgui.h"
 #include "imgui_internal.h"
 
 #include "preferences.h"
 #include "../widgets.h"
+#include "../fonts.h"
+#include "../localization.h"
 #include "../theme.h"
 #include "../application.h"
 #include "../../core/paths.h"
@@ -80,9 +85,10 @@ namespace CoreDeck {
             }
 
             const ImU32 textColor = ImGui::GetColorU32(selected ? HexColor(Colors::TEXT_PRIMARY) : HexColor(Colors::TEXT_SUBTLE));
+            const char *translatedLabel = Tr(item.Label);
             const float textY = bb.Min.y + ((height - ImGui::GetTextLineHeight()) * 0.5F);
             window->DrawList->AddText(ImVec2(bb.Min.x + 14.0F, textY), textColor, item.Icon);
-            window->DrawList->AddText(ImVec2(bb.Min.x + 38.0F, textY), textColor, item.Label);
+            window->DrawList->AddText(ImVec2(bb.Min.x + 38.0F, textY), textColor, translatedLabel);
 
             ImGui::PopID();
             return pressed;
@@ -90,11 +96,11 @@ namespace CoreDeck {
 
         void SectionHeader(const char *title, const char *subtitle) {
             ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_PRIMARY));
-            ImGui::TextUnformatted(title);
+            ImGui::TextUnformatted(Tr(title));
             ImGui::PopStyleColor();
             if (subtitle && *subtitle) {
                 ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_SUBTLE));
-                ImGui::TextWrapped("%s", subtitle);
+                ImGui::TextWrapped("%s", Tr(subtitle));
                 ImGui::PopStyleColor();
             }
             ImGui::Spacing();
@@ -104,12 +110,12 @@ namespace CoreDeck {
 
         bool CheckboxRow(const char *id, const char *title, const char *tooltip, bool *value) {
             ImGui::PushID(id);
-            const bool changed = ImGui::Checkbox(title, value);
+            const bool changed = ImGui::Checkbox(Tr(title), value);
             if (tooltip && *tooltip) {
                 ImGui::SameLine();
                 ImGui::TextColored(HexColor(Colors::TEXT_MUTED), Icons::INFO);
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", tooltip);
+                    ImGui::SetTooltip("%s", Tr(tooltip));
                 }
             }
             ImGui::Spacing();
@@ -182,12 +188,43 @@ namespace CoreDeck {
             state.Text = firstLine.empty() ? "Unable to read Java version." : firstLine;
         }
 
+        void LabelText(const char *label) {
+            ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_PRIMARY));
+            ImGui::TextUnformatted(Tr(label));
+            ImGui::PopStyleColor();
+        }
+
+        void RequestFontReload(Context &context) {
+            SetCurrentLanguage(context.Prefs.Language);
+            context.UI.FontReloadRequested = true;
+            PersistAppSettings(context);
+        }
+
+        bool CjkFontPathInCandidates(const std::vector<std::string> &candidates, const std::string &path) {
+            return std::ranges::find(candidates, path) != candidates.end();
+        }
+
+        std::string CjkFontPreviewLabel(
+            const std::string &customPath,
+            const bool customPathValid,
+            const std::vector<std::string> &candidates
+        ) {
+            if (customPath.empty()) {
+                if (!candidates.empty()) {
+                    return StrConcat(Tr("Automatic"), " - ", FontPathDisplayName(candidates.front()));
+                }
+                return Tr("Automatic");
+            }
+            if (customPathValid) {
+                return FontPathDisplayName(customPath);
+            }
+            return Tr("Selected font is no longer available.");
+        }
+
         void DrawAppearanceSection(Context &context) {
             SectionHeader("Appearance", "Visual preferences for CoreDeck.");
 
-            ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_PRIMARY));
-            ImGui::TextUnformatted("Theme");
-            ImGui::PopStyleColor();
+            LabelText("Theme");
 
             if (CategoryChip("Dark###ThemeDark", context.Prefs.Theme == ThemeMode::Dark)) {
                 context.Prefs.Theme = ThemeMode::Dark;
@@ -202,6 +239,147 @@ namespace CoreDeck {
             }
 
             ImGui::Dummy(ImVec2(0, 4));
+
+            LabelText("Language");
+            ImGui::SetNextItemWidth(Em(30.0F));
+            {
+                static constexpr AppLanguage LANGUAGE_OPTIONS[] = {
+                    AppLanguage::English,
+                    AppLanguage::SimplifiedChinese,
+                };
+                ComboStyle cs;
+                if (ImGui::BeginCombo("##AppLanguage", LanguageDisplayName(context.Prefs.Language))) {
+                    for (const AppLanguage language: LANGUAGE_OPTIONS) {
+                        const bool selected = context.Prefs.Language == language;
+                        if (RoundedSelectable(LanguageDisplayName(language), selected)) {
+                            context.Prefs.Language = language;
+                            RequestFontReload(context);
+                        }
+                        if (selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+
+            ImGui::Dummy(ImVec2(0, 4));
+
+            LabelText("CJK fallback font");
+            ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_SUBTLE));
+            ImGui::TextWrapped("%s", Tr("Used for Chinese glyphs while keeping the built-in UI font."));
+            ImGui::PopStyleColor();
+
+            static const char *fontError = nullptr;
+            const std::vector<std::string> cjkCandidates = FindSystemCjkFontPaths();
+            const bool customPathValid = IsSupportedFontPath(context.Prefs.CustomCjkFontPath);
+            const std::string preview = CjkFontPreviewLabel(
+                context.Prefs.CustomCjkFontPath,
+                customPathValid,
+                cjkCandidates
+            );
+
+            const float chooseWidth = Em(15.0F);
+            const float spacing = ImGui::GetStyle().ItemSpacing.x;
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - chooseWidth - spacing);
+            {
+                ComboStyle cs;
+                if (ImGui::BeginCombo("##CjkFont", preview.c_str())) {
+                    if (RoundedSelectable("Automatic (recommended)###CjkFontAutomatic", context.Prefs.CustomCjkFontPath.empty())) {
+                        context.Prefs.CustomCjkFontPath.clear();
+                        fontError = nullptr;
+                        RequestFontReload(context);
+                    }
+
+                    if (!cjkCandidates.empty()) {
+                        ImGui::Separator();
+                        ImGui::TextDisabled("%s", Tr("System candidates"));
+                        for (int i = 0; i < static_cast<int>(cjkCandidates.size()); i++) {
+                            const auto &candidate = cjkCandidates[i];
+                            const bool selected =
+                                !context.Prefs.CustomCjkFontPath.empty() &&
+                                context.Prefs.CustomCjkFontPath == candidate;
+                            const std::string label = StrConcat(
+                                FontPathDisplayName(candidate),
+                                "###CjkFontCandidate",
+                                std::to_string(i)
+                            );
+                            if (RoundedSelectable(label.c_str(), selected)) {
+                                context.Prefs.CustomCjkFontPath = candidate;
+                                fontError = nullptr;
+                                RequestFontReload(context);
+                            }
+                            if (selected) {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                    }
+
+                    if (customPathValid && !CjkFontPathInCandidates(cjkCandidates, context.Prefs.CustomCjkFontPath)) {
+                        ImGui::Separator();
+                        ImGui::TextDisabled("%s", Tr("Manual font"));
+                        const std::string manualLabel = StrConcat(
+                            FontPathDisplayName(context.Prefs.CustomCjkFontPath),
+                            "###CjkFontManual"
+                        );
+                        if (RoundedSelectable(manualLabel.c_str(), true)) {
+                            fontError = nullptr;
+                        }
+                        ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+
+            ImGui::SameLine();
+            static constexpr const char *FONT_FILTERS[] = {"*.ttf", "*.otf", "*.ttc"};
+            if (PrimaryButton("Choose Font...", true, ImVec2(chooseWidth, 0))) {
+                const auto picked = FileDialog::PickFile(
+                    Tr("Select a CJK font file"),
+                    FONT_FILTERS,
+                    IM_ARRAYSIZE(FONT_FILTERS),
+                    Tr("Font files"),
+                    context.Prefs.CustomCjkFontPath
+                );
+                if (picked.has_value()) {
+                    if (IsSupportedFontPath(*picked)) {
+                        context.Prefs.CustomCjkFontPath = *picked;
+                        fontError = nullptr;
+                        RequestFontReload(context);
+                    } else {
+                        fontError = "The selected file is not a supported font.";
+                    }
+                }
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", Tr("Choose a .ttf, .otf, or .ttc font file."));
+            }
+
+            const std::string effectivePath =
+                customPathValid
+                    ? context.Prefs.CustomCjkFontPath
+                    : (!cjkCandidates.empty() ? cjkCandidates.front() : std::string{});
+
+            if (fontError != nullptr) {
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(fontError));
+            } else if (!context.Prefs.CustomCjkFontPath.empty() && !customPathValid) {
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr("Selected font is no longer available."));
+            } else if (effectivePath.empty()) {
+                ImGui::TextColored(HexColor(Colors::WARNING), "%s", Tr("No system CJK font detected."));
+            } else {
+                const char *pathLabel = context.Prefs.CustomCjkFontPath.empty() ? "Auto-detected font" : "Selected font";
+                ImGui::TextDisabled("%s", Tr(pathLabel));
+                ImGui::SameLine();
+                ImGui::TextWrapped("%s", effectivePath.c_str());
+            }
+
+            if (!context.Prefs.CustomCjkFontPath.empty()) {
+                if (PrimaryButton("Use Automatic", true)) {
+                    context.Prefs.CustomCjkFontPath.clear();
+                    fontError = nullptr;
+                    RequestFontReload(context);
+                }
+            }
         }
 
         void DrawGeneralSection(Context &context) {
@@ -257,16 +435,14 @@ namespace CoreDeck {
         ) {
             SectionHeader("Android SDK", "Where CoreDeck looks for the emulator and command-line tools.");
 
-            ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_PRIMARY));
-            ImGui::TextUnformatted("SDK root");
-            ImGui::PopStyleColor();
+            LabelText("SDK root");
             const float browseWidth = Em(12.0F);
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - browseWidth - spacing);
-            ImGui::InputTextWithHint("##SdkPrefs", "Path to Android SDK", sdkPathBuffer, sdkBufferSize);
+            ImGui::InputTextWithHint("##SdkPrefs", Tr("Path to Android SDK"), sdkPathBuffer, sdkBufferSize);
             ImGui::SameLine();
             if (PrimaryButton("Browse...", true, ImVec2(browseWidth, 0))) {
-                if (const auto picked = FileDialog::PickFolder("Select Android SDK directory", sdkPathBuffer)) {
+                if (const auto picked = FileDialog::PickFolder(Tr("Select Android SDK directory"), sdkPathBuffer)) {
                     strncpy(sdkPathBuffer, picked->c_str(), sdkBufferSize - 1);
                     sdkPathBuffer[sdkBufferSize - 1] = '\0';
                 }
@@ -277,16 +453,17 @@ namespace CoreDeck {
 
             if (!pathStr.empty()) {
                 if (pathOk) {
-                    ImGui::TextColored(HexColor(Colors::POSITIVE), "Valid Android SDK path.");
+                    ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("Valid Android SDK path."));
                 } else {
                     ImGui::TextColored(
                         HexColor(Colors::NEGATIVE),
-                        "Not a valid SDK (need emulator and cmdline-tools with avdmanager)."
+                        "%s",
+                        Tr("Not a valid SDK (need emulator and cmdline-tools with avdmanager).")
                     );
                 }
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_SUBTLE));
-                ImGui::TextUnformatted("Leave empty to auto-detect from ANDROID_HOME or default install paths.");
+                ImGui::TextUnformatted(Tr("Leave empty to auto-detect from ANDROID_HOME or default install paths."));
                 ImGui::PopStyleColor();
             }
 
@@ -303,7 +480,7 @@ namespace CoreDeck {
                 PersistAppSettings(context);
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !pathOk) {
-                ImGui::SetTooltip("Fix the path or validation errors before applying.");
+                ImGui::SetTooltip("%s", Tr("Fix the path or validation errors before applying."));
             }
 
             ImGui::SameLine();
@@ -320,7 +497,7 @@ namespace CoreDeck {
                 PersistAppSettings(context);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Forget the saved override and detect the SDK from ANDROID_HOME / default paths.");
+                ImGui::SetTooltip("%s", Tr("Forget the saved override and detect the SDK from ANDROID_HOME / default paths."));
             }
         }
 
@@ -333,14 +510,12 @@ namespace CoreDeck {
             SectionHeader("JDK", "Java used by Android SDK command-line tools launched from CoreDeck.");
             const float browseWidth = Em(12.0F);
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
-            ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_PRIMARY));
-            ImGui::TextUnformatted("JDK home");
-            ImGui::PopStyleColor();
+            LabelText("JDK home");
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - browseWidth - spacing);
-            ImGui::InputTextWithHint("##JavaHomePrefs", "Path to JDK home", javaHomeBuffer, javaHomeBufferSize);
+            ImGui::InputTextWithHint("##JavaHomePrefs", Tr("Path to JDK home"), javaHomeBuffer, javaHomeBufferSize);
             ImGui::SameLine();
             if (PrimaryButton("Browse...", true, ImVec2(browseWidth, 0))) {
-                if (const auto picked = FileDialog::PickFolder("Select JDK home directory", javaHomeBuffer)) {
+                if (const auto picked = FileDialog::PickFolder(Tr("Select JDK home directory"), javaHomeBuffer)) {
                     const std::string normalized = NormalizeJavaHomePath(*picked);
                     strncpy(javaHomeBuffer, normalized.c_str(), javaHomeBufferSize - 1);
                     javaHomeBuffer[javaHomeBufferSize - 1] = '\0';
@@ -350,24 +525,25 @@ namespace CoreDeck {
             const std::string javaHomePath = NormalizeJavaHomePath(javaHomeBuffer);
             if (javaHomePath.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_SUBTLE));
-                ImGui::TextUnformatted("Leave empty to use the system default Java environment.");
+                ImGui::TextUnformatted(Tr("Leave empty to use the system default Java environment."));
                 ImGui::PopStyleColor();
             } else if (LooksLikeJavaHome(javaHomePath)) {
-                ImGui::TextColored(HexColor(Colors::POSITIVE), "Java executable found under this JDK home.");
+                ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("Java executable found under this JDK home."));
             } else {
                 ImGui::TextColored(
                     HexColor(Colors::NEGATIVE),
-                    "No java executable found under bin."
+                    "%s",
+                    Tr("No java executable found under bin.")
                 );
             }
 
             RefreshJavaVersionState(versionState, javaHomePath);
             if (javaHomePath.empty()) {
-                ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "%s", versionState.Text.c_str());
+                ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "%s", Tr(versionState.Text.c_str()));
             } else {
                 ImGui::TextColored(
                     versionState.HasJava ? HexColor(Colors::TEXT_SUBTLE) : HexColor(Colors::TEXT_MUTED),
-                    "Version: %s",
+                    Tr("Version: %s"),
                     versionState.Text.c_str()
                 );
             }
@@ -386,9 +562,10 @@ namespace CoreDeck {
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                 ImGui::SetTooltip(
+                    "%s",
                     canApplyJavaHome
-                        ? "Use this JDK only for Android SDK command-line tools launched by CoreDeck."
-                        : "Select a valid JDK home or clear the path to use system Java."
+                        ? Tr("Use this JDK only for Android SDK command-line tools launched by CoreDeck.")
+                        : Tr("Select a valid JDK home or clear the path to use system Java.")
                 );
             }
 
@@ -415,7 +592,7 @@ namespace CoreDeck {
         static char sdkPathBuffer[2048];
         static char javaHomeBuffer[2048];
         static JavaVersionState javaVersionState;
-        static auto activeSection = PrefsSection::General;
+        static auto activeSection = PrefsSection::Appearance;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         if (RoundedBeginPopupModal("Preferences###CoreDeckPrefs", &context.UI.ShowPreferences, WINDOW_NO_RESIZE_FLAGS)) {

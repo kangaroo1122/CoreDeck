@@ -9,6 +9,7 @@
 #include "imgui.h"
 
 #include "storage.h"
+#include "../localization.h"
 #include "../widgets.h"
 #include "../theme.h"
 #include "gui/context.h"
@@ -60,7 +61,7 @@ namespace CoreDeck {
             sv.Push(ImGuiStyleVar_WindowPadding, ImVec2(14.0F, 12.0F));
 
             ImGui::BeginChild(title, ImVec2(width, Eh(3.7F)), 1, ImGuiWindowFlags_NoScrollbar);
-            ImGui::TextDisabled("%s", title);
+            ImGui::TextDisabled("%s", Tr(title));
             ImGui::Spacing();
             ImGui::TextColored(HexColor(accentColor), "%s", value.c_str());
             ImGui::EndChild();
@@ -119,28 +120,32 @@ namespace CoreDeck {
             const auto &[TotalAvdSize, SystemImagesSize] = disk.LastScan;
             const std::uintmax_t grandTotal = TotalAvdSize + SystemImagesSize;
 
-            ImGui::Text("Statistics");
-            ImGui::TextDisabled("%s", isLoading ? "Calculating..." : "Calculated from local SDK and AVD folders");
+            ImGui::Text("%s", Tr("Statistics"));
+            ImGui::TextDisabled(
+                "%s",
+                isLoading ? Tr("Calculating...") : Tr("Calculated from local SDK and AVD folders")
+            );
 
             ImGui::Spacing();
 
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
             const float cardWidth = (ImGui::GetContentRegionAvail().x - (spacing * 2.0F)) / 3.0F;
-            DrawStorageSummaryCard("Total Storage", isLoading && !disk.Ready ? "Calculating..." : FormatFileSize(grandTotal), Colors::TEXT_PRIMARY, cardWidth);
+            const std::string loadingText = Tr("Calculating...");
+            DrawStorageSummaryCard("Total Storage", isLoading && !disk.Ready ? loadingText : FormatFileSize(grandTotal), Colors::TEXT_PRIMARY, cardWidth);
             ImGui::SameLine();
-            DrawStorageSummaryCard("AVDs", isLoading && !disk.Ready ? "Calculating..." : FormatFileSize(TotalAvdSize), Colors::STORAGE_AVD, cardWidth);
+            DrawStorageSummaryCard("AVDs", isLoading && !disk.Ready ? loadingText : FormatFileSize(TotalAvdSize), Colors::STORAGE_AVD, cardWidth);
             ImGui::SameLine();
-            DrawStorageSummaryCard("System Images", isLoading && !disk.Ready ? "Calculating..." : FormatFileSize(SystemImagesSize), Colors::STORAGE_SYSTEM_IMAGE, cardWidth);
+            DrawStorageSummaryCard("System Images", isLoading && !disk.Ready ? loadingText : FormatFileSize(SystemImagesSize), Colors::STORAGE_SYSTEM_IMAGE, cardWidth);
 
             ImGui::Spacing();
-            ImGui::TextDisabled("Breakdown");
+            ImGui::TextDisabled("%s", Tr("Breakdown"));
             DrawStorageBreakdownBar(TotalAvdSize, SystemImagesSize);
             ImGui::Spacing();
-            ImGui::TextColored(HexColor(Colors::STORAGE_AVD), "AVDs");
+            ImGui::TextColored(HexColor(Colors::STORAGE_AVD), "%s", Tr("AVDs"));
             ImGui::SameLine();
             ImGui::TextDisabled("%s", FormatFileSize(TotalAvdSize).c_str());
             ImGui::SameLine();
-            ImGui::TextColored(HexColor(Colors::STORAGE_SYSTEM_IMAGE), "System Images");
+            ImGui::TextColored(HexColor(Colors::STORAGE_SYSTEM_IMAGE), "%s", Tr("System Images"));
             ImGui::SameLine();
             ImGui::TextDisabled("%s", FormatFileSize(SystemImagesSize).c_str());
 

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "imgui.h"
+#include "localization.h"
 #include "../core/utilities.h"
 
 namespace CoreDeck {
@@ -100,7 +101,7 @@ namespace CoreDeck {
     };
 
     inline std::string IconWithLabel(const char *icon, const char *label) {
-        return StrConcat(icon, " ", label);
+        return StrConcat(icon, " ", Tr(label));
     }
 
     inline float Em(const float n = 1.0F) {

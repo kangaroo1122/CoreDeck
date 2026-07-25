@@ -7,6 +7,7 @@
 #include "imgui.h"
 
 #include "device_profile.h"
+#include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"
 #include "../../core/utilities.h"
@@ -77,7 +78,7 @@ namespace CoreDeck {
 
     std::string DeviceProfilePreviewLabel(const DeviceProfile &device) {
         const auto [Icon, Label, Color] = DeviceProfileStyleFor(device);
-        return StrConcat(device.Name, " - ", Label);
+        return StrConcat(device.Name, " - ", Tr(Label));
     }
 
     // NOLINTNEXTLINE(readability-function-size)
@@ -111,7 +112,7 @@ namespace CoreDeck {
             );
 
             ImGui::Spacing();
-            ImGui::TextDisabled("Categories");
+            ImGui::TextDisabled("%s", Tr("Categories"));
 
             static constexpr DeviceCategoryOption CATEGORY_OPTIONS[] = {
                 {.Category = DeviceCategory::All, .Label = "All"},
@@ -136,7 +137,7 @@ namespace CoreDeck {
             }
 
             ImGui::Spacing();
-            ImGui::Text("Device Profiles");
+            ImGui::Text("%s", Tr("Device Profiles"));
             ImGui::Spacing();
 
             {
@@ -145,8 +146,9 @@ namespace CoreDeck {
                 ImGui::BeginChild("##DeviceProfileTableFrame", ImVec2(-1.0F, Eh(14.0F)), 1, ImGuiWindowFlags_NoScrollbar);
                 if (ImGui::BeginTable("##DeviceProfileTable", 2, PICKER_TABLE_FLAGS, ImVec2(-1.0F, -1.0F))) {
                     ImGui::TableSetupScrollFreeze(0, 1);
-                    ImGui::TableSetupColumn("  Name", ImGuiTableColumnFlags_WidthStretch, 2.8F);
-                    ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, Em(14.0F));
+                    const std::string nameColumn = StrConcat("  ", Tr("Name"));
+                    ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 2.8F);
+                    ImGui::TableSetupColumn(Tr("Type"), ImGuiTableColumnFlags_WidthFixed, Em(14.0F));
                     ImGui::TableHeadersRow();
 
                     int visibleCount = 0;
@@ -172,13 +174,13 @@ namespace CoreDeck {
                         }
 
                         ImGui::TableNextColumn();
-                        ImGui::TextColored(HexColor(Color), "%s", Label);
+                        ImGui::TextColored(HexColor(Color), "%s", Tr(Label));
                     }
 
                     if (visibleCount == 0) {
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
-                        ImGui::TextDisabled("No device profiles match the selected form factor and search.");
+                        ImGui::TextDisabled("%s", Tr("No device profiles match the selected form factor and search."));
                     }
 
                     ImGui::EndTable();

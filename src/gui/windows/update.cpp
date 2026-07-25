@@ -6,6 +6,7 @@
 
 #include "update.h"
 #include "../../core/utilities.h"
+#include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"
 
@@ -75,9 +76,9 @@ namespace CoreDeck {
             ImGui::SetNextWindowSize(ImVec2(Em(32.0F), 0), ImGuiCond_Appearing);
 
             if (RoundedBeginPopupModal("Up to date###CoreDeckUpdateOk", &context.Updates.ShowUpToDateModal, WINDOW_NO_RESIZE_FLAGS)) {
-                ImGui::TextWrapped("You're running the latest CoreDeck release.");
+                ImGui::TextWrapped("%s", Tr("You're running the latest CoreDeck release."));
                 ImGui::Spacing();
-                ImGui::Text("Current: ");
+                ImGui::Text("%s", Tr("Current: "));
                 ImGui::SameLine(0, 0.0F);
                 ImGui::TextColored(HexColor(Colors::POSITIVE), "v%s", COREDECK_VERSION);
                 ImGui::Spacing();
@@ -109,7 +110,7 @@ namespace CoreDeck {
 
         if (RoundedBeginPopupModal("Update Available###CoreDeckUpdate", &context.Updates.ShowNewVersionModal, WINDOW_NO_RESIZE_FLAGS)) {
             ImGui::Spacing();
-            ImGui::TextUnformatted("You're currently running on");
+            ImGui::TextUnformatted(Tr("You're currently running on"));
             ImGui::SameLine();
             ImGui::TextColored(HexColor(Colors::WARNING), "v%s", COREDECK_VERSION);
             ImGui::Spacing();

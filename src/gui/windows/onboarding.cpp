@@ -6,6 +6,7 @@
 
 #include "onboarding.h"
 #include "../application.h"
+#include "../localization.h"
 #include "../widgets.h"
 #include "../theme.h"
 #include "../../core/file_dialog.h"
@@ -20,9 +21,10 @@ namespace CoreDeck {
         };
 
         void CenteredText(const char *text, const ImVec4 &color) {
-            const float width = ImGui::CalcTextSize(text).x;
+            const char *translatedText = Tr(text);
+            const float width = ImGui::CalcTextSize(translatedText).x;
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - width) * 0.5F);
-            ImGui::TextColored(color, "%s", text);
+            ImGui::TextColored(color, "%s", translatedText);
         }
 
         void VerticalCenter(const float contentHeight) {
@@ -84,12 +86,12 @@ namespace CoreDeck {
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - formWidth) * 0.5F);
             ImGui::BeginGroup();
 
-            ImGui::Text("SDK path");
+            ImGui::Text("%s", Tr("SDK path"));
             ImGui::SetNextItemWidth(formWidth - browseWidth - ImGui::GetStyle().ItemSpacing.x);
-            ImGui::InputTextWithHint("##sdk_path", "e.g. /Users/you/Library/Android/sdk", pathBuffer, pathBufferSize);
+            ImGui::InputTextWithHint("##sdk_path", Tr("e.g. /Users/you/Library/Android/sdk"), pathBuffer, pathBufferSize);
             ImGui::SameLine();
             if (PrimaryButton("Browse...", true, ImVec2(browseWidth, 0))) {
-                const auto picked = FileDialog::PickFolder("Select your Android SDK folder", pathBuffer);
+                const auto picked = FileDialog::PickFolder(Tr("Select your Android SDK folder"), pathBuffer);
                 if (picked.has_value()) {
                     strncpy(pathBuffer, picked->c_str(), pathBufferSize - 1);
                     pathBuffer[pathBufferSize - 1] = '\0';
@@ -104,20 +106,20 @@ namespace CoreDeck {
                     ImGui::TextColored(
                         HexColor(Colors::POSITIVE),
                         "%s",
-                        "Looks good. Found the Android emulator at this location."
+                        Tr("Looks good. Found the Android emulator at this location.")
                     );
                 } else {
                     ImGui::TextColored(
                         HexColor(Colors::NEGATIVE),
                         "%s",
-                        "Couldn't find the Android emulator here. Make sure this is your SDK root folder."
+                        Tr("Couldn't find the Android emulator here. Make sure this is your SDK root folder.")
                     );
                 }
             } else {
                 ImGui::TextColored(
                     HexColor(Colors::TEXT_MUTED),
                     "%s",
-                    "Choose the folder containing your Android SDK (cmdline-tools, emulator, platform-tools, etc)."
+                    Tr("Choose the folder containing your Android SDK (cmdline-tools, emulator, platform-tools, etc).")
                 );
             }
 

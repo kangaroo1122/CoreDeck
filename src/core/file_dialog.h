@@ -10,6 +10,14 @@
 
 namespace CoreDeck::FileDialog {
     std::optional<std::string> PickFolder(const std::string &title, const std::string &defaultPath = "");
+
+    std::optional<std::string> PickFile(
+        const std::string &title,
+        const char *const *filters,
+        int filterCount,
+        const std::string &filterDescription,
+        const std::string &defaultPath = ""
+    );
 }
 
 #endif // COREDECK_FILE_DIALOG_H

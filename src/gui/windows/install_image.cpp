@@ -10,6 +10,7 @@
 #include "install_image.h"
 
 #include <cmath>
+#include "../localization.h"
 #include "../widgets.h"
 #include "../theme.h"
 #include "../../core/utilities.h"
@@ -161,7 +162,7 @@ namespace CoreDeck {
 
     std::string SystemImagePreviewLabel(const SystemImage &img) {
         const auto style = SystemImageTypeStyleFor(img);
-        return StrConcat(SystemImageDisplayName(img.ApiLevel, img.DisplayName), " - ", style.Label, " - ", img.Abi);
+        return StrConcat(SystemImageDisplayName(img.ApiLevel, img.DisplayName), " - ", Tr(style.Label), " - ", img.Abi);
     }
 
     // NOLINTNEXTLINE(readability-function-size)
@@ -218,13 +219,16 @@ namespace CoreDeck {
                 if (work.AwaitingLicenseConsent) {
                     const bool licenseBusy = work.LicenseBusy.load();
 
-                    ImGui::Text("Accept Android SDK License Terms");
+                    ImGui::Text("%s", Tr("Accept Android SDK License Terms"));
                     ImGui::Spacing();
                     ImGui::TextWrapped(
-                        "Some Android SDK package licenses have not been accepted yet. "
-                        "To install this system image, you must agree to Google's Android "
-                        "SDK license terms. By clicking Agree, you confirm that you have "
-                        "read and accept the current terms."
+                        "%s",
+                        Tr(
+                            "Some Android SDK package licenses have not been accepted yet. "
+                            "To install this system image, you must agree to Google's Android "
+                            "SDK license terms. By clicking Agree, you confirm that you have "
+                            "read and accept the current terms."
+                        )
                     );
                     ImGui::Spacing();
                     if (PrimaryButton("Open license terms in browser")) {
@@ -233,7 +237,7 @@ namespace CoreDeck {
 
                     if (licenseBusy) {
                         ImGui::Spacing();
-                        ImGui::TextDisabled("Recording acceptance with the SDK Manager...");
+                        ImGui::TextDisabled("%s", Tr("Recording acceptance with the SDK Manager..."));
                     }
 
                     ImGui::Spacing();
@@ -286,7 +290,7 @@ namespace CoreDeck {
                 ImGui::InputTextWithHint("##RemoteImageSearch", searchHint.c_str(), work.SearchFilter, sizeof(work.SearchFilter));
 
                 ImGui::Spacing();
-                ImGui::TextDisabled("Images");
+                ImGui::TextDisabled("%s", Tr("Images"));
 
                 if (CategoryChip("All###ImageInstallFilterAll", work.InstallFilter == ImageInstallFilter::All)) {
                     work.InstallFilter = ImageInstallFilter::All;
@@ -299,7 +303,7 @@ namespace CoreDeck {
                 }
 
                 ImGui::Spacing();
-                ImGui::TextDisabled("Categories");
+                ImGui::TextDisabled("%s", Tr("Categories"));
 
                 static constexpr ImageCategoryOption CATEGORY_OPTIONS[] = {
                     {.Category = ImageCategory::All, .Label = "All"},
@@ -325,10 +329,10 @@ namespace CoreDeck {
                 }
 
                 ImGui::Spacing();
-                ImGui::Text("System Images");
+                ImGui::Text("%s", Tr("System Images"));
                 if (isLoading) {
                     ImGui::SameLine();
-                    ImGui::TextDisabled("Fetching available images from SDK manager...");
+                    ImGui::TextDisabled("%s", Tr("Fetching available images from SDK manager..."));
                 }
                 ImGui::Spacing();
 
@@ -338,11 +342,12 @@ namespace CoreDeck {
                     ImGui::BeginChild("##RemoteImageTableFrame", ImVec2(-1.0F, Eh(14.0F)), 1, ImGuiWindowFlags_NoScrollbar);
                     if (ImGui::BeginTable("##RemoteImageTable", 5, PICKER_TABLE_FLAGS, ImVec2(-1.0F, -1.0F))) {
                         ImGui::TableSetupScrollFreeze(0, 1);
-                        ImGui::TableSetupColumn(" Name", ImGuiTableColumnFlags_WidthStretch, 2.7F);
-                        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthStretch, 1.5F);
+                        const std::string nameColumn = StrConcat(" ", Tr("Name"));
+                        ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 2.7F);
+                        ImGui::TableSetupColumn(Tr("Type"), ImGuiTableColumnFlags_WidthStretch, 1.5F);
                         ImGui::TableSetupColumn("API", ImGuiTableColumnFlags_WidthStretch, 1.4F);
                         ImGui::TableSetupColumn("ABI", ImGuiTableColumnFlags_WidthStretch, 1.3F);
-                        ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 1.2F);
+                        ImGui::TableSetupColumn(Tr("Status"), ImGuiTableColumnFlags_WidthStretch, 1.2F);
                         ImGui::TableHeadersRow();
 
                         int visibleCount = 0;
@@ -351,7 +356,8 @@ namespace CoreDeck {
                             ImGui::TableNextColumn();
                             ImGui::TextColored(
                                 HexColor(Colors::NEGATIVE),
-                                "No remote system images found. Check your SDK and internet connection."
+                                "%s",
+                                Tr("No remote system images found. Check your SDK and internet connection.")
                             );
                         } else {
                             for (int i = 0; i < static_cast<int>(work.RemoteImages.size()); i++) {
@@ -387,7 +393,7 @@ namespace CoreDeck {
                                 }
 
                                 ImGui::TableNextColumn();
-                                ImGui::TextColored(HexColor(Color), "%s", Label);
+                                ImGui::TextColored(HexColor(Color), "%s", Tr(Label));
 
                                 ImGui::TableNextColumn();
                                 ImGui::Text("%s", img.ApiLevel.c_str());
@@ -397,9 +403,9 @@ namespace CoreDeck {
 
                                 ImGui::TableNextColumn();
                                 if (img.IsInstalled) {
-                                    ImGui::TextColored(HexColor(Colors::POSITIVE), "Installed");
+                                    ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("Installed"));
                                 } else {
-                                    ImGui::TextDisabled("Available");
+                                    ImGui::TextDisabled("%s", Tr("Available"));
                                 }
                             }
                         }
@@ -407,7 +413,7 @@ namespace CoreDeck {
                         if (!isLoading && !work.RemoteImages.empty() && visibleCount == 0) {
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::TextDisabled(" No system images match the current filters.");
+                            ImGui::TextDisabled(" %s", Tr("No system images match the current filters."));
                         }
 
                         ImGui::EndTable();
@@ -492,7 +498,7 @@ namespace CoreDeck {
                 const bool licenseBusy = work.LicenseBusy.load();
 
                 if (!work.LicenseError.empty()) {
-                    ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", work.LicenseError.c_str());
+                    ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(work.LicenseError.c_str()));
                     ImGui::Spacing();
                 }
 

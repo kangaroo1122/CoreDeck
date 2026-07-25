@@ -6,6 +6,7 @@
 #include "imgui_internal.h"
 
 #include "widgets.h"
+#include "localization.h"
 #include "theme.h"
 
 namespace CoreDeck {
@@ -67,7 +68,8 @@ namespace CoreDeck {
         sc.Push(ImGuiCol_Text, HexColor(Colors::TEXT_PRIMARY));
         sc.Push(ImGuiCol_Border, HexColor(Colors::BORDER_STRONG));
 
-        const bool clicked = ImGui::Button(label, size);
+        const std::string translatedLabel = TrLabel(label);
+        const bool clicked = ImGui::Button(translatedLabel.c_str(), size);
         if (!isEnabled) {
             ImGui::EndDisabled();
         }
@@ -86,7 +88,8 @@ namespace CoreDeck {
         sc.Push(ImGuiCol_Text, HexColor(Colors::NEGATIVE));
         sc.Push(ImGuiCol_Border, HexColor(Colors::NEGATIVE));
 
-        const bool clicked = ImGui::Button(label, size);
+        const std::string translatedLabel = TrLabel(label);
+        const bool clicked = ImGui::Button(translatedLabel.c_str(), size);
         if (!isEnabled) {
             ImGui::EndDisabled();
         }
@@ -105,7 +108,8 @@ namespace CoreDeck {
         sc.Push(ImGuiCol_Text, HexColor(Colors::WARNING_STRONG));
         sc.Push(ImGuiCol_Border, HexColor(Colors::WARNING_STRONG));
 
-        const bool clicked = ImGui::Button(label, size);
+        const std::string translatedLabel = TrLabel(label);
+        const bool clicked = ImGui::Button(translatedLabel.c_str(), size);
         if (!isEnabled) {
             ImGui::EndDisabled();
         }
@@ -124,7 +128,8 @@ namespace CoreDeck {
         sc.Push(ImGuiCol_Text, HexColor(Colors::POSITIVE));
         sc.Push(ImGuiCol_Border, HexColor(Colors::POSITIVE));
 
-        const bool clicked = ImGui::Button(label, size);
+        const std::string translatedLabel = TrLabel(label);
+        const bool clicked = ImGui::Button(translatedLabel.c_str(), size);
         if (!isEnabled) {
             ImGui::EndDisabled();
         }
@@ -144,7 +149,8 @@ namespace CoreDeck {
             sc.Push(ImGuiCol_Border, HexColor(Colors::ACCENT_INFO, 0.75F));
             sc.Push(ImGuiCol_Text, HexColor(Colors::ACCENT_INFO));
         }
-        const bool clicked = ImGui::Button(label, size);
+        const std::string translatedLabel = TrLabel(label);
+        const bool clicked = ImGui::Button(translatedLabel.c_str(), size);
         if (clicked) {
             isToggled = !isToggled;
         }
@@ -169,7 +175,8 @@ namespace CoreDeck {
         sv.Push(ImGuiStyleVar_FrameRounding, 6.0F);
         sv.Push(ImGuiStyleVar_FramePadding, ImVec2(6.0F, 2.0F));
 
-        ImGui::Button(label);
+        const std::string translatedLabel = TrLabel(label);
+        ImGui::Button(translatedLabel.c_str());
     }
 
     bool SelectableItem(
@@ -273,7 +280,7 @@ namespace CoreDeck {
                 );
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                 if (rightActionTooltip && rightActionTooltip[0] != '\0') {
-                    ImGui::SetTooltip("%s", rightActionTooltip);
+                    ImGui::SetTooltip("%s", Tr(rightActionTooltip));
                 }
                 if (clicked) {
                     actionClicked = true;
@@ -292,7 +299,8 @@ namespace CoreDeck {
     }
 
     bool PropertyText(const char *label, const char *value, const bool isClickable, const bool hasSpaceBetween) {
-        ImGui::TextDisabled("%s", label);
+        const char *translatedLabel = Tr(label);
+        ImGui::TextDisabled("%s", translatedLabel);
 
         if (hasSpaceBetween) {
             const float valueWidth = ImGui::CalcTextSize(value).x;
@@ -339,7 +347,7 @@ namespace CoreDeck {
         if (invertColors) {
             sc.Push(ImGuiCol_Text, HexColor(Colors::TEXT_MUTED));
         }
-        ImGui::Text("%s", label);
+        ImGui::Text("%s", Tr(label));
         ImGui::SameLine();
 
         if (invertColors) {
@@ -372,7 +380,8 @@ namespace CoreDeck {
         sv.Push(ImGuiStyleVar_FramePadding, ImVec2(10.0F, 5.0F));
         sv.Push(ImGuiStyleVar_FrameBorderSize, 1.0F);
 
-        return ImGui::Button(label);
+        const std::string translatedLabel = TrLabel(label);
+        return ImGui::Button(translatedLabel.c_str());
     }
 
     bool CollapsingHeader(const char *label, const ImGuiTreeNodeFlags flags) {
@@ -383,12 +392,13 @@ namespace CoreDeck {
         sc.Push(ImGuiCol_Border, HexColor(Colors::SHADOW, 0.0F));
         sc.Push(ImGuiCol_BorderShadow, HexColor(Colors::SHADOW, 0.0F));
         sc.Push(ImGuiCol_Text, HexColor(Colors::TEXT_ON_BRIGHT));
-        return ImGui::CollapsingHeader(label, flags);
+        const std::string translatedLabel = TrLabel(label);
+        return ImGui::CollapsingHeader(translatedLabel.c_str(), flags);
     }
 
     DialogResult SimpleDialog(const DialogData &data) {
         auto result = DialogResult::None;
-        const std::string title = StrConcat(data.Title, "###", data.Id);
+        const std::string title = StrConcat(Tr(data.Title), "###", data.Id);
 
         if (data.IsOpen && !ImGui::IsPopupOpen(title.c_str())) {
             ImGui::OpenPopup(title.c_str());
@@ -412,7 +422,7 @@ namespace CoreDeck {
             }
 
             ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_MUTED));
-            ImGui::TextWrapped("%s", data.Message);
+            ImGui::TextWrapped("%s", Tr(data.Message));
             ImGui::PopStyleColor();
             ImGui::Spacing();
             ImGui::Spacing();
@@ -484,10 +494,11 @@ namespace CoreDeck {
             ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(0, 0, 0, 0));
             ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(0, 0, 0, 0));
 
+            const std::string translatedLabel = TrLabel(label);
             const bool pressed =
                 pIsSelected
-                    ? ImGui::MenuItem(label, shortcut, pIsSelected, isEnabled)
-                    : ImGui::MenuItem(label, shortcut, isSelected, isEnabled);
+                    ? ImGui::MenuItem(translatedLabel.c_str(), shortcut, pIsSelected, isEnabled)
+                    : ImGui::MenuItem(translatedLabel.c_str(), shortcut, isSelected, isEnabled);
 
             ImGui::PopStyleColor(2);
 
@@ -520,7 +531,8 @@ namespace CoreDeck {
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(0, 0, 0, 0));
 
-        const bool open = ImGui::BeginMenu(label, isEnabled);
+        const std::string translatedLabel = TrLabel(label);
+        const bool open = ImGui::BeginMenu(translatedLabel.c_str(), isEnabled);
 
         ImGui::PopStyleColor(3);
 
@@ -552,7 +564,8 @@ namespace CoreDeck {
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(0, 0, 0, 0));
 
-        const bool pressed = ImGui::Selectable(label, isSelected, flags, size);
+        const std::string translatedLabel = TrLabel(label);
+        const bool pressed = ImGui::Selectable(translatedLabel.c_str(), isSelected, flags, size);
 
         ImGui::PopStyleColor(3);
 
@@ -569,7 +582,8 @@ namespace CoreDeck {
     }
 
     bool RoundedBeginPopupModal(const char *name, bool *pOpen, const ImGuiWindowFlags flags) {
-        const bool open = ImGui::BeginPopupModal(name, nullptr, flags);
+        const std::string translatedName = TrLabel(name);
+        const bool open = ImGui::BeginPopupModal(translatedName.c_str(), nullptr, flags);
         if (!open || pOpen == nullptr) {
             return open;
         }
@@ -635,12 +649,15 @@ namespace CoreDeck {
             return false;
         }
 
+        const char *translatedLabel = Tr(label);
+        const char *translatedSubtitle = subtitle ? Tr(subtitle) : nullptr;
+
         const ImGuiStyle &style = ImGui::GetStyle();
         const ImGuiID itemId = window->GetID(id);
-        const ImVec2 titleSize = ImGui::CalcTextSize(label, nullptr, true);
-        const ImVec2 subSize = subtitle ? ImGui::CalcTextSize(subtitle, nullptr, true) : ImVec2(0, 0);
+        const ImVec2 titleSize = ImGui::CalcTextSize(translatedLabel, nullptr, true);
+        const ImVec2 subSize = translatedSubtitle ? ImGui::CalcTextSize(translatedSubtitle, nullptr, true) : ImVec2(0, 0);
 
-        const float textBlockH = subtitle ? titleSize.y + style.ItemInnerSpacing.y + subSize.y : titleSize.y;
+        const float textBlockH = translatedSubtitle ? titleSize.y + style.ItemInnerSpacing.y + subSize.y : titleSize.y;
         const float rowH = ImMax(boxSize, textBlockH);
 
         const ImVec2 pos = window->DC.CursorPos;
@@ -693,29 +710,29 @@ namespace CoreDeck {
         }
 
         const float textX = boxMax.x + style.ItemInnerSpacing.x;
-        if (subtitle) {
+        if (translatedSubtitle) {
             const float textY = pos.y + ((rowH - textBlockH) * 0.5F);
             window->DrawList->AddText(
                 ImVec2(textX, textY),
                 ImGui::GetColorU32(ImGuiCol_Text),
-                label
+                translatedLabel
             );
             window->DrawList->AddText(
                 ImVec2(textX, textY + titleSize.y + style.ItemInnerSpacing.y),
                 ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                subtitle
+                translatedSubtitle
             );
         } else {
             const float textY = pos.y + ((rowH - titleSize.y) * 0.5F);
             window->DrawList->AddText(
                 ImVec2(textX, textY),
                 ImGui::GetColorU32(ImGuiCol_Text),
-                label
+                translatedLabel
             );
         }
 
         if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
-            ImGui::SetTooltip("%s", tooltip);
+            ImGui::SetTooltip("%s", Tr(tooltip));
         }
 
         return pressed;

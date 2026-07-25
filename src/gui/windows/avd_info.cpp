@@ -8,6 +8,7 @@
 #include "imgui.h"
 
 #include "avd_info.h"
+#include "../localization.h"
 #include "../widgets.h"
 #include "../theme.h"
 #include "../../core/process_stats.h"
@@ -79,7 +80,7 @@ namespace CoreDeck {
                 rssHist.assign(PROCESS_STATS_HISTORY, 0.0F);
             }
 
-            ImGui::TextColored(HexColor(Colors::TEXT_PRIMARY), "Live Resource Usage");
+            ImGui::TextColored(HexColor(Colors::TEXT_PRIMARY), "%s", Tr("Live Resource Usage"));
             ImGui::Spacing();
 
             if (!isRunning) {
@@ -89,7 +90,7 @@ namespace CoreDeck {
             const float chartWidth = ImGui::GetContentRegionAvail().x;
             const float chartHeight = 70.0F;
 
-            ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "CPU Usage");
+            ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "%s", Tr("CPU Usage"));
             {
                 StyleColor sc;
                 sc.Push(ImGuiCol_PlotLines, HexColor(Colors::POSITIVE));
@@ -107,7 +108,7 @@ namespace CoreDeck {
 
             ImGui::Spacing();
 
-            ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "Memory");
+            ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "%s", Tr("Memory"));
             {
                 StyleColor sc;
                 sc.Push(ImGuiCol_PlotLines, HexColor(Colors::ACCENT_INFO));
@@ -159,8 +160,9 @@ namespace CoreDeck {
         constexpr ImGuiWindowFlags FLAGS = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
 
         if (context.Catalog.SelectedAvd < 0) {
-            ImGui::Begin("Details###Details", nullptr, FLAGS);
-            ImGui::TextDisabled("Select an AVD to view details");
+            const std::string title = TrLabel("Details###Details");
+            ImGui::Begin(title.c_str(), nullptr, FLAGS);
+            ImGui::TextDisabled("%s", Tr("Select an AVD to view details"));
             ImGui::End();
             return;
         }
@@ -178,7 +180,8 @@ namespace CoreDeck {
         const auto &gpuMode = avd.GpuMode;
         const auto &skinName = avd.SkinName;
         const auto &sdCard = avd.SdCard;
-        ImGui::Begin(("Details - " + displayName + "###Details").c_str(), nullptr, FLAGS);
+        const std::string title = StrConcat(Tr("Details"), " - ", displayName, "###Details");
+        ImGui::Begin(title.c_str(), nullptr, FLAGS);
 
         DrawLiveResourceUsage(context, name);
 
@@ -213,9 +216,9 @@ namespace CoreDeck {
             PropertyText("Storage", sdCard.c_str(), false, true);
         }
         if (!gpuMode.empty()) {
-            PropertyText("GPU Mode", GpuModeDisplayLabel(gpuMode), false, true);
+            PropertyText("GPU Mode", Tr(GpuModeDisplayLabel(gpuMode)), false, true);
         }
-        PropertyText("Skin", skinName.empty() ? "None" : skinName.c_str(), false, true);
+        PropertyText("Skin", skinName.empty() ? Tr("None") : skinName.c_str(), false, true);
 
         if (!avd.SystemImagePath.empty() ||
             !avd.SystemImageVariant.empty() ||
@@ -225,12 +228,12 @@ namespace CoreDeck {
             ImGui::Separator();
             ImGui::Spacing();
 
-            PropertyText("Type", SystemImageKindLabel(avd), false, true);
-            PropertyText("16 KB Page Size", avd.Supports16KbPageSize ? "Supported" : "Not supported", false, true);
+            PropertyText("Type", Tr(SystemImageKindLabel(avd)), false, true);
+            PropertyText("16 KB Page Size", avd.Supports16KbPageSize ? Tr("Supported") : Tr("Not supported"), false, true);
             if (!avd.SystemImageTagDisplayNames.empty()) {
                 const std::string tags = JoinAvdInfoList(avd.SystemImageTagDisplayNames);
                 ImGui::Spacing();
-                ImGui::TextDisabled("Tags");
+                ImGui::TextDisabled("%s", Tr("Tags"));
                 ImGui::TextWrapped("%s", tags.c_str());
             }
         }
@@ -267,7 +270,7 @@ namespace CoreDeck {
                 ImGui::EndDisabled();
             }
             if (isRunning && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("Stop the emulator before wiping data");
+                ImGui::SetTooltip("%s", Tr("Stop the emulator before wiping data"));
             }
 
             ImGui::SameLine();

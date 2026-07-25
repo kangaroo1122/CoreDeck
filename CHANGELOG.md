@@ -1,7 +1,7 @@
 ## [v0.8.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.3) — 2026-07-25
 
 - Fix emulator port allocation when launching multiple or externally started AVDs
-- Reset stale offline ADB connections before launching an emulator
+- Cold boot AVDs whose Quick Boot snapshot was saved from Android Studio's hidden-window mode
 - Update About author attribution and website link
 
 ## [v0.8.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.2) — 2026-07-25

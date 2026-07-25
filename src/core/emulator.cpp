@@ -11,10 +11,14 @@
 #include <chrono>
 #include <cerrno>
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #include "emulator.h"
 #include "process.h"
 #include "emulator_console.h"
+#include "paths.h"
 
 #ifdef _WIN32
 #include <io.h>
@@ -47,44 +51,6 @@ namespace CoreDeck {
             return std::ranges::find(args, flag) != args.end();
         }
 
-        bool IsValidProcessId(const ProcessId pid) {
-#if defined(_WIN32)
-            return pid != 0;
-#else
-            return pid > 0;
-#endif
-        }
-
-        void CloseOutputFd(const int outputFd) {
-            if (outputFd < 0) {
-                return;
-            }
-#if defined(_WIN32)
-            _close(outputFd);
-#else
-            close(outputFd);
-#endif
-        }
-
-        void ResetOfflineAdbConnections(const std::string &adbPath) {
-            if (adbPath.empty()) {
-                return;
-            }
-
-            int outputFd = -1;
-            const ProcessId pid = SpawnProcessWithPipe(adbPath, {"reconnect", "offline"}, outputFd);
-            if (!IsValidProcessId(pid)) {
-                CloseOutputFd(outputFd);
-                return;
-            }
-
-            if (!WaitForProcessExit(pid, 2000)) {
-                KillProcess(pid);
-                WaitForProcessExit(pid, 500);
-            }
-            CloseOutputFd(outputFd);
-        }
-
         std::vector<std::string> StripManagedPortArgs(const std::vector<std::string> &args) {
             std::vector<std::string> filtered;
             filtered.reserve(args.size());
@@ -100,6 +66,72 @@ namespace CoreDeck {
             }
 
             return filtered;
+        }
+
+        std::string Trim(std::string value) {
+            while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ' || value.back() == '\t')) {
+                value.pop_back();
+            }
+            while (!value.empty() && (value.front() == '\r' || value.front() == '\n' || value.front() == ' ' || value.front() == '\t')) {
+                value.erase(value.begin());
+            }
+            return value;
+        }
+
+        std::string ResolveAvdPath(const std::string &avdName) {
+            const std::string avdRoot = Paths::GetAvdDirectory();
+            if (avdRoot.empty()) {
+                return "";
+            }
+
+            const std::string iniPath = Paths::JoinPaths({avdRoot, avdName + ".ini"});
+            std::ifstream iniFile(iniPath);
+            std::string line;
+            while (std::getline(iniFile, line)) {
+                if (!line.starts_with("path=")) {
+                    continue;
+                }
+
+                const std::string path = Trim(line.substr(5));
+                if (!path.empty() && std::filesystem::exists(path)) {
+                    return path;
+                }
+            }
+
+            return Paths::JoinPaths({avdRoot, avdName + ".avd"});
+        }
+
+        bool FileContains(const std::string &path, const std::string &needle) {
+            if (path.empty() || needle.empty() || !std::filesystem::exists(path)) {
+                return false;
+            }
+
+            std::ifstream file(path, std::ios::binary);
+            if (!file.is_open()) {
+                return false;
+            }
+
+            const std::string content{
+                std::istreambuf_iterator<char>(file),
+                std::istreambuf_iterator<char>()
+            };
+            return content.find(needle) != std::string::npos;
+        }
+
+        bool HasHiddenWindowQuickBootSnapshot(const std::string &avdName) {
+            const std::string avdPath = ResolveAvdPath(avdName);
+            if (avdPath.empty()) {
+                return false;
+            }
+            const std::string snapshotPath = Paths::JoinPaths({avdPath, "snapshots", "default_boot", "snapshot.pb"});
+            return FileContains(snapshotPath, "-qt-hide-window");
+        }
+
+        bool HasExplicitSnapshotLoadChoice(const std::vector<std::string> &args) {
+            return HasFlag(args, "-no-snapshot") ||
+                   HasFlag(args, "-no-snapshot-load") ||
+                   HasFlag(args, "-snapshot") ||
+                   HasFlag(args, "-force-snapshot-load");
         }
 
         void RunOutputReader(const int outputFd, const std::shared_ptr<LogBuffer> &log, const std::shared_ptr<std::atomic<bool>> &stopFlag) {
@@ -272,14 +304,11 @@ namespace CoreDeck {
         }
 
         std::vector<std::string> finalArgs = StripManagedPortArgs(args);
-        if (!m_Sdk.AdbPath.empty() && !HasFlag(finalArgs, "-adb-path")) {
-            finalArgs.emplace_back("-adb-path");
-            finalArgs.emplace_back(m_Sdk.AdbPath);
+        if (HasHiddenWindowQuickBootSnapshot(avdName) && !HasExplicitSnapshotLoadChoice(finalArgs)) {
+            finalArgs.emplace_back("-no-snapshot-load");
         }
         finalArgs.emplace_back("-port");
         finalArgs.emplace_back(std::to_string(consolePort));
-
-        ResetOfflineAdbConnections(m_Sdk.AdbPath);
 
         int outputFd = -1;
         const ProcessId pid = SpawnProcessWithPipe(m_Sdk.EmulatorPath, finalArgs, outputFd);

@@ -14,7 +14,6 @@ namespace CoreDeck {
         std::string EmulatorPath;
         std::string AvdManagerPath;
         std::string SdkManagerPath;
-        std::string AdbPath;
         std::string JavaHomePath;
         bool IsFound = false;
     };

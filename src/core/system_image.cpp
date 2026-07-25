@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <filesystem>
 #include <sstream>
+#include <vector>
 
 #include "system_image.h"
 #include "paths.h"
@@ -66,6 +67,16 @@ namespace CoreDeck {
             return !line.empty() && std::ranges::all_of(line, [](const char c) {
                        return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.';
                    });
+        }
+
+        std::vector<std::string> BuildSdkManagerArgs(const SdkInfo &sdk, const std::vector<std::string> &args) {
+            std::vector<std::string> result;
+            result.reserve(args.size() + 1);
+            if (!sdk.SdkPath.empty()) {
+                result.push_back(StrConcat("--sdk_root=", sdk.SdkPath));
+            }
+            result.insert(result.end(), args.begin(), args.end());
+            return result;
         }
     }
 
@@ -182,7 +193,7 @@ namespace CoreDeck {
 
         const std::string output = RunCommandArgsWithEnv(
             sdk.SdkManagerPath,
-            {"--list"},
+            BuildSdkManagerArgs(sdk, {"--list"}),
             "",
             BuildAndroidToolEnvironment(sdk)
         );
@@ -283,7 +294,7 @@ namespace CoreDeck {
 
         StreamCommandArgsWithEnv(
             sdk.SdkManagerPath,
-            {"--install", packagePath},
+            BuildSdkManagerArgs(sdk, {"--install", packagePath}),
             "",
             BuildAndroidToolEnvironment(sdk),
             [&progress](const std::string &line) {
@@ -315,7 +326,7 @@ namespace CoreDeck {
 
         RunCommandArgsWithEnv(
             sdk.SdkManagerPath,
-            {"--uninstall", packagePath},
+            BuildSdkManagerArgs(sdk, {"--uninstall", packagePath}),
             "y\n",
             BuildAndroidToolEnvironment(sdk)
         );
@@ -333,7 +344,7 @@ namespace CoreDeck {
 
         const std::string output = RunCommandArgsWithEnv(
             sdk.SdkManagerPath,
-            {"--licenses"},
+            BuildSdkManagerArgs(sdk, {"--licenses"}),
             "N\n",
             BuildAndroidToolEnvironment(sdk)
         );
@@ -360,7 +371,7 @@ namespace CoreDeck {
 
         const std::string output = RunCommandArgsWithEnv(
             sdk.SdkManagerPath,
-            {"--licenses"},
+            BuildSdkManagerArgs(sdk, {"--licenses"}),
             yes,
             BuildAndroidToolEnvironment(sdk)
         );

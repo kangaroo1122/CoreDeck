@@ -65,7 +65,7 @@ namespace CoreDeck {
         EnsureOptionsConfigDirectoryExists();
         ApplyAppSettingsToContext(m_Context, LoadAppSettings());
 
-        if (!Paths::Onboarding::IsFirstRunComplete() || !m_Context.Host.Sdk.IsFound) {
+        if (!Paths::Onboarding::IsFirstRunComplete()) {
             m_Context.Flow.CurrentScreen = Screen::Onboarding;
         } else {
             m_Context.Flow.CurrentScreen = Screen::Main;

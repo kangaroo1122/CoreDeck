@@ -17,6 +17,7 @@
 #include "../core/emulator.h"
 #include "../core/options.h"
 #include "../core/sdk.h"
+#include "../core/sdk_packages.h"
 #include "../core/skin.h"
 #include "../core/system_image.h"
 #include "localization.h"
@@ -61,6 +62,11 @@ namespace CoreDeck {
         Automotive,
         Desktop,
         Other,
+    };
+
+    enum class SdkManagerTab : uint8_t {
+        Platforms,
+        Tools,
     };
 
     struct StorageScanResult {
@@ -201,6 +207,36 @@ namespace CoreDeck {
             std::string PendingPackagePath;
             std::string LicenseError;
         } ImageInstallationWork;
+
+        struct SdkManagerWork {
+            std::vector<SdkPackage> Packages;
+            SdkPackageListResult LastListResult;
+            SdkManagerTab ActiveTab = SdkManagerTab::Platforms;
+            int SelectedPackage = -1;
+            char SearchFilter[128] = {};
+            bool HideObsoletePackages = true;
+            bool ShowPackageDetails = false;
+            bool AwaitingLicenseConsent = false;
+            std::string PendingPackagePath;
+            std::string Error;
+
+            struct {
+                std::atomic<bool> Loading{false};
+                std::atomic<bool> Ready{false};
+                std::future<SdkPackageListResult> Future;
+            } List;
+
+            std::atomic<bool> OperationBusy{false};
+            std::shared_ptr<SdkOperationProgress> Progress;
+            std::future<bool> OperationFuture;
+            std::atomic<bool> LicenseBusy{false};
+            std::future<LicenseStatus> LicenseCheckFuture;
+            std::future<bool> LicenseAcceptFuture;
+
+            std::atomic<bool> BootstrapBusy{false};
+            std::future<bool> BootstrapFuture;
+            std::string BootstrapSdkRoot;
+        } SdkManagerWork;
 
         struct Jobs {
             struct {

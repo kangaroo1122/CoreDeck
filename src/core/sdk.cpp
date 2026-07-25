@@ -87,6 +87,10 @@ namespace CoreDeck {
 
     ProcessEnvironment BuildAndroidToolEnvironment(const SdkInfo &sdk) {
         ProcessEnvironment environment;
+        if (!sdk.SdkPath.empty()) {
+            environment.emplace_back("ANDROID_HOME", sdk.SdkPath);
+            environment.emplace_back("ANDROID_SDK_ROOT", sdk.SdkPath);
+        }
         if (sdk.JavaHomePath.empty()) {
             return environment;
         }

@@ -143,6 +143,8 @@ add_library(coredeck_core STATIC
     src/core/paths.cpp
     src/core/process.cpp
     src/core/process_stats.cpp
+    src/core/sdk_bootstrap.cpp
+    src/core/sdk_packages.cpp
     src/core/sdk.cpp
     src/core/skin.cpp
     src/core/system_image.cpp

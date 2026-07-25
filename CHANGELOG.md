@@ -1,3 +1,7 @@
+## [v0.8.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.4) — 2026-07-25
+
+- Add Android SDK Platforms and SDK Tools management, with onboarding install for cmdline-tools, platform-tools, emulator, and the latest stable SDK Platform
+
 ## [v0.8.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.3) — 2026-07-25
 
 - Fix emulator port allocation when launching multiple or externally started AVDs

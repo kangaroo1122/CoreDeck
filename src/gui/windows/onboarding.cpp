@@ -2,6 +2,13 @@
 // Created by AbdulMuaz Aqeel on 15/04/2026.
 //
 
+#include <chrono>
+#include <cstring>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <string>
+
 #include "imgui.h"
 
 #include "onboarding.h"
@@ -11,13 +18,29 @@
 #include "../theme.h"
 #include "../../core/file_dialog.h"
 #include "../../core/paths.h"
+#include "../../core/sdk_bootstrap.h"
+#include "../../core/sdk_packages.h"
 #include "../../core/sdk.h"
+#include "../../core/system_image.h"
+#include "../../core/utilities.h"
 
 namespace CoreDeck {
     namespace {
         enum class Step : uint8_t {
             Welcome,
             SdkSetup
+        };
+
+        struct OnboardingSdkBootstrapWork {
+            bool Busy = false;
+            bool AwaitingLicenseConsent = false;
+            std::future<SdkBootstrapResult> ToolsFuture;
+            std::future<LicenseStatus> LicenseCheckFuture;
+            std::future<bool> LicenseAcceptFuture;
+            std::future<SdkBootstrapResult> PackagesFuture;
+            std::shared_ptr<SdkOperationProgress> Progress;
+            std::string SdkRoot;
+            std::string Error;
         };
 
         void CenteredText(const char *text, const ImVec4 &color) {
@@ -66,8 +89,241 @@ namespace CoreDeck {
             }
         }
 
-        void BuildSdkSetupStep(Context &context, Step &step, char *pathBuffer, size_t pathBufferSize) {
-            VerticalCenter(320.0F);
+        void ApplyOnboardingSdkPath(Context &context, const std::string &sdkRoot) {
+            Paths::Onboarding::SaveSdkPathOverride(sdkRoot);
+            context.Host.Sdk = DetectAndroidSdk();
+            context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
+            context.Host.Manager.SetSdk(context.Host.Sdk);
+            context.UI.HideInvalidSdkPathBanner = false;
+        }
+
+        void SetOnboardingProgress(
+            const std::shared_ptr<SdkOperationProgress> &progress,
+            const float percent,
+            const char *status,
+            const char *detail = ""
+        ) {
+            if (!progress) {
+                return;
+            }
+
+            std::lock_guard lock(progress->Mutex);
+            progress->Percent = percent;
+            progress->StatusText = status;
+            progress->DetailText = detail;
+            progress->Finished = false;
+            progress->Succeeded = false;
+        }
+
+        void FailOnboardingSdkBootstrap(
+            OnboardingSdkBootstrapWork &work,
+            const std::string &error
+        ) {
+            work.Busy = false;
+            work.AwaitingLicenseConsent = false;
+            work.Error = error;
+            if (work.Progress) {
+                std::lock_guard lock(work.Progress->Mutex);
+                work.Progress->Finished = true;
+                work.Progress->Succeeded = false;
+                work.Progress->StatusText = "Android SDK setup failed.";
+                work.Progress->DetailText = error;
+            }
+        }
+
+        void StartOnboardingLicenseCheck(
+            const Context &context,
+            OnboardingSdkBootstrapWork &work
+        ) {
+            const SdkInfo sdk = BuildSdkInfoFromSdkRoot(work.SdkRoot, context.Prefs.JavaHomePath);
+            if (sdk.SdkManagerPath.empty()) {
+                FailOnboardingSdkBootstrap(work, "SDK Manager was not found.");
+                return;
+            }
+
+            SetOnboardingProgress(work.Progress, 0.02F, "Checking licenses...");
+            work.Busy = true;
+            work.LicenseCheckFuture = std::async(std::launch::async, [sdk] {
+                return CheckSdkLicenses(sdk);
+            });
+        }
+
+        void StartOnboardingBasePackageInstall(
+            const Context &context,
+            OnboardingSdkBootstrapWork &work
+        ) {
+            const SdkInfo sdk = BuildSdkInfoFromSdkRoot(work.SdkRoot, context.Prefs.JavaHomePath);
+            if (sdk.SdkManagerPath.empty()) {
+                FailOnboardingSdkBootstrap(work, "SDK Manager was not found.");
+                return;
+            }
+
+            work.Busy = true;
+            const auto progress = work.Progress;
+            work.PackagesFuture = std::async(std::launch::async, [sdk, progress] {
+                return InstallBaseSdkPackages(sdk, progress);
+            });
+        }
+
+        void PollOnboardingSdkBootstrap(Context &context, OnboardingSdkBootstrapWork &work) {
+            if (work.ToolsFuture.valid() &&
+                work.ToolsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                const SdkBootstrapResult result = work.ToolsFuture.get();
+                if (!result.Succeeded) {
+                    FailOnboardingSdkBootstrap(work, result.Error);
+                    return;
+                }
+
+                work.Error.clear();
+                StartOnboardingLicenseCheck(context, work);
+            }
+
+            if (work.LicenseCheckFuture.valid() &&
+                work.LicenseCheckFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                const LicenseStatus status = work.LicenseCheckFuture.get();
+                if (status == LicenseStatus::AllAccepted) {
+                    StartOnboardingBasePackageInstall(context, work);
+                } else if (status == LicenseStatus::SomeUnaccepted) {
+                    work.Busy = false;
+                    work.AwaitingLicenseConsent = true;
+                    SetOnboardingProgress(work.Progress, 0.02F, "Accept Android SDK License Terms");
+                } else {
+                    FailOnboardingSdkBootstrap(work, "Could not query license state. Check that the SDK Manager is working.");
+                }
+            }
+
+            if (work.LicenseAcceptFuture.valid() &&
+                work.LicenseAcceptFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                const bool ok = work.LicenseAcceptFuture.get();
+                if (ok) {
+                    work.AwaitingLicenseConsent = false;
+                    StartOnboardingBasePackageInstall(context, work);
+                } else {
+                    FailOnboardingSdkBootstrap(work, "License acceptance failed. Try again or accept via Android Studio.");
+                }
+            }
+
+            if (work.PackagesFuture.valid() &&
+                work.PackagesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                const SdkBootstrapResult result = work.PackagesFuture.get();
+                work.Busy = false;
+                if (!result.Succeeded) {
+                    FailOnboardingSdkBootstrap(work, result.Error);
+                    return;
+                }
+
+                work.Error.clear();
+                ApplyOnboardingSdkPath(context, work.SdkRoot);
+            }
+        }
+
+        void DrawOnboardingSdkProgress(const OnboardingSdkBootstrapWork &work) {
+            if (!work.Progress) {
+                return;
+            }
+
+            bool finished = false;
+            bool succeeded = false;
+            float percent = 0.0F;
+            std::string statusText;
+            std::string detailText;
+            {
+                std::lock_guard lock(work.Progress->Mutex);
+                finished = work.Progress->Finished;
+                succeeded = work.Progress->Succeeded;
+                percent = work.Progress->Percent;
+                statusText = work.Progress->StatusText;
+                detailText = work.Progress->DetailText;
+            }
+
+            ImGui::Spacing();
+            ImGui::TextColored(
+                finished ? (succeeded ? HexColor(Colors::POSITIVE) : HexColor(Colors::NEGATIVE)) : HexColor(Colors::TEXT_SUBTLE),
+                "%s",
+                Tr(statusText.c_str())
+            );
+            if (!detailText.empty()) {
+                ImGui::TextDisabled("%s", detailText.c_str());
+            }
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, HexColor(Colors::POSITIVE));
+            ImGui::ProgressBar(percent, ImVec2(-1.0F, 0.0F));
+            ImGui::PopStyleColor();
+        }
+
+        void DrawOnboardingLicenseConsent(
+            const Context &context,
+            OnboardingSdkBootstrapWork &work
+        ) {
+            if (!work.AwaitingLicenseConsent) {
+                return;
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::Text("%s", Tr("Accept Android SDK License Terms"));
+            ImGui::TextWrapped(
+                "%s",
+                Tr("Some Android SDK package licenses have not been accepted yet. To install the base SDK tools, you must agree to Google's Android SDK license terms.")
+            );
+            if (PrimaryButton("Open license terms in browser")) {
+                OpenUrl("https://developer.android.com/studio/terms");
+            }
+
+            if (work.Busy) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("%s", Tr("Recording acceptance with the SDK Manager..."));
+            }
+
+            ImGui::Spacing();
+            const float actionSpacing = ImGui::GetStyle().ItemSpacing.x;
+            const float halfWidth = (ImGui::GetContentRegionAvail().x - actionSpacing) * 0.5F;
+            if (PositiveButton("Agree & Install", !work.Busy, ImVec2(halfWidth, 0))) {
+                const SdkInfo sdk = BuildSdkInfoFromSdkRoot(work.SdkRoot, context.Prefs.JavaHomePath);
+                work.Busy = true;
+                work.Error.clear();
+                SetOnboardingProgress(work.Progress, 0.02F, "Recording acceptance with the SDK Manager...");
+                work.LicenseAcceptFuture = std::async(std::launch::async, [sdk] {
+                    return AcceptSdkLicenses(sdk);
+                });
+            }
+            ImGui::SameLine();
+            if (NegativeButton("Cancel", !work.Busy, ImVec2(halfWidth, 0))) {
+                work.AwaitingLicenseConsent = false;
+            }
+        }
+
+        void StartOnboardingSdkInstall(
+            OnboardingSdkBootstrapWork &work,
+            const std::string &sdkRoot
+        ) {
+            work.Progress = std::make_shared<SdkOperationProgress>();
+            work.SdkRoot = sdkRoot;
+            work.Error.clear();
+            work.AwaitingLicenseConsent = false;
+            work.Busy = true;
+            const auto progress = work.Progress;
+            const std::string root = work.SdkRoot;
+            work.ToolsFuture = std::async(std::launch::async, [root, progress] {
+                return BootstrapCommandLineTools(root, progress);
+            });
+        }
+
+        void BuildSdkSetupStep(
+            Context &context,
+            Step &step,
+            char *pathBuffer,
+            size_t pathBufferSize,
+            OnboardingSdkBootstrapWork &bootstrap
+        ) {
+            PollOnboardingSdkBootstrap(context, bootstrap);
+            if (pathBuffer[0] == '\0') {
+                const std::string defaultPath = Paths::GetAndroidSdkDefaultPath();
+                strncpy(pathBuffer, defaultPath.c_str(), pathBufferSize - 1);
+                pathBuffer[pathBufferSize - 1] = '\0';
+            }
+
+            VerticalCenter(390.0F);
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Locate your Android SDK", HexColor(Colors::TEXT_PRIMARY));
@@ -101,6 +357,7 @@ namespace CoreDeck {
             ImGui::Spacing();
             const std::string currentPath = pathBuffer;
             const bool isValid = Paths::Onboarding::ValidateSdkPath(currentPath);
+            const bool hasSdkManager = HasSdkManager(currentPath);
             if (!currentPath.empty()) {
                 if (isValid) {
                     ImGui::TextColored(
@@ -108,11 +365,17 @@ namespace CoreDeck {
                         "%s",
                         Tr("Looks good. Found the Android emulator at this location.")
                     );
+                } else if (hasSdkManager) {
+                    ImGui::TextColored(
+                        HexColor(Colors::WARNING),
+                        "%s",
+                        Tr("Android SDK tools are incomplete. Install the base tools here, or continue and finish later from Android JDK/SDK preferences.")
+                    );
                 } else {
                     ImGui::TextColored(
-                        HexColor(Colors::NEGATIVE),
+                        HexColor(Colors::WARNING),
                         "%s",
-                        Tr("Couldn't find the Android emulator here. Make sure this is your SDK root folder.")
+                        Tr("Android SDK tools are missing. Install the base tools here or choose an existing SDK root.")
                     );
                 }
             } else {
@@ -121,6 +384,31 @@ namespace CoreDeck {
                     "%s",
                     Tr("Choose the folder containing your Android SDK (cmdline-tools, emulator, platform-tools, etc).")
                 );
+            }
+
+            if (!bootstrap.Error.empty()) {
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(bootstrap.Error.c_str()));
+            }
+            DrawOnboardingSdkProgress(bootstrap);
+            DrawOnboardingLicenseConsent(context, bootstrap);
+
+            ImGui::Spacing();
+            if (!isValid) {
+                const bool canAct = !bootstrap.Busy && !bootstrap.AwaitingLicenseConsent && !currentPath.empty();
+
+                if (!hasSdkManager) {
+                    if (PositiveButton("Install Android SDK Tools", canAct, ImVec2(-1.0F, 0))) {
+                        StartOnboardingSdkInstall(bootstrap, currentPath);
+                    }
+                } else if (PositiveButton(
+                               "Install Android SDK Tools",
+                               canAct,
+                               ImVec2(-1.0F, 0)
+                           )) {
+                    bootstrap.SdkRoot = currentPath;
+                    bootstrap.Progress = std::make_shared<SdkOperationProgress>();
+                    StartOnboardingLicenseCheck(context, bootstrap);
+                }
             }
 
             ImGui::EndGroup();
@@ -139,12 +427,18 @@ namespace CoreDeck {
             }
 
             ImGui::SameLine();
-            if (PositiveButton("Continue", isValid, ImVec2(footerButtonWidth, 0))) {
-                Paths::Onboarding::SaveSdkPathOverride(currentPath);
+            if (PositiveButton(
+                    "Continue",
+                    (isValid || hasSdkManager) && !bootstrap.Busy && !bootstrap.AwaitingLicenseConsent,
+                    ImVec2(footerButtonWidth, 0)
+                )) {
+                ApplyOnboardingSdkPath(context, currentPath);
                 Paths::Onboarding::MarkFirstRunComplete();
 
-                context.Host.Sdk = DetectAndroidSdk();
                 RefreshAvds(context);
+                if (!context.Host.Sdk.IsFound) {
+                    context.UI.ShowPreferences = true;
+                }
                 context.Flow.CurrentScreen = Screen::Main;
             }
 
@@ -156,10 +450,15 @@ namespace CoreDeck {
         static auto step = Step::Welcome;
         static char pathBuffer[1024] = {};
         static bool initialized = false;
+        static OnboardingSdkBootstrapWork bootstrap;
 
         if (!initialized) {
             if (!context.Host.Sdk.SdkPath.empty()) {
                 strncpy(pathBuffer, context.Host.Sdk.SdkPath.c_str(), sizeof(pathBuffer) - 1);
+                pathBuffer[sizeof(pathBuffer) - 1] = '\0';
+            } else {
+                const std::string defaultPath = Paths::GetAndroidSdkDefaultPath();
+                strncpy(pathBuffer, defaultPath.c_str(), sizeof(pathBuffer) - 1);
                 pathBuffer[sizeof(pathBuffer) - 1] = '\0';
             }
             initialized = true;
@@ -186,7 +485,7 @@ namespace CoreDeck {
                 BuildWelcomeStep(step);
                 break;
             case Step::SdkSetup:
-                BuildSdkSetupStep(context, step, pathBuffer, sizeof(pathBuffer));
+                BuildSdkSetupStep(context, step, pathBuffer, sizeof(pathBuffer), bootstrap);
                 break;
         }
 

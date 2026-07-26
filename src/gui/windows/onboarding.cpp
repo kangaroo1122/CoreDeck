@@ -51,12 +51,9 @@ namespace CoreDeck {
             ImGui::TextColored(color, "%s", translatedText);
         }
 
-        void VerticalCenter(const float contentHeight, const float maxOffset = -1.0F) {
+        void VerticalCenter(const float contentHeight) {
             const float available = ImGui::GetContentRegionAvail().y;
-            float offset = (available - contentHeight) * 0.5F;
-            if (maxOffset >= 0.0F && offset > maxOffset) {
-                offset = maxOffset;
-            }
+            const float offset = (available - contentHeight) * 0.5F;
             if (offset > 0.0F) {
                 ImGui::Dummy(ImVec2(0, offset));
             }
@@ -456,7 +453,7 @@ namespace CoreDeck {
                 pathBuffer[pathBufferSize - 1] = '\0';
             }
 
-            VerticalCenter(560.0F, Eh(2.0F));
+            VerticalCenter(560.0F);
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Locate your Android SDK", HexColor(Colors::TEXT_PRIMARY));

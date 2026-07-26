@@ -35,6 +35,9 @@ namespace CoreDeck {
             if (!progress) {
                 return;
             }
+            if (progress->CancelRequested.load()) {
+                return;
+            }
 
             std::lock_guard lock(progress->Mutex);
             progress->Percent = percent;
@@ -71,6 +74,21 @@ namespace CoreDeck {
                 progress->StatusText = status;
             }
             return {.Succeeded = true};
+        }
+
+        bool IsCancelRequested(const std::shared_ptr<SdkOperationProgress> &progress) {
+            return progress && progress->CancelRequested.load();
+        }
+
+        SdkBootstrapResult Cancelled(const std::shared_ptr<SdkOperationProgress> &progress) {
+            if (progress) {
+                std::lock_guard lock(progress->Mutex);
+                progress->Finished = true;
+                progress->Succeeded = false;
+                progress->StatusText = "Cancelled.";
+                progress->DetailText.clear();
+            }
+            return {.Succeeded = false, .Cancelled = true, .Error = "Operation cancelled."};
         }
 
         std::string FindCmdlineTool(const std::string &binDir, const std::string &name) {
@@ -163,6 +181,11 @@ namespace CoreDeck {
             const std::shared_ptr<SdkOperationProgress> &progress,
             std::string &error
         ) {
+            if (IsCancelRequested(progress)) {
+                error = "Operation cancelled.";
+                return false;
+            }
+
             constexpr const wchar_t *HOST = L"dl.google.com";
             const auto pathStart = url.find("/android/");
             if (pathStart == std::string::npos) {
@@ -254,10 +277,29 @@ namespace CoreDeck {
 
             std::uint64_t downloaded = 0;
             DWORD available = 0;
-            while (WinHttpQueryDataAvailable(request, &available) && available > 0) {
+            bool transferOk = true;
+            while (true) {
+                if (!WinHttpQueryDataAvailable(request, &available)) {
+                    error = "Command-line tools download failed while reading the response.";
+                    transferOk = false;
+                    break;
+                }
+                if (available == 0) {
+                    break;
+                }
+                if (IsCancelRequested(progress)) {
+                    WinHttpCloseHandle(request);
+                    WinHttpCloseHandle(connect);
+                    WinHttpCloseHandle(session);
+                    error = "Operation cancelled.";
+                    return false;
+                }
+
                 std::string chunk(available, '\0');
                 DWORD read = 0;
-                if (!WinHttpReadData(request, chunk.data(), available, &read)) {
+                if (!WinHttpReadData(request, chunk.data(), available, &read) || read == 0) {
+                    error = "Command-line tools download failed while reading the response.";
+                    transferOk = false;
                     break;
                 }
                 chunk.resize(read);
@@ -273,7 +315,7 @@ namespace CoreDeck {
             WinHttpCloseHandle(request);
             WinHttpCloseHandle(connect);
             WinHttpCloseHandle(session);
-            return std::filesystem::exists(destination) && std::filesystem::file_size(destination) > 0;
+            return transferOk && std::filesystem::exists(destination) && std::filesystem::file_size(destination) > 0;
         }
 
         std::string PowerShellQuote(const std::string &value) {
@@ -289,7 +331,11 @@ namespace CoreDeck {
             return escaped;
         }
 
-        bool ExtractZip(const std::filesystem::path &zipPath, const std::filesystem::path &destination) {
+        bool ExtractZip(
+            const std::filesystem::path &zipPath,
+            const std::filesystem::path &destination,
+            const std::shared_ptr<SdkOperationProgress> &progress
+        ) {
             const std::string command = StrConcat(
                 "Expand-Archive -LiteralPath ",
                 PowerShellQuote(zipPath.string()),
@@ -297,8 +343,17 @@ namespace CoreDeck {
                 PowerShellQuote(destination.string()),
                 " -Force"
             );
-            RunCommandArgs("powershell.exe", {"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command});
-            return std::filesystem::exists(destination / "cmdline-tools");
+            const bool completed = StreamCommandArgsWithEnvCancelable(
+                "powershell.exe",
+                {"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command},
+                "",
+                {},
+                {},
+                [&progress] {
+                    return IsCancelRequested(progress);
+                }
+            );
+            return completed && std::filesystem::exists(destination / "cmdline-tools");
         }
 #else
         size_t WriteFileCallback(const char *ptr, const size_t size, const size_t nmemb, void *userdata) {
@@ -309,6 +364,9 @@ namespace CoreDeck {
 
         int DownloadProgressCallback(void *clientp, const curl_off_t dltotal, const curl_off_t dlnow, curl_off_t, curl_off_t) {
             auto *progress = static_cast<std::shared_ptr<SdkOperationProgress> *>(clientp);
+            if (progress != nullptr && IsCancelRequested(*progress)) {
+                return 1;
+            }
             if (progress == nullptr || !*progress || dltotal <= 0) {
                 return 0;
             }
@@ -324,6 +382,11 @@ namespace CoreDeck {
             const std::shared_ptr<SdkOperationProgress> &progress,
             std::string &error
         ) {
+            if (IsCancelRequested(progress)) {
+                error = "Operation cancelled.";
+                return false;
+            }
+
             CURL *curl = curl_easy_init();
             if (!curl) {
                 error = "Could not initialize curl.";
@@ -354,16 +417,29 @@ namespace CoreDeck {
             out.close();
 
             if (rc != CURLE_OK) {
-                error = "Command-line tools download failed.";
+                error = IsCancelRequested(progress) ? "Operation cancelled." : "Command-line tools download failed.";
                 return false;
             }
             return std::filesystem::exists(destination) && std::filesystem::file_size(destination) > 0;
         }
 
-        bool ExtractZip(const std::filesystem::path &zipPath, const std::filesystem::path &destination) {
+        bool ExtractZip(
+            const std::filesystem::path &zipPath,
+            const std::filesystem::path &destination,
+            const std::shared_ptr<SdkOperationProgress> &progress
+        ) {
             const std::string unzipPath = std::filesystem::exists("/usr/bin/unzip") ? "/usr/bin/unzip" : "unzip";
-            RunCommandArgs(unzipPath, {"-q", "-o", zipPath.string(), "-d", destination.string()});
-            return std::filesystem::exists(destination / "cmdline-tools");
+            const bool completed = StreamCommandArgsWithEnvCancelable(
+                unzipPath,
+                {"-q", "-o", zipPath.string(), "-d", destination.string()},
+                "",
+                {},
+                {},
+                [&progress] {
+                    return IsCancelRequested(progress);
+                }
+            );
+            return completed && std::filesystem::exists(destination / "cmdline-tools");
         }
 #endif
     }
@@ -427,6 +503,9 @@ namespace CoreDeck {
         if (sdkRoot.empty()) {
             return Fail(progress, "Choose an Android SDK directory first.");
         }
+        if (IsCancelRequested(progress)) {
+            return Cancelled(progress);
+        }
 
         std::error_code ec;
         SetProgress(progress, 0.02F, "Preparing SDK directory...");
@@ -437,6 +516,9 @@ namespace CoreDeck {
 
         if (HasSdkManager(sdkRoot)) {
             return Success(progress);
+        }
+        if (IsCancelRequested(progress)) {
+            return Cancelled(progress);
         }
 
         const std::filesystem::path tempDir = CreateTempDirectory();
@@ -453,13 +535,27 @@ namespace CoreDeck {
         SetProgress(progress, 0.05F, "Downloading command-line tools...", url);
         if (!DownloadFile(url, zipPath, progress, error)) {
             std::filesystem::remove_all(tempDir, ec);
+            if (IsCancelRequested(progress)) {
+                return Cancelled(progress);
+            }
             return Fail(progress, error.empty() ? "Command-line tools download failed." : error);
+        }
+        if (IsCancelRequested(progress)) {
+            std::filesystem::remove_all(tempDir, ec);
+            return Cancelled(progress);
         }
 
         SetProgress(progress, 0.74F, "Extracting command-line tools...");
-        if (!ExtractZip(zipPath, extractDir)) {
+        if (!ExtractZip(zipPath, extractDir, progress)) {
             std::filesystem::remove_all(tempDir, ec);
+            if (IsCancelRequested(progress)) {
+                return Cancelled(progress);
+            }
             return Fail(progress, "Could not extract command-line tools.");
+        }
+        if (IsCancelRequested(progress)) {
+            std::filesystem::remove_all(tempDir, ec);
+            return Cancelled(progress);
         }
 
         SetProgress(progress, 0.88F, "Installing command-line tools...");
@@ -473,7 +569,14 @@ namespace CoreDeck {
 
         if (!CopyDirectoryContents(extractedTools, latestTools, error)) {
             std::filesystem::remove_all(tempDir, ec);
+            if (IsCancelRequested(progress)) {
+                return Cancelled(progress);
+            }
             return Fail(progress, StrConcat("Could not install command-line tools: ", error));
+        }
+        if (IsCancelRequested(progress)) {
+            std::filesystem::remove_all(tempDir, ec);
+            return Cancelled(progress);
         }
 
         std::filesystem::remove_all(tempDir, ec);
@@ -512,9 +615,15 @@ namespace CoreDeck {
         if (sdk.SdkManagerPath.empty()) {
             return Fail(progress, "SDK Manager was not found.", "Android SDK setup failed.");
         }
+        if (IsCancelRequested(progress)) {
+            return Cancelled(progress);
+        }
 
         SetProgress(progress, 0.02F, "Fetching SDK packages from official sources...");
         const SdkPackageListResult list = ListSdkPackages(sdk, false);
+        if (IsCancelRequested(progress)) {
+            return Cancelled(progress);
+        }
         if (!list.Error.empty() || list.SdkManagerMissing) {
             return Fail(
                 progress,
@@ -547,6 +656,9 @@ namespace CoreDeck {
         }
 
         const LicenseStatus licenseStatus = CheckSdkLicenses(sdk);
+        if (IsCancelRequested(progress)) {
+            return Cancelled(progress);
+        }
         if (licenseStatus == LicenseStatus::SomeUnaccepted) {
             return Fail(
                 progress,
@@ -569,6 +681,9 @@ namespace CoreDeck {
             JoinPackagePaths(packagesToInstall)
         );
         if (!InstallSdkPackages(sdk, packagesToInstall, progress)) {
+            if (IsCancelRequested(progress)) {
+                return Cancelled(progress);
+            }
             return Fail(progress, "Base Android SDK package installation failed.", "Android SDK setup failed.");
         }
 

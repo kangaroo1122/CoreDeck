@@ -8,7 +8,9 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
 #include <string>
+#include <thread>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -21,8 +23,6 @@
 #include <unistd.h>
 #include <sys/fcntl.h>
 #include <sys/wait.h>
-#include <chrono>
-#include <thread>
 #endif
 
 #if defined(_WIN32)
@@ -124,12 +124,33 @@ namespace CoreDeck {
 #endif
 
 namespace CoreDeck {
-    void StreamCommandArgsWithEnv(
+    namespace {
+        void EmitCompleteLines(
+            std::string &partial,
+            const std::function<void(const std::string &)> &onLine
+        ) {
+            std::size_t pos = 0;
+            while ((pos = partial.find_first_of("\n\r")) != std::string::npos) {
+                if (auto line = partial.substr(0, pos); !line.empty() && onLine) {
+                    onLine(line);
+                }
+                auto next = partial.find_first_not_of("\n\r", pos);
+                partial = (next == std::string::npos) ? std::string() : partial.substr(next);
+            }
+        }
+
+        bool ShouldCancel(const std::function<bool()> &shouldCancel) {
+            return shouldCancel && shouldCancel();
+        }
+    }
+
+    bool StreamCommandArgsWithEnvCancelable(
         const std::string &path,
         const std::vector<std::string> &args,
         const std::string &stdinData,
         const ProcessEnvironment &environment,
-        const std::function<void(const std::string &)> &onLine
+        const std::function<void(const std::string &)> &onLine,
+        const std::function<bool()> &shouldCancel
     ) {
 #if defined(_WIN32)
         SECURITY_ATTRIBUTES sa = {};
@@ -138,12 +159,12 @@ namespace CoreDeck {
 
         HANDLE hOutR = nullptr, hOutW = nullptr;
         HANDLE hInR = nullptr, hInW = nullptr;
-        if (!CreatePipe(&hOutR, &hOutW, &sa, 0)) return;
+        if (!CreatePipe(&hOutR, &hOutW, &sa, 0)) return false;
         SetHandleInformation(hOutR, HANDLE_FLAG_INHERIT, 0);
         if (!CreatePipe(&hInR, &hInW, &sa, 0)) {
             CloseHandle(hOutR);
             CloseHandle(hOutW);
-            return;
+            return false;
         }
         SetHandleInformation(hInW, HANDLE_FLAG_INHERIT, 0);
 
@@ -174,7 +195,7 @@ namespace CoreDeck {
             CloseHandle(hOutW);
             CloseHandle(hInR);
             CloseHandle(hInW);
-            return;
+            return false;
         }
 
         CloseHandle(hOutW);
@@ -188,32 +209,57 @@ namespace CoreDeck {
 
         std::string partial;
         std::array<char, 512> buf{};
-        DWORD read = 0;
-        while (ReadFile(hOutR, buf.data(), static_cast<DWORD>(buf.size()), &read, nullptr) && read > 0) {
-            partial.append(buf.data(), read);
-            std::size_t pos;
-            while ((pos = partial.find_first_of("\n\r")) != std::string::npos) {
-                if (auto line = partial.substr(0, pos); !line.empty() && onLine) onLine(line);
-                auto next = partial.find_first_not_of("\n\r", pos);
-                partial = (next == std::string::npos) ? std::string() : partial.substr(next);
+        bool cancelled = false;
+
+        auto drainOutput = [&] {
+            DWORD available = 0;
+            while (PeekNamedPipe(hOutR, nullptr, 0, nullptr, &available, nullptr) && available > 0) {
+                DWORD read = 0;
+                const DWORD toRead = std::min<DWORD>(static_cast<DWORD>(buf.size()), available);
+                if (!ReadFile(hOutR, buf.data(), toRead, &read, nullptr) || read == 0) {
+                    break;
+                }
+                partial.append(buf.data(), read);
+                EmitCompleteLines(partial, onLine);
+            }
+        };
+
+        while (true) {
+            drainOutput();
+            if (ShouldCancel(shouldCancel)) {
+                cancelled = true;
+                TerminateProcessTree(pi.dwProcessId);
+                break;
+            }
+            if (WaitForSingleObject(pi.hProcess, 50) == WAIT_OBJECT_0) {
+                drainOutput();
+                break;
             }
         }
+
         if (!partial.empty() && onLine) onLine(partial);
 
-        WaitForSingleObject(pi.hProcess, INFINITE);
+        if (cancelled) {
+            WaitForSingleObject(pi.hProcess, 2000);
+        }
+        DWORD exitCode = 1;
+        if (!cancelled && GetExitCodeProcess(pi.hProcess, &exitCode) == 0) {
+            exitCode = 1;
+        }
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
         CloseHandle(hOutR);
+        return !cancelled && exitCode == 0;
 #else
         int outPipe[2];
         int inPipe[2];
         if (pipe(outPipe) == -1) {
-            return;
+            return false;
         }
         if (pipe(inPipe) == -1) {
             close(outPipe[0]);
             close(outPipe[1]);
-            return;
+            return false;
         }
 
         const pid_t pid = fork();
@@ -222,10 +268,11 @@ namespace CoreDeck {
             close(outPipe[1]);
             close(inPipe[0]);
             close(inPipe[1]);
-            return;
+            return false;
         }
 
         if (pid == 0) {
+            setpgid(0, 0);
             close(outPipe[0]);
             close(inPipe[1]);
             dup2(outPipe[1], STDOUT_FILENO);
@@ -252,6 +299,10 @@ namespace CoreDeck {
 
         close(outPipe[1]);
         close(inPipe[0]);
+        const int flags = fcntl(outPipe[0], F_GETFL, 0);
+        if (flags != -1) {
+            fcntl(outPipe[0], F_SETFL, flags | O_NONBLOCK);
+        }
 
         if (!stdinData.empty()) {
             [[maybe_unused]] ssize_t w = write(inPipe[1], stdinData.data(), stdinData.size());
@@ -260,26 +311,68 @@ namespace CoreDeck {
 
         std::string partial;
         std::array<char, 512> buf{};
-        ssize_t r = 0;
-        while ((r = read(outPipe[0], buf.data(), buf.size())) > 0) {
-            partial.append(buf.data(), r);
-            std::size_t pos = 0;
-            while ((pos = partial.find_first_of("\n\r")) != std::string::npos) {
-                if (auto line = partial.substr(0, pos); !line.empty() && onLine) {
-                    onLine(line);
-                }
-                auto next = partial.find_first_not_of("\n\r", pos);
-                partial = (next == std::string::npos) ? std::string() : partial.substr(next);
+        bool cancelled = false;
+        bool exited = false;
+        bool waitOk = false;
+        int exitStatus = 0;
+
+        auto drainOutput = [&] {
+            ssize_t r = 0;
+            while ((r = read(outPipe[0], buf.data(), buf.size())) > 0) {
+                partial.append(buf.data(), r);
+                EmitCompleteLines(partial, onLine);
+            }
+        };
+
+        while (!exited) {
+            drainOutput();
+            if (ShouldCancel(shouldCancel)) {
+                cancelled = true;
+                TerminateProcessTree(pid);
+                break;
+            }
+
+            int status = 0;
+            const pid_t waitResult = waitpid(pid, &status, WNOHANG);
+            if (waitResult == pid) {
+                exitStatus = status;
+                waitOk = true;
+                exited = true;
+            } else if (waitResult == -1) {
+                exited = true;
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
         }
+
+        drainOutput();
         if (!partial.empty() && onLine) {
             onLine(partial);
         }
 
         close(outPipe[0]);
-        int status = 0;
-        waitpid(pid, &status, 0);
+        if (!cancelled && !waitOk) {
+            waitOk = waitpid(pid, &exitStatus, 0) == pid;
+        }
+        return !cancelled && waitOk && WIFEXITED(exitStatus) && WEXITSTATUS(exitStatus) == 0;
 #endif
+    }
+
+    void StreamCommandArgsWithEnv(
+        const std::string &path,
+        const std::vector<std::string> &args,
+        const std::string &stdinData,
+        const ProcessEnvironment &environment,
+        const std::function<void(const std::string &)> &onLine
+    ) {
+        (void) StreamCommandArgsWithEnvCancelable(
+            path,
+            args,
+            stdinData,
+            environment,
+            onLine,
+            {}
+        );
     }
 
     void StreamCommandArgs(

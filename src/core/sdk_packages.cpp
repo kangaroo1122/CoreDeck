@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <sstream>
 #include <string_view>
 #include <unordered_map>
@@ -25,6 +26,11 @@ namespace CoreDeck {
             Available,
             Updates,
         };
+
+        constexpr std::string_view ANDROID_PACKAGE_PREFIX = "android-";
+        constexpr std::string_view SDK_PLATFORM_PREFIX = "platforms;android-";
+        constexpr std::string_view SDK_SOURCE_PREFIX = "sources;android-";
+        constexpr std::string_view SDK_SYSTEM_IMAGE_PREFIX = "system-images;android-";
 
         std::string Trim(std::string value) {
             while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ' || value.back() == '\t')) {
@@ -64,6 +70,11 @@ namespace CoreDeck {
                    text.find("deprecated") != std::string::npos;
         }
 
+        bool IsDiagnosticLine(const std::string &line) {
+            const std::string lower = LowerCopy(line);
+            return lower.starts_with("warning:") || lower.starts_with("error:");
+        }
+
         int SortApiValue(const SdkPackage &package) {
             const std::string &path = package.Path;
             const auto pos = path.find("android-");
@@ -71,6 +82,307 @@ namespace CoreDeck {
                 return -1;
             }
             return static_cast<int>(std::strtol(path.c_str() + pos + 8, nullptr, 10));
+        }
+
+        std::string PackageVersion(const SdkPackage &package) {
+            if (!package.AvailableVersion.empty()) {
+                return package.AvailableVersion;
+            }
+            if (!package.Version.empty()) {
+                return package.Version;
+            }
+            if (!package.InstalledVersion.empty()) {
+                return package.InstalledVersion;
+            }
+            return "";
+        }
+
+        std::string PackageVersionLabel(const SdkPackage &package) {
+            if (package.UpdateAvailable && !package.InstalledVersion.empty() && !package.AvailableVersion.empty()) {
+                return StrConcat(package.InstalledVersion, " -> ", package.AvailableVersion);
+            }
+            const std::string version = PackageVersion(package);
+            return version.empty() ? "-" : version;
+        }
+
+        std::vector<int> VersionNumbers(const std::string &version) {
+            std::vector<int> numbers;
+            std::string token;
+            for (const char c: version) {
+                if (std::isdigit(static_cast<unsigned char>(c)) != 0) {
+                    token.push_back(c);
+                } else {
+                    if (!token.empty()) {
+                        numbers.push_back(static_cast<int>(std::strtol(token.c_str(), nullptr, 10)));
+                        token.clear();
+                    }
+                }
+            }
+            if (!token.empty()) {
+                numbers.push_back(static_cast<int>(std::strtol(token.c_str(), nullptr, 10)));
+            }
+            return numbers;
+        }
+
+        bool IsPreviewVersion(const std::string &version) {
+            const std::string lower = LowerCopy(version);
+            return lower.find("rc") != std::string::npos ||
+                   lower.find("alpha") != std::string::npos ||
+                   lower.find("beta") != std::string::npos ||
+                   lower.find("preview") != std::string::npos ||
+                   lower.find("canary") != std::string::npos;
+        }
+
+        int CompareVersions(const std::string &left, const std::string &right) {
+            const std::vector<int> leftNumbers = VersionNumbers(left);
+            const std::vector<int> rightNumbers = VersionNumbers(right);
+            const std::size_t count = std::max(leftNumbers.size(), rightNumbers.size());
+            for (std::size_t i = 0; i < count; i++) {
+                const int a = i < leftNumbers.size() ? leftNumbers[i] : 0;
+                const int b = i < rightNumbers.size() ? rightNumbers[i] : 0;
+                if (a != b) {
+                    return a < b ? -1 : 1;
+                }
+            }
+
+            const bool leftPreview = IsPreviewVersion(left);
+            const bool rightPreview = IsPreviewVersion(right);
+            if (leftPreview != rightPreview) {
+                return leftPreview ? -1 : 1;
+            }
+            return 0;
+        }
+
+        bool IsNewerPackage(const SdkPackage *candidate, const SdkPackage *current) {
+            if (current == nullptr) {
+                return true;
+            }
+
+            const int byVersion = CompareVersions(PackageVersion(*candidate), PackageVersion(*current));
+            if (byVersion != 0) {
+                return byVersion > 0;
+            }
+            return candidate->Path > current->Path;
+        }
+
+        std::string AndroidApiLevelFromPath(const std::string &path) {
+            const auto pos = path.find(ANDROID_PACKAGE_PREFIX);
+            if (pos == std::string::npos) {
+                return "";
+            }
+            const auto start = pos + ANDROID_PACKAGE_PREFIX.size();
+            const auto end = path.find(';', start);
+            return path.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        }
+
+        bool IsSdkPlatformComponent(const std::string &path) {
+            return path.starts_with(SDK_PLATFORM_PREFIX) ||
+                   path.starts_with(SDK_SOURCE_PREFIX) ||
+                   path.starts_with(SDK_SYSTEM_IMAGE_PREFIX);
+        }
+
+        int PlatformComponentOrder(const std::string &path) {
+            if (path.starts_with(SDK_PLATFORM_PREFIX)) {
+                return 0;
+            }
+            if (path.starts_with(SDK_SOURCE_PREFIX)) {
+                return 1;
+            }
+            if (path.starts_with(SDK_SYSTEM_IMAGE_PREFIX)) {
+                return 2;
+            }
+            return 3;
+        }
+
+        std::string PlatformPackageName(const SdkPackage &package) {
+            if (!package.Description.empty()) {
+                return package.Description;
+            }
+            const std::string api = AndroidApiLevelFromPath(package.Path);
+            return api.empty() ? package.Path : StrConcat("Android SDK Platform ", api);
+        }
+
+        SdkPackageDisplayStatus PackageStatus(const SdkPackage &package) {
+            if (package.UpdateAvailable) {
+                return SdkPackageDisplayStatus::UpdateAvailable;
+            }
+            if (package.Installed) {
+                return SdkPackageDisplayStatus::Installed;
+            }
+            return SdkPackageDisplayStatus::NotInstalled;
+        }
+
+        SdkPackageDisplayRow DetailRowForPackage(const SdkPackage &package, const bool platformDetails) {
+            SdkPackageDisplayRow row;
+            row.Id = StrConcat("package:", package.Path);
+            row.Name = platformDetails ? PlatformPackageName(package) : (package.Description.empty() ? package.Path : package.Description);
+            row.ApiLevel = platformDetails ? AndroidApiLevelFromPath(package.Path) : "";
+            row.Revision = platformDetails ? PackageVersionLabel(package) : "";
+            row.Version = platformDetails ? "" : PackageVersionLabel(package);
+            row.PackagePath = package.Path;
+            row.Location = package.Location;
+            row.Status = PackageStatus(package);
+            if (!package.Installed || package.UpdateAvailable) {
+                row.InstallPackagePaths.push_back(package.Path);
+            }
+            if (package.Installed) {
+                row.RemovePackagePaths.push_back(package.Path);
+            }
+            return row;
+        }
+
+        std::vector<SdkPackageDisplayRow> BuildPlatformRows(
+            const std::vector<SdkPackage> &packages,
+            const SdkPackageViewMode mode
+        ) {
+            std::vector<SdkPackageDisplayRow> rows;
+            rows.reserve(packages.size());
+
+            for (const SdkPackage &package: packages) {
+                if (mode == SdkPackageViewMode::Summary && package.Path.starts_with(SDK_PLATFORM_PREFIX)) {
+                    SdkPackageDisplayRow row;
+                    row.Id = StrConcat("platform:", AndroidApiLevelFromPath(package.Path));
+                    row.Name = PlatformPackageName(package);
+                    row.ApiLevel = AndroidApiLevelFromPath(package.Path);
+                    row.Revision = PackageVersionLabel(package);
+                    row.PackagePath = package.Path;
+                    row.Location = package.Location;
+                    row.Status = PackageStatus(package);
+                    if (!package.Installed || package.UpdateAvailable) {
+                        row.InstallPackagePaths.push_back(package.Path);
+                    }
+                    if (package.Installed) {
+                        row.RemovePackagePaths.push_back(package.Path);
+                    }
+                    rows.push_back(std::move(row));
+                } else if (mode == SdkPackageViewMode::Details && IsSdkPlatformComponent(package.Path)) {
+                    rows.push_back(DetailRowForPackage(package, true));
+                }
+            }
+
+            std::ranges::sort(rows, [](const SdkPackageDisplayRow &a, const SdkPackageDisplayRow &b) {
+                const int apiA = static_cast<int>(std::strtol(a.ApiLevel.c_str(), nullptr, 10));
+                const int apiB = static_cast<int>(std::strtol(b.ApiLevel.c_str(), nullptr, 10));
+                if (apiA != apiB) {
+                    return apiA > apiB;
+                }
+                if (a.ApiLevel != b.ApiLevel) {
+                    return a.ApiLevel > b.ApiLevel;
+                }
+                const int orderA = PlatformComponentOrder(a.PackagePath);
+                const int orderB = PlatformComponentOrder(b.PackagePath);
+                if (orderA != orderB) {
+                    return orderA < orderB;
+                }
+                return a.Name < b.Name;
+            });
+            return rows;
+        }
+
+        std::string ToolGroupKey(const std::string &path) {
+            for (const std::string_view prefix: {
+                     std::string_view("build-tools;"),
+                     std::string_view("cmdline-tools;"),
+                     std::string_view("cmake;"),
+                     std::string_view("ndk;"),
+                 }) {
+                if (path.starts_with(prefix)) {
+                    return std::string(prefix.substr(0, prefix.size() - 1));
+                }
+            }
+            return path;
+        }
+
+        std::string ToolGroupName(const std::string &key, const SdkPackage &package) {
+            if (key == "build-tools") {
+                return "Android SDK Build-Tools";
+            }
+            if (key == "cmdline-tools") {
+                return "Android SDK Command-line Tools (latest)";
+            }
+            if (key == "cmake") {
+                return "CMake";
+            }
+            if (key == "ndk") {
+                return "NDK (Side by side)";
+            }
+            return package.Description.empty() ? package.Path : package.Description;
+        }
+
+        std::vector<SdkPackageDisplayRow> BuildToolSummaryRows(const std::vector<SdkPackage> &packages) {
+            std::map<std::string, std::vector<const SdkPackage *>> groups;
+            for (const SdkPackage &package: packages) {
+                if (IsSdkPlatformComponent(package.Path)) {
+                    continue;
+                }
+                groups[ToolGroupKey(package.Path)].push_back(&package);
+            }
+
+            std::vector<SdkPackageDisplayRow> rows;
+            rows.reserve(groups.size());
+            for (const auto &[key, groupPackages]: groups) {
+                const SdkPackage *latest = nullptr;
+                bool anyInstalled = false;
+                for (const SdkPackage *package: groupPackages) {
+                    if (IsNewerPackage(package, latest)) {
+                        latest = package;
+                    }
+                    anyInstalled = anyInstalled || package->Installed;
+                }
+                if (latest == nullptr) {
+                    continue;
+                }
+
+                SdkPackageDisplayRow row;
+                row.Id = StrConcat("tool:", key);
+                row.Name = ToolGroupName(key, *latest);
+                row.Version = PackageVersionLabel(*latest);
+                row.PackagePath = latest->Path;
+                row.Location = latest->Location;
+                row.Status = anyInstalled && latest->Installed && !latest->UpdateAvailable
+                                 ? SdkPackageDisplayStatus::Installed
+                                 : (anyInstalled ? SdkPackageDisplayStatus::UpdateAvailable : SdkPackageDisplayStatus::NotInstalled);
+
+                if (!latest->Installed || latest->UpdateAvailable) {
+                    row.InstallPackagePaths.push_back(latest->Path);
+                }
+                for (const SdkPackage *package: groupPackages) {
+                    if (package->Installed) {
+                        row.RemovePackagePaths.push_back(package->Path);
+                    }
+                }
+                rows.push_back(std::move(row));
+            }
+
+            std::ranges::sort(rows, [](const SdkPackageDisplayRow &a, const SdkPackageDisplayRow &b) {
+                return a.Name < b.Name;
+            });
+            return rows;
+        }
+
+        std::vector<SdkPackageDisplayRow> BuildToolDetailRows(const std::vector<SdkPackage> &packages) {
+            std::vector<SdkPackageDisplayRow> rows;
+            rows.reserve(packages.size());
+            for (const SdkPackage &package: packages) {
+                if (!IsSdkPlatformComponent(package.Path)) {
+                    rows.push_back(DetailRowForPackage(package, false));
+                }
+            }
+
+            std::ranges::sort(rows, [](const SdkPackageDisplayRow &a, const SdkPackageDisplayRow &b) {
+                const std::string groupA = ToolGroupKey(a.PackagePath);
+                const std::string groupB = ToolGroupKey(b.PackagePath);
+                if (groupA != groupB) {
+                    return ToolGroupName(groupA, SdkPackage{.Path = a.PackagePath, .Description = a.Name}) <
+                           ToolGroupName(groupB, SdkPackage{.Path = b.PackagePath, .Description = b.Name});
+                }
+                const int byVersion = CompareVersions(a.Version, b.Version);
+                if (byVersion != 0) {
+                    return byVersion > 0;
+                }
+                return a.PackagePath < b.PackagePath;
+            });
+            return rows;
         }
 
         std::vector<std::string> BuildSdkManagerArgs(const SdkInfo &sdk, const std::vector<std::string> &args) {
@@ -85,6 +397,9 @@ namespace CoreDeck {
 
         void ParseProgressLine(const std::string &line, const std::shared_ptr<SdkOperationProgress> &progress) {
             if (!progress) {
+                return;
+            }
+            if (progress->CancelRequested.load()) {
                 return;
             }
 
@@ -139,6 +454,45 @@ namespace CoreDeck {
             progress->Percent = ok ? 1.0F : progress->Percent;
             progress->StatusText = ok ? success : failure;
         }
+
+        bool IsCancelRequested(const std::shared_ptr<SdkOperationProgress> &progress) {
+            return progress && progress->CancelRequested.load();
+        }
+
+        void MarkCancelled(const std::shared_ptr<SdkOperationProgress> &progress) {
+            if (!progress) {
+                return;
+            }
+
+            std::lock_guard lock(progress->Mutex);
+            progress->Finished = true;
+            progress->Succeeded = false;
+            progress->StatusText = "Cancelled.";
+            progress->DetailText.clear();
+        }
+    }
+
+    std::vector<SdkPackageDisplayRow> BuildSdkPackageDisplayRows(
+        const std::vector<SdkPackage> &packages,
+        const SdkPackageViewTab tab,
+        const SdkPackageViewMode mode
+    ) {
+        if (tab == SdkPackageViewTab::Platforms) {
+            return BuildPlatformRows(packages, mode);
+        }
+        return mode == SdkPackageViewMode::Summary ? BuildToolSummaryRows(packages) : BuildToolDetailRows(packages);
+    }
+
+    const char *SdkPackageDisplayStatusText(const SdkPackageDisplayStatus status) {
+        switch (status) {
+            case SdkPackageDisplayStatus::Installed:
+                return "Installed";
+            case SdkPackageDisplayStatus::NotInstalled:
+                return "Not installed";
+            case SdkPackageDisplayStatus::UpdateAvailable:
+                return "Update available";
+        }
+        return "Not installed";
     }
 
     bool HasSdkManager(const std::string &sdkRoot) {
@@ -182,12 +536,11 @@ namespace CoreDeck {
     }
 
     bool IsStableSdkPlatformPackage(const std::string &path) {
-        static constexpr std::string_view PREFIX = "platforms;android-";
-        if (!path.starts_with(PREFIX)) {
+        if (!path.starts_with(SDK_PLATFORM_PREFIX)) {
             return false;
         }
 
-        const std::string version = path.substr(PREFIX.size());
+        const std::string version = path.substr(SDK_PLATFORM_PREFIX.size());
         bool hasDigit = false;
         return std::ranges::all_of(version, [&](const char c) {
             if (std::isdigit(static_cast<unsigned char>(c)) != 0) {
@@ -199,10 +552,24 @@ namespace CoreDeck {
     }
 
     std::string SelectLatestSdkPlatformPackage(const std::vector<SdkPackage> &packages) {
-        auto it = std::ranges::find_if(packages, [](const SdkPackage &package) {
-            return IsStableSdkPlatformPackage(package.Path);
-        });
-        return it == packages.end() ? std::string{} : it->Path;
+        const SdkPackage *latest = nullptr;
+        for (const SdkPackage &package: packages) {
+            if (!IsStableSdkPlatformPackage(package.Path)) {
+                continue;
+            }
+            if (latest == nullptr) {
+                latest = &package;
+                continue;
+            }
+
+            const std::string candidateApi = package.Path.substr(SDK_PLATFORM_PREFIX.size());
+            const std::string latestApi = latest->Path.substr(SDK_PLATFORM_PREFIX.size());
+            const int byApi = CompareVersions(candidateApi, latestApi);
+            if (byApi > 0 || (byApi == 0 && IsNewerPackage(&package, latest))) {
+                latest = &package;
+            }
+        }
+        return latest == nullptr ? std::string{} : latest->Path;
     }
 
     SdkPackageListResult ListSdkPackages(const SdkInfo &sdk, const bool includeObsolete) {
@@ -218,11 +585,17 @@ namespace CoreDeck {
             args.emplace_back("--include_obsolete");
         }
 
-        const std::string output = RunCommandArgsWithEnv(
+        std::string output;
+        const bool commandOk = StreamCommandArgsWithEnvCancelable(
             sdk.SdkManagerPath,
             BuildSdkManagerArgs(sdk, args),
             "",
-            BuildAndroidToolEnvironment(sdk)
+            BuildAndroidToolEnvironment(sdk),
+            [&output](const std::string &line) {
+                output += line;
+                output.push_back('\n');
+            },
+            {}
         );
 
         std::unordered_map<std::string, SdkPackage> packages;
@@ -237,7 +610,7 @@ namespace CoreDeck {
             if (line.empty()) {
                 continue;
             }
-            if (line.starts_with("Warning:") || line.starts_with("Error:")) {
+            if (IsDiagnosticLine(line)) {
                 sawWarning = true;
                 if (firstDiagnostic.empty()) {
                     firstDiagnostic = line;
@@ -259,12 +632,12 @@ namespace CoreDeck {
             if (IsHeaderOrSeparator(line)) {
                 continue;
             }
-            if (section == ListSection::None && firstDiagnostic.empty()) {
-                firstDiagnostic = line;
+            if (section == ListSection::None) {
+                continue;
             }
 
             const std::vector<std::string> columns = SplitColumns(line);
-            if (columns.empty() || columns[0].empty()) {
+            if (columns.size() < 2 || columns[0].empty()) {
                 continue;
             }
 
@@ -329,7 +702,12 @@ namespace CoreDeck {
             return a.Path < b.Path;
         });
 
-        if (result.Packages.empty()) {
+        if (!commandOk) {
+            result.Packages.clear();
+            result.Error = firstDiagnostic.empty()
+                               ? "Could not fetch SDK package lists. Check your network connection."
+                               : firstDiagnostic;
+        } else if (result.Packages.empty()) {
             if (!firstDiagnostic.empty()) {
                 result.Error = firstDiagnostic;
             } else if (sawWarning) {
@@ -348,6 +726,10 @@ namespace CoreDeck {
         if (sdk.SdkManagerPath.empty() || packagePaths.empty()) {
             return false;
         }
+        if (IsCancelRequested(progress)) {
+            MarkCancelled(progress);
+            return false;
+        }
 
         if (progress) {
             std::lock_guard lock(progress->Mutex);
@@ -360,17 +742,32 @@ namespace CoreDeck {
         std::vector<std::string> args = {"--install"};
         args.insert(args.end(), packagePaths.begin(), packagePaths.end());
 
-        StreamCommandArgsWithEnv(
+        const bool completed = StreamCommandArgsWithEnvCancelable(
             sdk.SdkManagerPath,
             BuildSdkManagerArgs(sdk, args),
             "",
             BuildAndroidToolEnvironment(sdk),
             [&progress](const std::string &line) {
                 ParseProgressLine(line, progress);
+            },
+            [&progress] {
+                return IsCancelRequested(progress);
             }
         );
+        if (IsCancelRequested(progress)) {
+            MarkCancelled(progress);
+            return false;
+        }
+        if (!completed) {
+            MarkFinished(progress, false, "Installation completed.", "Installation failed.");
+            return false;
+        }
 
         const SdkPackageListResult packages = ListSdkPackages(sdk, true);
+        if (IsCancelRequested(progress)) {
+            MarkCancelled(progress);
+            return false;
+        }
         const bool ok = std::ranges::all_of(packagePaths, [&](const std::string &path) {
             return std::ranges::any_of(packages.Packages, [&](const SdkPackage &package) {
                 return package.Path == path && package.Installed;
@@ -389,6 +786,10 @@ namespace CoreDeck {
         if (sdk.SdkManagerPath.empty() || packagePaths.empty()) {
             return false;
         }
+        if (IsCancelRequested(progress)) {
+            MarkCancelled(progress);
+            return false;
+        }
 
         if (progress) {
             std::lock_guard lock(progress->Mutex);
@@ -401,17 +802,32 @@ namespace CoreDeck {
         std::vector<std::string> args = {"--uninstall"};
         args.insert(args.end(), packagePaths.begin(), packagePaths.end());
 
-        StreamCommandArgsWithEnv(
+        const bool completed = StreamCommandArgsWithEnvCancelable(
             sdk.SdkManagerPath,
             BuildSdkManagerArgs(sdk, args),
             "y\n",
             BuildAndroidToolEnvironment(sdk),
             [&progress](const std::string &line) {
                 ParseProgressLine(line, progress);
+            },
+            [&progress] {
+                return IsCancelRequested(progress);
             }
         );
+        if (IsCancelRequested(progress)) {
+            MarkCancelled(progress);
+            return false;
+        }
+        if (!completed) {
+            MarkFinished(progress, false, "Removal completed.", "Removal failed.");
+            return false;
+        }
 
         const SdkPackageListResult packages = ListSdkPackages(sdk, true);
+        if (IsCancelRequested(progress)) {
+            MarkCancelled(progress);
+            return false;
+        }
         const bool ok = std::ranges::none_of(packagePaths, [&](const std::string &path) {
             return std::ranges::any_of(packages.Packages, [&](const SdkPackage &package) {
                 return package.Path == path && package.Installed;

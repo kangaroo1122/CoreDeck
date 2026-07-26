@@ -13,6 +13,7 @@
 namespace CoreDeck {
     struct SdkBootstrapResult {
         bool Succeeded = false;
+        bool Cancelled = false;
         std::string Error;
     };
 

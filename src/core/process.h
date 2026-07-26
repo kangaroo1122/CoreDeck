@@ -49,6 +49,15 @@ namespace CoreDeck {
         const std::function<void(const std::string &)> &onLine
     );
 
+    bool StreamCommandArgsWithEnvCancelable(
+        const std::string &path,
+        const std::vector<std::string> &args,
+        const std::string &stdinData,
+        const ProcessEnvironment &environment,
+        const std::function<void(const std::string &)> &onLine,
+        const std::function<bool()> &shouldCancel
+    );
+
     ProcessId SpawnProcessWithPipe(const std::string &path, const std::vector<std::string> &args, int &outputFd);
 
     bool KillProcess(ProcessId pid);

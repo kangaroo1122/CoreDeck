@@ -1,6 +1,10 @@
 ## [v0.8.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.4) — 2026-07-25
 
 - Add Android SDK Platforms and SDK Tools management, with onboarding install for cmdline-tools, platform-tools, emulator, and the latest stable SDK Platform
+- Match SDK Platforms and SDK Tools package lists to Android SDK Updater-style summary/details views
+- Allow cancelling Android SDK tool downloads and package install operations
+- Show only SDK Platform packages in the SDK Platforms tab, with Name, API Level, Revision, and Status columns
+- Add JDK selection to onboarding and harden SDK package operations against path changes and command failures
 
 ## [v0.8.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.3) — 2026-07-25
 

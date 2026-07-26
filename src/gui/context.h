@@ -17,6 +17,7 @@
 #include "../core/emulator.h"
 #include "../core/options.h"
 #include "../core/sdk.h"
+#include "../core/sdk_bootstrap.h"
 #include "../core/sdk_packages.h"
 #include "../core/skin.h"
 #include "../core/system_image.h"
@@ -212,12 +213,13 @@ namespace CoreDeck {
             std::vector<SdkPackage> Packages;
             SdkPackageListResult LastListResult;
             SdkManagerTab ActiveTab = SdkManagerTab::Platforms;
-            int SelectedPackage = -1;
+            std::string SelectedPackageRowId;
             char SearchFilter[128] = {};
             bool HideObsoletePackages = true;
             bool ShowPackageDetails = false;
             bool AwaitingLicenseConsent = false;
-            std::string PendingPackagePath;
+            std::vector<std::string> PendingPackagePaths;
+            SdkInfo PendingSdk;
             std::string Error;
 
             struct {
@@ -234,7 +236,7 @@ namespace CoreDeck {
             std::future<bool> LicenseAcceptFuture;
 
             std::atomic<bool> BootstrapBusy{false};
-            std::future<bool> BootstrapFuture;
+            std::future<SdkBootstrapResult> BootstrapFuture;
             std::string BootstrapSdkRoot;
         } SdkManagerWork;
 

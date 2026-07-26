@@ -5,6 +5,8 @@
 #ifndef COREDECK_SDK_PACKAGES_H
 #define COREDECK_SDK_PACKAGES_H
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -13,6 +15,22 @@
 #include "sdk.h"
 
 namespace CoreDeck {
+    enum class SdkPackageViewTab : uint8_t {
+        Platforms,
+        Tools,
+    };
+
+    enum class SdkPackageViewMode : uint8_t {
+        Summary,
+        Details,
+    };
+
+    enum class SdkPackageDisplayStatus : uint8_t {
+        Installed,
+        NotInstalled,
+        UpdateAvailable,
+    };
+
     struct SdkPackage {
         std::string Path;
         std::string Version;
@@ -26,6 +44,19 @@ namespace CoreDeck {
         bool Obsolete = false;
     };
 
+    struct SdkPackageDisplayRow {
+        std::string Id;
+        std::string Name;
+        std::string ApiLevel;
+        std::string Revision;
+        std::string Version;
+        std::string PackagePath;
+        std::string Location;
+        SdkPackageDisplayStatus Status = SdkPackageDisplayStatus::NotInstalled;
+        std::vector<std::string> InstallPackagePaths;
+        std::vector<std::string> RemovePackagePaths;
+    };
+
     struct SdkPackageListResult {
         std::vector<SdkPackage> Packages;
         std::string Error;
@@ -34,6 +65,7 @@ namespace CoreDeck {
 
     struct SdkOperationProgress {
         std::mutex Mutex;
+        std::atomic<bool> CancelRequested{false};
         float Percent = 0.0F;
         std::string StatusText;
         std::string DetailText;
@@ -42,6 +74,14 @@ namespace CoreDeck {
     };
 
     SdkPackageListResult ListSdkPackages(const SdkInfo &sdk, bool includeObsolete = false);
+
+    std::vector<SdkPackageDisplayRow> BuildSdkPackageDisplayRows(
+        const std::vector<SdkPackage> &packages,
+        SdkPackageViewTab tab,
+        SdkPackageViewMode mode
+    );
+
+    const char *SdkPackageDisplayStatusText(SdkPackageDisplayStatus status);
 
     bool IsStableSdkPlatformPackage(const std::string &path);
 

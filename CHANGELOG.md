@@ -3,6 +3,7 @@
 - Improve first-run JDK/SDK setup spacing when download controls are visible
 - Update the About dialog website link
 - Split Android JDK/SDK preferences into separate JDK and SDK tabs
+- Fix native macOS menu bar titles after changing language
 
 ## [v0.8.0-beta.7](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.7) — 2026-07-26
 

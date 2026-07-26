@@ -132,6 +132,11 @@ namespace {
         [appMenu addItem:showAllItem];
     }
 
+    void SetMenuTitle(NSMenuItem *item, NSString *title) {
+        [item setTitle:title];
+        [[item submenu] setTitle:title];
+    }
+
     void SyncItemTitles(const CoreDeck::NativeMenuState &state) {
         g_Interactive = state.Interactive;
         g_UpdateCheckInFlight = state.UpdateCheckInFlight;
@@ -140,14 +145,14 @@ namespace {
         [g_PreferencesItem setTitle:Translated("Preferences...")];
         [g_QuitItem setTitle:QuitTitle()];
 
-        [g_ViewMenuItem setTitle:Translated("View")];
+        SetMenuTitle(g_ViewMenuItem, Translated("View"));
         [g_ToggleAvdListItem setTitle:Translated(state.ShowAvdListPanel ? "Hide AVD List" : "Show AVD List")];
         [g_ToggleOptionsItem setTitle:Translated(state.ShowOptionsPanel ? "Hide Options" : "Show Options")];
         [g_ToggleDetailsItem setTitle:Translated(state.ShowDetailsPanel ? "Hide Details" : "Show Details")];
         [g_ToggleOutputLogItem setTitle:Translated(state.ShowLogPanel ? "Hide Output Log" : "Show Output Log")];
         [g_StorageOverviewItem setTitle:Translated("Storage Overview")];
 
-        [g_HelpMenuItem setTitle:Translated("Help")];
+        SetMenuTitle(g_HelpMenuItem, Translated("Help"));
         [g_CheckForUpdatesItem setTitle:Translated("Check for Updates...")];
 
         [g_AboutItem setEnabled:state.Interactive];

@@ -337,9 +337,9 @@ namespace CoreDeck {
         return !std::filesystem::exists(sysImg);
     }
 
-    LicenseStatus CheckSdkLicenses(const SdkInfo &sdk) {
+    LicenseCheckResult CheckSdkLicensesDetailed(const SdkInfo &sdk) {
         if (sdk.SdkManagerPath.empty()) {
-            return LicenseStatus::CheckFailed;
+            return {.Status = LicenseStatus::CheckFailed, .Output = "SDK Manager was not found."};
         }
 
         const std::string output = RunCommandArgsWithEnv(
@@ -350,12 +350,16 @@ namespace CoreDeck {
         );
 
         if (output.find("All SDK package licenses accepted") != std::string::npos) {
-            return LicenseStatus::AllAccepted;
+            return {.Status = LicenseStatus::AllAccepted, .Output = output};
         }
         if (output.find("licenses not accepted") != std::string::npos) {
-            return LicenseStatus::SomeUnaccepted;
+            return {.Status = LicenseStatus::SomeUnaccepted, .Output = output};
         }
-        return LicenseStatus::CheckFailed;
+        return {.Status = LicenseStatus::CheckFailed, .Output = output};
+    }
+
+    LicenseStatus CheckSdkLicenses(const SdkInfo &sdk) {
+        return CheckSdkLicensesDetailed(sdk).Status;
     }
 
     bool AcceptSdkLicenses(const SdkInfo &sdk) {

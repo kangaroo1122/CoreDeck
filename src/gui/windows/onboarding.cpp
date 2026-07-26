@@ -36,7 +36,7 @@ namespace CoreDeck {
             bool Busy = false;
             bool AwaitingLicenseConsent = false;
             std::future<SdkBootstrapResult> ToolsFuture;
-            std::future<LicenseStatus> LicenseCheckFuture;
+            std::future<LicenseCheckResult> LicenseCheckFuture;
             std::future<bool> LicenseAcceptFuture;
             std::future<SdkBootstrapResult> PackagesFuture;
             std::shared_ptr<SdkOperationProgress> Progress;
@@ -187,7 +187,7 @@ namespace CoreDeck {
             SetOnboardingProgress(work.Progress, 0.02F, "Checking licenses...");
             work.Busy = true;
             work.LicenseCheckFuture = std::async(std::launch::async, [sdk] {
-                return CheckSdkLicenses(sdk);
+                return CheckSdkLicensesDetailed(sdk);
             });
         }
 
@@ -228,10 +228,11 @@ namespace CoreDeck {
 
             if (work.LicenseCheckFuture.valid() &&
                 work.LicenseCheckFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const LicenseStatus status = work.LicenseCheckFuture.get();
+                const LicenseCheckResult result = work.LicenseCheckFuture.get();
                 if (CompleteOnboardingCancelIfRequested(work)) {
                     return;
                 }
+                const LicenseStatus status = result.Status;
                 if (status == LicenseStatus::AllAccepted) {
                     StartOnboardingBasePackageInstall(context, work);
                 } else if (status == LicenseStatus::SomeUnaccepted) {
@@ -239,7 +240,12 @@ namespace CoreDeck {
                     work.AwaitingLicenseConsent = true;
                     SetOnboardingProgress(work.Progress, 0.02F, "Accept Android SDK License Terms");
                 } else {
-                    FailOnboardingSdkBootstrap(work, "Could not query license state. Check that the SDK Manager is working.");
+                    FailOnboardingSdkBootstrap(
+                        work,
+                        result.Output.empty()
+                            ? "Could not query license state. Check that the SDK Manager is working."
+                            : result.Output
+                    );
                 }
             }
 
@@ -541,8 +547,9 @@ namespace CoreDeck {
 
             if (!bootstrap.Error.empty()) {
                 WrappedColoredText(HexColor(Colors::NEGATIVE), formWidth, bootstrap.Error.c_str());
+            } else {
+                DrawOnboardingSdkProgress(bootstrap, formWidth);
             }
-            DrawOnboardingSdkProgress(bootstrap, formWidth);
             DrawOnboardingLicenseConsent(context, bootstrap, formWidth);
             if (bootstrap.Busy && !bootstrap.AwaitingLicenseConsent && bootstrap.Progress) {
                 ImGui::Spacing();

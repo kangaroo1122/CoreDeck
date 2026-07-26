@@ -133,6 +133,25 @@ TEST_CASE("SDK tools summary groups build tools and reports updates", "[sdk_pack
     REQUIRE(rows[0].RemovePackagePaths == std::vector<std::string>{"build-tools;35.0.0"});
 }
 
+TEST_CASE("SDK tool version ordering prefers stable releases over matching RC builds", "[sdk_packages][display]") {
+    std::vector<SdkPackage> packages = {
+        Package("build-tools;37.0.0-rc1", "37.0.0 rc1", "Android SDK Build-Tools 37 RC1"),
+        Package("build-tools;37.0.0-rc2", "37.0.0 rc2", "Android SDK Build-Tools 37 RC2"),
+        Package("build-tools;37.0.0", "37.0.0", "Android SDK Build-Tools 37"),
+    };
+
+    const auto summaryRows = BuildSdkPackageDisplayRows(packages, SdkPackageViewTab::Tools, SdkPackageViewMode::Summary);
+    REQUIRE(summaryRows.size() == 1);
+    REQUIRE(summaryRows[0].PackagePath == "build-tools;37.0.0");
+    REQUIRE(summaryRows[0].Version == "37.0.0");
+
+    const auto detailRows = BuildSdkPackageDisplayRows(packages, SdkPackageViewTab::Tools, SdkPackageViewMode::Details);
+    REQUIRE(detailRows.size() == 3);
+    REQUIRE(detailRows[0].PackagePath == "build-tools;37.0.0");
+    REQUIRE(detailRows[1].PackagePath == "build-tools;37.0.0-rc2");
+    REQUIRE(detailRows[2].PackagePath == "build-tools;37.0.0-rc1");
+}
+
 TEST_CASE("SDK tools details include concrete tool versions", "[sdk_packages][display]") {
     std::vector<SdkPackage> packages = {
         Package("build-tools;35.0.0", "35.0.0", "Android SDK Build-Tools 35", true),

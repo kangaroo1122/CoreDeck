@@ -51,9 +51,12 @@ namespace CoreDeck {
             ImGui::TextColored(color, "%s", translatedText);
         }
 
-        void VerticalCenter(const float contentHeight) {
+        void VerticalCenter(const float contentHeight, const float maxOffset = -1.0F) {
             const float available = ImGui::GetContentRegionAvail().y;
-            const float offset = (available - contentHeight) * 0.5F;
+            float offset = (available - contentHeight) * 0.5F;
+            if (maxOffset >= 0.0F && offset > maxOffset) {
+                offset = maxOffset;
+            }
             if (offset > 0.0F) {
                 ImGui::Dummy(ImVec2(0, offset));
             }
@@ -374,7 +377,7 @@ namespace CoreDeck {
             ImGui::SetNextItemWidth(width - browseWidth - spacing);
             ImGui::InputTextWithHint("##OnboardingJavaHome", Tr("Path to JDK home"), javaHomeBuffer, javaHomeBufferSize);
             ImGui::SameLine();
-            if (PrimaryButton("Browse...", true, ImVec2(browseWidth, 0))) {
+            if (PrimaryButton("Browse...###OnboardingJdkBrowse", true, ImVec2(browseWidth, 0))) {
                 const auto picked = FileDialog::PickFolder(Tr("Select JDK home directory"), javaHomeBuffer);
                 if (picked.has_value()) {
                     const std::string normalized = NormalizeJavaHomePath(*picked);
@@ -453,7 +456,7 @@ namespace CoreDeck {
                 pathBuffer[pathBufferSize - 1] = '\0';
             }
 
-            VerticalCenter(510.0F);
+            VerticalCenter(560.0F, Eh(2.0F));
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Locate your Android SDK", HexColor(Colors::TEXT_PRIMARY));
@@ -495,7 +498,7 @@ namespace CoreDeck {
             {
                 ImGui::InputTextWithHint("##sdk_path", Tr("e.g. /Users/you/Library/Android/sdk"), pathBuffer, pathBufferSize);
                 ImGui::SameLine();
-                if (PrimaryButton("Browse...", true, ImVec2(browseWidth, 0))) {
+                if (PrimaryButton("Browse...###OnboardingSdkBrowse", true, ImVec2(browseWidth, 0))) {
                     const auto picked = FileDialog::PickFolder(Tr("Select your Android SDK folder"), pathBuffer);
                     if (picked.has_value()) {
                         strncpy(pathBuffer, picked->c_str(), pathBufferSize - 1);
@@ -640,7 +643,6 @@ namespace CoreDeck {
             ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoCollapse |
-            ImGuiWindowFlags_NoScrollbar |
             ImGuiWindowFlags_NoDocking |
             ImGuiWindowFlags_NoBringToFrontOnFocus |
             ImGuiWindowFlags_NoNavFocus;

@@ -855,7 +855,7 @@ namespace CoreDeck {
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - browseWidth - spacing);
             ImGui::InputTextWithHint("##SdkPrefs", Tr("Path to Android SDK"), sdkPathBuffer, sdkBufferSize);
             ImGui::SameLine();
-            if (PrimaryButton("Browse...", true, ImVec2(browseWidth, 0))) {
+            if (PrimaryButton("Browse...###PrefsSdkBrowse", true, ImVec2(browseWidth, 0))) {
                 if (const auto picked = FileDialog::PickFolder(Tr("Select Android SDK directory"), sdkPathBuffer)) {
                     strncpy(sdkPathBuffer, picked->c_str(), sdkBufferSize - 1);
                     sdkPathBuffer[sdkBufferSize - 1] = '\0';
@@ -973,7 +973,7 @@ namespace CoreDeck {
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - browseWidth - spacing);
             ImGui::InputTextWithHint("##JavaHomePrefs", Tr("Path to JDK home"), javaHomeBuffer, javaHomeBufferSize);
             ImGui::SameLine();
-            if (PrimaryButton("Browse...", true, ImVec2(browseWidth, 0))) {
+            if (PrimaryButton("Browse...###PrefsJdkBrowse", true, ImVec2(browseWidth, 0))) {
                 if (const auto picked = FileDialog::PickFolder(Tr("Select JDK home directory"), javaHomeBuffer)) {
                     const std::string normalized = NormalizeJavaHomePath(*picked);
                     strncpy(javaHomeBuffer, normalized.c_str(), javaHomeBufferSize - 1);

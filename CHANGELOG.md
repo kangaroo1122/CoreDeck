@@ -5,6 +5,8 @@
 - Allow cancelling Android SDK tool downloads and package install operations
 - Show only SDK Platform packages in the SDK Platforms tab, with Name, API Level, Revision, and Status columns
 - Add JDK selection to onboarding and harden SDK package operations against path changes and command failures
+- Prefer stable SDK tool releases over matching preview or RC builds when picking the latest version
+- Fix SDK onboarding layout overflow and duplicate Browse button IDs
 
 ## [v0.8.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.3) — 2026-07-25
 

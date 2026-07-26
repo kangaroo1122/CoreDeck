@@ -124,18 +124,56 @@ namespace CoreDeck {
             return numbers;
         }
 
-        bool IsPreviewVersion(const std::string &version) {
+        struct ParsedVersion {
+            std::vector<int> ReleaseNumbers;
+            bool Preview = false;
+            int PreviewRank = 0;
+            int PreviewNumber = 0;
+        };
+
+        ParsedVersion ParseVersion(const std::string &version) {
+            struct Marker {
+                std::string_view Text;
+                int Rank;
+            };
+
+            static constexpr Marker MARKERS[] = {
+                {.Text = "canary", .Rank = 0},
+                {.Text = "alpha", .Rank = 1},
+                {.Text = "preview", .Rank = 2},
+                {.Text = "beta", .Rank = 2},
+                {.Text = "rc", .Rank = 3},
+            };
+
+            ParsedVersion parsed;
             const std::string lower = LowerCopy(version);
-            return lower.find("rc") != std::string::npos ||
-                   lower.find("alpha") != std::string::npos ||
-                   lower.find("beta") != std::string::npos ||
-                   lower.find("preview") != std::string::npos ||
-                   lower.find("canary") != std::string::npos;
+            std::size_t markerPos = std::string::npos;
+            for (const Marker marker: MARKERS) {
+                const std::size_t pos = lower.find(marker.Text);
+                if (pos != std::string::npos && (markerPos == std::string::npos || pos < markerPos)) {
+                    markerPos = pos;
+                    parsed.Preview = true;
+                    parsed.PreviewRank = marker.Rank;
+                }
+            }
+
+            const std::string releasePart = markerPos == std::string::npos ? version : version.substr(0, markerPos);
+            parsed.ReleaseNumbers = VersionNumbers(releasePart);
+
+            if (markerPos != std::string::npos) {
+                const std::vector<int> previewNumbers = VersionNumbers(version.substr(markerPos));
+                if (!previewNumbers.empty()) {
+                    parsed.PreviewNumber = previewNumbers.front();
+                }
+            }
+            return parsed;
         }
 
         int CompareVersions(const std::string &left, const std::string &right) {
-            const std::vector<int> leftNumbers = VersionNumbers(left);
-            const std::vector<int> rightNumbers = VersionNumbers(right);
+            const ParsedVersion leftVersion = ParseVersion(left);
+            const ParsedVersion rightVersion = ParseVersion(right);
+            const std::vector<int> &leftNumbers = leftVersion.ReleaseNumbers;
+            const std::vector<int> &rightNumbers = rightVersion.ReleaseNumbers;
             const std::size_t count = std::max(leftNumbers.size(), rightNumbers.size());
             for (std::size_t i = 0; i < count; i++) {
                 const int a = i < leftNumbers.size() ? leftNumbers[i] : 0;
@@ -145,10 +183,16 @@ namespace CoreDeck {
                 }
             }
 
-            const bool leftPreview = IsPreviewVersion(left);
-            const bool rightPreview = IsPreviewVersion(right);
-            if (leftPreview != rightPreview) {
-                return leftPreview ? -1 : 1;
+            if (leftVersion.Preview != rightVersion.Preview) {
+                return leftVersion.Preview ? -1 : 1;
+            }
+            if (leftVersion.Preview && rightVersion.Preview) {
+                if (leftVersion.PreviewRank != rightVersion.PreviewRank) {
+                    return leftVersion.PreviewRank < rightVersion.PreviewRank ? -1 : 1;
+                }
+                if (leftVersion.PreviewNumber != rightVersion.PreviewNumber) {
+                    return leftVersion.PreviewNumber < rightVersion.PreviewNumber ? -1 : 1;
+                }
             }
             return 0;
         }

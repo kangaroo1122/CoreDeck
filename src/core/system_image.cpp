@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cctype>
+#include <cstdlib>
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
@@ -78,6 +79,125 @@ namespace CoreDeck {
             result.insert(result.end(), args.begin(), args.end());
             return result;
         }
+
+        std::string Trim(std::string value) {
+            while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ' || value.back() == '\t')) {
+                value.pop_back();
+            }
+            while (!value.empty() && (value.front() == '\r' || value.front() == '\n' || value.front() == ' ' || value.front() == '\t')) {
+                value.erase(value.begin());
+            }
+            return value;
+        }
+
+        std::vector<std::string> SplitColumns(const std::string &line) {
+            std::vector<std::string> columns;
+            std::stringstream stream(line);
+            std::string column;
+            while (std::getline(stream, column, '|')) {
+                columns.push_back(Trim(column));
+            }
+            return columns;
+        }
+
+        std::string AbiDisplayName(const std::string &abi) {
+            if (abi == "arm64-v8a") {
+                return "ARM 64 v8a";
+            }
+            if (abi == "armeabi-v7a") {
+                return "ARM EABI v7a";
+            }
+            if (abi == "x86_64") {
+                return "Intel x86_64 Atom";
+            }
+            if (abi == "x86") {
+                return "Intel x86 Atom";
+            }
+            return abi;
+        }
+
+        std::string BaseDisplayNameForVariant(const std::string &variant) {
+            const std::string lower = LowerCopy(variant);
+            if (lower.find("android-automotive-playstore") != std::string::npos) {
+                return "Android Automotive with Google Play";
+            }
+            if (lower.find("android-automotive") != std::string::npos) {
+                return "Android Automotive with Google APIs";
+            }
+            if (lower.find("android-wear") != std::string::npos) {
+                return "Wear OS";
+            }
+            if (lower.find("android-tv") != std::string::npos) {
+                return "Android TV";
+            }
+            if (lower.find("google-tv") != std::string::npos) {
+                return "Google TV";
+            }
+            if (lower.find("android-desktop") != std::string::npos) {
+                return "Desktop";
+            }
+            if (lower.find("android-xr-preview-playstore") != std::string::npos) {
+                return "Google Play XR Preview";
+            }
+            if (lower.find("google-xr") != std::string::npos) {
+                return "Google Play XR";
+            }
+            if (lower.find("google_apis_playstore") != std::string::npos) {
+                return "Google Play";
+            }
+            if (lower.find("google_apis") != std::string::npos) {
+                return "Google APIs";
+            }
+            if (lower.find("google_atd") != std::string::npos) {
+                return "Google APIs ATD";
+            }
+            if (lower.find("aosp_atd") != std::string::npos) {
+                return "AOSP ATD";
+            }
+            if (lower == "default") {
+                return "";
+            }
+
+            std::string fallback = variant;
+            std::ranges::replace(fallback, '_', ' ');
+            std::ranges::replace(fallback, '-', ' ');
+            if (!fallback.empty()) {
+                fallback[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(fallback[0])));
+            }
+            return fallback;
+        }
+
+        std::string BuildSystemImageDisplayName(
+            const std::string &apiLevel,
+            const std::string &variant,
+            const std::string &abi
+        ) {
+            const std::string lowerVariant = LowerCopy(variant);
+            const std::string abiLabel = AbiDisplayName(abi);
+            std::string prefix;
+            if (lowerVariant.find("ps16k") != std::string::npos ||
+                lowerVariant.find("16kb") != std::string::npos ||
+                lowerVariant.find("16k") != std::string::npos) {
+                prefix = "16 KB Page Size ";
+            }
+
+            std::string base = BaseDisplayNameForVariant(variant);
+            if (lowerVariant.find("tablet") != std::string::npos && LowerCopy(base).find("tablet") == std::string::npos) {
+                base = base.empty() ? "Tablet" : StrConcat(base, " Tablet");
+            }
+
+            const std::string suffix = lowerVariant.find("signed") != std::string::npos ? " (signed)" : "";
+            if (base.empty()) {
+                if (!abiLabel.empty()) {
+                    return StrConcat(prefix, abiLabel, " System Image", suffix);
+                }
+                return apiLevel.empty() ? "System Image" : StrConcat("Android ", apiLevel, " System Image", suffix);
+            }
+            if (abiLabel.empty()) {
+                return StrConcat(prefix, base, " System Image", suffix);
+            }
+            return StrConcat(prefix, base, " ", abiLabel, " System Image", suffix);
+        }
     }
 
     std::vector<DeviceProfile> ListDeviceProfiles(const SdkInfo &sdk) {
@@ -119,6 +239,23 @@ namespace CoreDeck {
         return devices;
     }
 
+    std::vector<std::string> SupportedSystemImageAbis() {
+#if defined(__aarch64__) || defined(_M_ARM64)
+        return {"arm64-v8a"};
+#elif defined(__arm__) || defined(_M_ARM)
+        return {"armeabi-v7a"};
+#elif defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
+        return {"x86_64", "x86"};
+#else
+        return {};
+#endif
+    }
+
+    bool IsSystemImageAbiSupportedOnHost(const std::string &abi) {
+        const std::vector<std::string> supportedAbis = SupportedSystemImageAbis();
+        return supportedAbis.empty() || std::ranges::find(supportedAbis, abi) != supportedAbis.end();
+    }
+
     std::vector<SystemImage> ListSystemImages(const SdkInfo &sdk) {
         std::vector<SystemImage> images;
         if (sdk.SdkPath.empty()) {
@@ -155,6 +292,9 @@ namespace CoreDeck {
                         continue;
                     }
                     const std::string abi = abiEntry.path().filename().string();
+                    if (!IsSystemImageAbiSupportedOnHost(abi)) {
+                        continue;
+                    }
 
                     const std::string sysImg = Paths::JoinPaths({abiEntry.path().string(), "system.img"});
                     if (!std::filesystem::exists(sysImg)) {
@@ -166,7 +306,7 @@ namespace CoreDeck {
                     img.Variant = variant;
                     img.Abi = abi;
                     img.PackagePath = StrConcat("system-images;", apiDirName, ";", variant, ";", abi);
-                    img.DisplayName = StrConcat("Android ", apiLevel, " (", variant, ", ", abi, ")");
+                    img.DisplayName = BuildSystemImageDisplayName(apiLevel, variant, abi);
                     images.push_back(img);
                 }
             }
@@ -221,17 +361,9 @@ namespace CoreDeck {
                 continue;
             }
 
-            std::string packagePath;
-            if (auto pipe = line.find('|'); pipe != std::string::npos) {
-                packagePath = line.substr(0, pipe);
-            } else {
-                packagePath = line;
-            }
-
-            while (!packagePath.empty() && (packagePath.back() == ' ' || packagePath.back() == '\t')) {
-                packagePath.pop_back();
-            }
-            if (!seenPackages.insert(packagePath).second) {
+            const std::vector<std::string> columns = SplitColumns(line);
+            const std::string packagePath = columns.empty() ? "" : columns[0];
+            if (packagePath.empty() || !seenPackages.insert(packagePath).second) {
                 continue;
             }
 
@@ -256,8 +388,14 @@ namespace CoreDeck {
 
             img.Variant = parts[2];
             img.Abi = parts[3];
+            if (!IsSystemImageAbiSupportedOnHost(img.Abi)) {
+                continue;
+            }
+
             img.IsInstalled = installedSet.contains(packagePath);
-            img.DisplayName = StrConcat("Android ", img.ApiLevel, " (", img.Variant, ", ", img.Abi, ")");
+            img.DisplayName = columns.size() >= 3 && !columns[2].empty()
+                                  ? columns[2]
+                                  : BuildSystemImageDisplayName(img.ApiLevel, img.Variant, img.Abi);
 
             results.push_back(std::move(img));
         }

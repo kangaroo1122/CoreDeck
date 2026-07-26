@@ -2,6 +2,7 @@
 // Created by AbdulMuaz Aqeel on 15/04/2026.
 //
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <future>
@@ -51,9 +52,9 @@ namespace CoreDeck {
             ImGui::TextColored(color, "%s", translatedText);
         }
 
-        void VerticalCenter(const float contentHeight) {
+        void VerticalCenter(const float contentHeight, const float minOffset = 0.0F) {
             const float available = ImGui::GetContentRegionAvail().y;
-            const float offset = (available - contentHeight) * 0.5F;
+            const float offset = std::max(minOffset, (available - contentHeight) * 0.5F);
             if (offset > 0.0F) {
                 ImGui::Dummy(ImVec2(0, offset));
             }
@@ -459,7 +460,7 @@ namespace CoreDeck {
                 pathBuffer[pathBufferSize - 1] = '\0';
             }
 
-            VerticalCenter(560.0F);
+            VerticalCenter(560.0F, Eh(3.0F));
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Locate your Android SDK", HexColor(Colors::TEXT_PRIMARY));

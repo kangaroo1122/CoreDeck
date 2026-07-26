@@ -46,6 +46,10 @@ namespace CoreDeck {
             {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android JDK/SDK"},
         };
 
+        constexpr ImGuiWindowFlags PREFERENCES_WINDOW_FLAGS =
+            ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoDocking;
+
         bool SidebarRow(const SidebarItem &item, const bool selected) {
             ImGuiWindow *window = ImGui::GetCurrentWindow();
             const float width = ImGui::GetContentRegionAvail().x;
@@ -647,8 +651,14 @@ namespace CoreDeck {
                 ImGui::BeginDisabled();
             }
 
+            const float reservedHeight =
+                Eh(4.5F) +
+                (work.Progress && !work.BootstrapBusy.load() ? Eh(4.0F) : 0.0F) +
+                (work.AwaitingLicenseConsent ? Eh(8.0F) : 0.0F);
+            const float tableHeight = std::max(Eh(6.0F), ImGui::GetContentRegionAvail().y - reservedHeight);
+
             PickerTableStyle pts;
-            ImGui::BeginChild("##SdkPackageTableFrame", ImVec2(-1.0F, Eh(11.0F)), 1, ImGuiWindowFlags_NoScrollbar);
+            ImGui::BeginChild("##SdkPackageTableFrame", ImVec2(-1.0F, tableHeight), 1, ImGuiWindowFlags_NoScrollbar);
             if (ImGui::BeginTable("##SdkPackageTable", 4, PICKER_TABLE_FLAGS, ImVec2(-1.0F, -1.0F))) {
                 const bool platformTab = work.ActiveTab == SdkManagerTab::Platforms;
                 ImGui::TableSetupScrollFreeze(0, 1);
@@ -1047,9 +1057,14 @@ namespace CoreDeck {
             ImGui::OpenPopup("Preferences###CoreDeckPrefs");
         }
 
-        const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        const ImGuiViewport *viewport = ImGui::GetMainViewport();
+        const ImVec2 center = viewport->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
         ImGui::SetNextWindowSize(EmV(100.0F, 24.0F), ImGuiCond_Appearing);
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(std::min(Em(72.0F), viewport->WorkSize.x), std::min(Eh(20.0F), viewport->WorkSize.y)),
+            viewport->WorkSize
+        );
 
         static char sdkPathBuffer[2048];
         static char javaHomeBuffer[2048];
@@ -1057,7 +1072,7 @@ namespace CoreDeck {
         static auto activeSection = PrefsSection::Appearance;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        if (RoundedBeginPopupModal("Preferences###CoreDeckPrefs", &context.UI.ShowPreferences, WINDOW_NO_RESIZE_FLAGS)) {
+        if (RoundedBeginPopupModal("Preferences###CoreDeckPrefs", &context.UI.ShowPreferences, PREFERENCES_WINDOW_FLAGS)) {
             ImGui::PopStyleVar();
 
             if (ImGui::IsWindowAppearing()) {

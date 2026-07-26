@@ -10,6 +10,7 @@ add_executable(coredeck_tests
         test_options.cpp
         test_skin.cpp
         test_sdk_packages.cpp
+        test_system_image.cpp
         test_version_check.cpp
 )
 

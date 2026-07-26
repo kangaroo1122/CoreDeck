@@ -46,6 +46,10 @@ namespace CoreDeck {
 
     std::vector<DeviceProfile> ListDeviceProfiles(const SdkInfo &sdk);
 
+    std::vector<std::string> SupportedSystemImageAbis();
+
+    bool IsSystemImageAbiSupportedOnHost(const std::string &abi);
+
     std::vector<SystemImage> ListSystemImages(const SdkInfo &sdk);
 
     std::vector<RemoteSystemImage> ListRemoteSystemImages(

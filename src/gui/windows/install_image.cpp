@@ -133,6 +133,22 @@ namespace CoreDeck {
     }
 
     LabeledIconStyle SystemImageTypeStyleForVariant(const std::string &variant) {
+        const std::string lower = LowerCopy(variant);
+        if (lower.find("wear") != std::string::npos) {
+            return {.Icon = Icons::WATCH, .Label = "Wear OS", .Color = Colors::ACCENT_WEAR};
+        }
+        if (lower.find("automotive") != std::string::npos) {
+            return {.Icon = Icons::CAR, .Label = "Automotive", .Color = Colors::NEGATIVE};
+        }
+        if (lower.find("android-tv") != std::string::npos || lower.find("google-tv") != std::string::npos) {
+            return {.Icon = Icons::TV, .Label = "TV", .Color = Colors::ACCENT_TV};
+        }
+        if (lower.find("desktop") != std::string::npos) {
+            return {.Icon = Icons::DESKTOP, .Label = "Desktop", .Color = Colors::TEXT_SUBTLE};
+        }
+        if (lower.find("xr") != std::string::npos) {
+            return {.Icon = Icons::INFO, .Label = "XR", .Color = Colors::ACCENT_INFO};
+        }
         if (variant.starts_with("google_apis_playstore")) {
             return {.Icon = Icons::PLAY, .Label = "Google Play", .Color = Colors::POSITIVE};
         }
@@ -154,15 +170,20 @@ namespace CoreDeck {
     }
 
     std::string SystemImageDisplayName(const std::string &apiLevel, const std::string &fallback) {
-        if (!apiLevel.empty()) {
-            return StrConcat("Android ", apiLevel);
+        if (!fallback.empty()) {
+            return fallback;
         }
-        return fallback;
+        return apiLevel.empty() ? "System Image" : StrConcat("Android ", apiLevel);
     }
 
     std::string SystemImagePreviewLabel(const SystemImage &img) {
-        const auto style = SystemImageTypeStyleFor(img);
-        return StrConcat(SystemImageDisplayName(img.ApiLevel, img.DisplayName), " - ", Tr(style.Label), " - ", img.Abi);
+        const std::string displayName = SystemImageDisplayName(img.ApiLevel, img.DisplayName);
+        if (img.ApiLevel.empty() ||
+            displayName.find(StrConcat("Android ", img.ApiLevel)) != std::string::npos ||
+            displayName.find(StrConcat("API ", img.ApiLevel)) != std::string::npos) {
+            return displayName;
+        }
+        return StrConcat("Android ", img.ApiLevel, " - ", displayName);
     }
 
     // NOLINTNEXTLINE(readability-function-size)
@@ -340,13 +361,12 @@ namespace CoreDeck {
                     PickerTableStyle pts;
 
                     ImGui::BeginChild("##RemoteImageTableFrame", ImVec2(-1.0F, Eh(14.0F)), 1, ImGuiWindowFlags_NoScrollbar);
-                    if (ImGui::BeginTable("##RemoteImageTable", 5, PICKER_TABLE_FLAGS, ImVec2(-1.0F, -1.0F))) {
+                    if (ImGui::BeginTable("##RemoteImageTable", 4, PICKER_TABLE_FLAGS, ImVec2(-1.0F, -1.0F))) {
                         ImGui::TableSetupScrollFreeze(0, 1);
                         const std::string nameColumn = StrConcat(" ", Tr("Name"));
-                        ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 2.7F);
+                        ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 3.4F);
                         ImGui::TableSetupColumn(Tr("Type"), ImGuiTableColumnFlags_WidthStretch, 1.5F);
                         ImGui::TableSetupColumn("API", ImGuiTableColumnFlags_WidthStretch, 1.4F);
-                        ImGui::TableSetupColumn("ABI", ImGuiTableColumnFlags_WidthStretch, 1.3F);
                         ImGui::TableSetupColumn(Tr("Status"), ImGuiTableColumnFlags_WidthStretch, 1.2F);
                         ImGui::TableHeadersRow();
 
@@ -397,9 +417,6 @@ namespace CoreDeck {
 
                                 ImGui::TableNextColumn();
                                 ImGui::Text("%s", img.ApiLevel.c_str());
-
-                                ImGui::TableNextColumn();
-                                ImGui::Text("%s", img.Abi.c_str());
 
                                 ImGui::TableNextColumn();
                                 if (img.IsInstalled) {

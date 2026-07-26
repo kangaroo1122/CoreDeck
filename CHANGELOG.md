@@ -1,3 +1,9 @@
+## [v0.8.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.5) — 2026-07-26
+
+- Show full SDK Manager system image names and filter the AVD image picker to the host-supported ABI
+- Keep the Android JDK/SDK onboarding step clear of the top edge on shorter windows
+- Make Preferences resizable and let SDK package lists adapt to the available window height
+
 ## [v0.8.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.4) — 2026-07-25
 
 - Add Android SDK Platforms and SDK Tools management, with onboarding install for cmdline-tools, platform-tools, emulator, and the latest stable SDK Platform

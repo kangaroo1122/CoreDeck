@@ -54,9 +54,12 @@ namespace CoreDeck {
             ImGui::TextColored(color, "%s", translatedText);
         }
 
-        void VerticalCenter(const float contentHeight) {
+        void VerticalCenter(const float contentHeight, const float minTopOffset = 0.0F) {
             const float available = ImGui::GetContentRegionAvail().y;
-            const float offset = (available - contentHeight) * 0.5F;
+            float offset = (available - contentHeight) * 0.5F;
+            if (offset < minTopOffset) {
+                offset = minTopOffset;
+            }
             if (offset > 0.0F) {
                 ImGui::Dummy(ImVec2(0, offset));
             }
@@ -521,7 +524,7 @@ namespace CoreDeck {
             JavaHomeStatus &javaVersionState
         ) {
             RefreshJavaHomeStatus(javaVersionState, NormalizeJavaHomePath(javaHomeBuffer));
-            VerticalCenter(EstimateJdkSetupHeight(javaVersionState));
+            VerticalCenter(EstimateJdkSetupHeight(javaVersionState), Eh(3.0F));
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Configure Java", HexColor(Colors::TEXT_PRIMARY));
@@ -616,7 +619,7 @@ namespace CoreDeck {
             const bool hasSdkManager = HasSdkManager(currentPath);
             const bool canInstallSdkHere = CanInstallAndroidSdkIntoDirectory(currentPath);
 
-            VerticalCenter(EstimateSdkSetupHeight(isValid, hasSdkManager, bootstrap));
+            VerticalCenter(EstimateSdkSetupHeight(isValid, hasSdkManager, bootstrap), Eh(3.0F));
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Locate your Android SDK", HexColor(Colors::TEXT_PRIMARY));

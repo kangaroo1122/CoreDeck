@@ -168,7 +168,7 @@ target_compile_definitions(coredeck_core PUBLIC
     COREDECK_VENDOR="${APP_VENDOR}"
     COREDECK_DESCRIPTION="${APP_DESCRIPTION_SHORT}"
     COREDECK_YEAR="${CURRENT_YEAR}"
-    COREDECK_WEBSITE="https://coredeck.dev"
+    COREDECK_WEBSITE="https://www.kangaroohy.com"
     COREDECK_AUTHOR_WEBSITE="https://www.kangaroohy.com"
     COREDECK_GITHUB="https://github.com/kangaroo1122/CoreDeck"
     COREDECK_GITHUB_RELEASES="https://github.com/kangaroo1122/CoreDeck/releases"

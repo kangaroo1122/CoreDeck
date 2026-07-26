@@ -62,7 +62,7 @@ namespace CoreDeck {
                 OpenUrl(COREDECK_AUTHOR_WEBSITE);
             }
             PropertyText("License", "MIT");
-            if (PropertyText("Website", "coredeck.dev", true)) {
+            if (PropertyText("Website", "www.kangaroohy.com", true)) {
                 OpenUrl(COREDECK_WEBSITE);
             }
             if (PropertyText("GitHub", "github.com/kangaroo1122/CoreDeck", true)) {

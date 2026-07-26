@@ -36,6 +36,11 @@ namespace CoreDeck {
             AndroidSdk,
         };
 
+        enum class AndroidConfigTab : uint8_t {
+            Jdk,
+            Sdk,
+        };
+
         struct SidebarItem {
             PrefsSection Section;
             const char *Icon;
@@ -951,8 +956,6 @@ namespace CoreDeck {
             char *sdkPathBuffer,
             const size_t sdkBufferSize
         ) {
-            PollSdkManagerWork(context, sdkPathBuffer, sdkBufferSize);
-
             SubsectionHeader("SDK root", "Where CoreDeck installs and manages Android SDK command-line tools and packages.");
             const float browseWidth = Em(12.0F);
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
@@ -1175,6 +1178,69 @@ namespace CoreDeck {
                 RefreshSdkPackageList(context);
             }
         }
+
+        void DrawAndroidSdkTabbedSection(
+            Context &context,
+            char *sdkPathBuffer,
+            const size_t sdkBufferSize,
+            char *javaHomeBuffer,
+            const size_t javaHomeBufferSize,
+            JavaHomeStatus &javaVersionState,
+            AndroidConfigTab &activeTab
+        ) {
+            PollSdkManagerWork(context, sdkPathBuffer, sdkBufferSize);
+
+            const bool sdkBusy = IsSdkManagerBusy(context.SdkManagerWork);
+            const bool jdkBusy = IsJdkDownloadBusy(context);
+            if (jdkBusy) {
+                activeTab = AndroidConfigTab::Jdk;
+            } else if (sdkBusy) {
+                activeTab = AndroidConfigTab::Sdk;
+            }
+
+            const bool jdkTabEnabled = activeTab == AndroidConfigTab::Jdk || !sdkBusy;
+            const bool sdkTabEnabled = activeTab == AndroidConfigTab::Sdk || !jdkBusy;
+
+            if (!jdkTabEnabled) {
+                ImGui::BeginDisabled();
+            }
+            if (CategoryChip("JDK###AndroidPrefsJdkTab", activeTab == AndroidConfigTab::Jdk)) {
+                activeTab = AndroidConfigTab::Jdk;
+            }
+            if (!jdkTabEnabled) {
+                ImGui::EndDisabled();
+            }
+
+            ImGui::SameLine();
+            if (!sdkTabEnabled) {
+                ImGui::BeginDisabled();
+            }
+            if (CategoryChip("SDK###AndroidPrefsSdkTab", activeTab == AndroidConfigTab::Sdk)) {
+                activeTab = AndroidConfigTab::Sdk;
+            }
+            if (!sdkTabEnabled) {
+                ImGui::EndDisabled();
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            if (activeTab == AndroidConfigTab::Jdk) {
+                DrawJdkSection(
+                    context,
+                    javaHomeBuffer,
+                    javaHomeBufferSize,
+                    javaVersionState
+                );
+            } else {
+                DrawAndroidSdkSection(
+                    context,
+                    sdkPathBuffer,
+                    sdkBufferSize
+                );
+            }
+        }
     }
 
     void BuildPreferencesWindow(Context &context) {
@@ -1198,6 +1264,7 @@ namespace CoreDeck {
         static char javaHomeBuffer[2048];
         static JavaHomeStatus javaVersionState;
         static auto activeSection = PrefsSection::Appearance;
+        static auto activeAndroidTab = AndroidConfigTab::Jdk;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         if (RoundedBeginPopupModal("Preferences###CoreDeckPrefs", &context.UI.ShowPreferences, PREFERENCES_WINDOW_FLAGS)) {
@@ -1213,6 +1280,7 @@ namespace CoreDeck {
                 javaVersionState = {};
                 if (!context.Host.Sdk.IsFound) {
                     activeSection = PrefsSection::AndroidSdk;
+                    activeAndroidTab = AndroidConfigTab::Sdk;
                 }
             }
 
@@ -1272,19 +1340,14 @@ namespace CoreDeck {
                     break;
                 case PrefsSection::AndroidSdk:
                     SectionHeader("Android JDK/SDK", "Manage Java, the Android SDK location, platforms, and tools.");
-                    DrawJdkSection(
-                        context,
-                        javaHomeBuffer,
-                        sizeof(javaHomeBuffer),
-                        javaVersionState
-                    );
-                    ImGui::Spacing();
-                    ImGui::Separator();
-                    ImGui::Spacing();
-                    DrawAndroidSdkSection(
+                    DrawAndroidSdkTabbedSection(
                         context,
                         sdkPathBuffer,
-                        sizeof(sdkPathBuffer)
+                        sizeof(sdkPathBuffer),
+                        javaHomeBuffer,
+                        sizeof(javaHomeBuffer),
+                        javaVersionState,
+                        activeAndroidTab
                     );
                     break;
             }

@@ -62,6 +62,33 @@ namespace CoreDeck {
             }
         }
 
+        float EstimateJdkSetupHeight(const JavaHomeStatus &versionState) {
+            float height = Eh(22.0F);
+            if (versionState.HasJava && versionState.MajorVersion > 0 && versionState.MajorVersion < 17) {
+                height += Eh(2.0F);
+            }
+            if (ShouldOfferManagedJdkDownload(versionState)) {
+                height += Eh(16.0F);
+            }
+            return height;
+        }
+
+        float EstimateSdkSetupHeight(const bool isValid, const bool hasSdkManager, const OnboardingSdkBootstrapWork &work) {
+            float height = Eh(19.0F);
+            if (!isValid) {
+                height += hasSdkManager ? Eh(3.0F) : Eh(4.0F);
+            }
+            if (work.Error.empty() && work.Progress) {
+                height += Eh(4.0F);
+            }
+            if (work.AwaitingLicenseConsent) {
+                height += Eh(9.0F);
+            } else if (work.Busy && work.Progress) {
+                height += Eh(2.0F);
+            }
+            return height;
+        }
+
         void BuildWelcomeStep(Step &step) {
             VerticalCenter(260.0F);
 
@@ -493,7 +520,8 @@ namespace CoreDeck {
             const size_t javaHomeBufferSize,
             JavaHomeStatus &javaVersionState
         ) {
-            VerticalCenter(520.0F);
+            RefreshJavaHomeStatus(javaVersionState, NormalizeJavaHomePath(javaHomeBuffer));
+            VerticalCenter(EstimateJdkSetupHeight(javaVersionState));
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Configure Java", HexColor(Colors::TEXT_PRIMARY));
@@ -583,8 +611,12 @@ namespace CoreDeck {
                 strncpy(pathBuffer, defaultPath.c_str(), pathBufferSize - 1);
                 pathBuffer[pathBufferSize - 1] = '\0';
             }
+            const std::string currentPath = pathBuffer;
+            const bool isValid = Paths::Onboarding::ValidateSdkPath(currentPath);
+            const bool hasSdkManager = HasSdkManager(currentPath);
+            const bool canInstallSdkHere = CanInstallAndroidSdkIntoDirectory(currentPath);
 
-            VerticalCenter(420.0F);
+            VerticalCenter(EstimateSdkSetupHeight(isValid, hasSdkManager, bootstrap));
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Locate your Android SDK", HexColor(Colors::TEXT_PRIMARY));
@@ -626,10 +658,6 @@ namespace CoreDeck {
             }
 
             ImGui::Spacing();
-            const std::string currentPath = pathBuffer;
-            const bool isValid = Paths::Onboarding::ValidateSdkPath(currentPath);
-            const bool hasSdkManager = HasSdkManager(currentPath);
-            const bool canInstallSdkHere = CanInstallAndroidSdkIntoDirectory(currentPath);
             if (!currentPath.empty()) {
                 if (isValid) {
                     WrappedColoredText(

@@ -54,6 +54,10 @@ namespace CoreDeck {
 
         void m_PollUpdateCheckIfNeeded();
 
+        void m_HandleNativeMenuActions();
+
+        void m_SyncNativeMenuState() const;
+
         Context m_Context;
         GLFWwindow *m_Window = nullptr;
         bool m_GlfwInitialized = false;

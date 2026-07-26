@@ -69,6 +69,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64")
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0")
+    enable_language(OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 endif()
 
 if(WIN32)
@@ -277,6 +280,8 @@ if(WIN32)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/resources.rc)
 elseif(APPLE)
     target_compile_definitions(${PROJECT_NAME} PRIVATE GL_SILENCE_DEPRECATION)
+    target_sources(${PROJECT_NAME} PRIVATE src/platform/macos_menu.mm)
+    set_source_files_properties(src/platform/macos_menu.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
     target_link_libraries(${PROJECT_NAME} PRIVATE "-framework Cocoa" "-framework IOKit" "-framework CoreVideo")
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE

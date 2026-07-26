@@ -48,6 +48,9 @@
 #include "windows/storage.h"
 #include "windows/update.h"
 #include "../core/version_check.h"
+#if defined(__APPLE__)
+#include "../platform/macos_menu.h"
+#endif
 
 namespace CoreDeck {
     namespace {
@@ -104,6 +107,9 @@ namespace CoreDeck {
     }
 
     void Application::m_Build() {
+        m_HandleNativeMenuActions();
+        m_SyncNativeMenuState();
+
         if (m_Context.Flow.CurrentScreen == Screen::Onboarding) {
             BuildOnboardingWindow(m_Context);
             return;
@@ -171,7 +177,9 @@ namespace CoreDeck {
             }
         }
 
+#if !defined(__APPLE__)
         BuildMainMenuBar(m_Context);
+#endif
         BuildSdkMissingBanner(m_Context);
         BuildDeleteAvdWindow(m_Context);
         BuildAvdOptionsWindow(m_Context);
@@ -232,6 +240,10 @@ namespace CoreDeck {
 #endif
 
         m_Context.UI.MainWindow = m_Window;
+#if defined(__APPLE__)
+        MacosMenu::Install();
+        m_SyncNativeMenuState();
+#endif
         return true;
     }
 
@@ -449,6 +461,9 @@ namespace CoreDeck {
             glfwDestroyWindow(m_Window);
             m_Window = nullptr;
         }
+#if defined(__APPLE__)
+        MacosMenu::Shutdown();
+#endif
         if (m_GlfwInitialized) {
             glfwTerminate();
             m_GlfwInitialized = false;
@@ -496,6 +511,68 @@ namespace CoreDeck {
                 }
             });
         }
+    }
+
+    void Application::m_HandleNativeMenuActions() {
+#if defined(__APPLE__)
+        while (const std::optional<NativeMenuAction> action = MacosMenu::PollAction()) {
+            if (m_Context.Flow.CurrentScreen == Screen::Onboarding &&
+                *action != NativeMenuAction::Quit) {
+                continue;
+            }
+
+            switch (*action) {
+                case NativeMenuAction::Preferences:
+                    m_Context.UI.ShowPreferences = true;
+                    break;
+                case NativeMenuAction::Quit:
+                    if (m_Window != nullptr) {
+                        glfwSetWindowShouldClose(m_Window, GLFW_TRUE);
+                    }
+                    break;
+                case NativeMenuAction::ToggleAvdList:
+                    m_Context.UI.ShowAvdListPanel = !m_Context.UI.ShowAvdListPanel;
+                    PersistAppSettings(m_Context);
+                    break;
+                case NativeMenuAction::ToggleOptions:
+                    m_Context.UI.ShowOptionsPanel = !m_Context.UI.ShowOptionsPanel;
+                    PersistAppSettings(m_Context);
+                    break;
+                case NativeMenuAction::ToggleDetails:
+                    m_Context.UI.ShowDetailsPanel = !m_Context.UI.ShowDetailsPanel;
+                    PersistAppSettings(m_Context);
+                    break;
+                case NativeMenuAction::ToggleOutputLog:
+                    m_Context.UI.ShowLogPanel = !m_Context.UI.ShowLogPanel;
+                    PersistAppSettings(m_Context);
+                    break;
+                case NativeMenuAction::StorageOverview:
+                    m_Context.UI.ShowStorageDialog = true;
+                    break;
+                case NativeMenuAction::About:
+                    m_Context.UI.ShowAboutDialog = true;
+                    break;
+                case NativeMenuAction::CheckForUpdates:
+                    if (!m_Context.Updates.UpdateCheckInFlight) {
+                        m_Context.Updates.RequestManualUpdateCheck = true;
+                    }
+                    break;
+            }
+        }
+#endif
+    }
+
+    void Application::m_SyncNativeMenuState() const {
+#if defined(__APPLE__)
+        MacosMenu::Update({
+            .Interactive = m_Context.Flow.CurrentScreen == Screen::Main,
+            .ShowAvdListPanel = m_Context.UI.ShowAvdListPanel,
+            .ShowOptionsPanel = m_Context.UI.ShowOptionsPanel,
+            .ShowDetailsPanel = m_Context.UI.ShowDetailsPanel,
+            .ShowLogPanel = m_Context.UI.ShowLogPanel,
+            .UpdateCheckInFlight = m_Context.Updates.UpdateCheckInFlight,
+        });
+#endif
     }
 
     AppSettings CaptureAppSettingsFromContext(const Context &context) {

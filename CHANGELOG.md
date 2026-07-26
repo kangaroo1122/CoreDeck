@@ -1,3 +1,9 @@
+## [v0.8.0-beta.7](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.7) — 2026-07-26
+
+- Use the native macOS menu bar for app, view, and help actions
+- Keep Windows and Linux on the in-window ImGui menu bar
+- Improve first-run JDK/SDK setup spacing when download controls are visible
+
 ## [v0.8.0-beta.6](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.6) — 2026-07-26
 
 - Improve Android JDK/SDK package table height and resizing behavior

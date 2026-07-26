@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #if defined(_WIN32)
@@ -113,7 +115,12 @@ namespace CoreDeck {
             return dir;
         }
 
-        bool CopyDirectoryContents(const std::filesystem::path &from, const std::filesystem::path &to, std::string &error) {
+        bool CopyDirectoryContents(
+            const std::filesystem::path &from,
+            const std::filesystem::path &to,
+            std::string &error,
+            const std::shared_ptr<SdkOperationProgress> &progress = nullptr
+        ) {
             std::error_code ec;
             std::filesystem::create_directories(to, ec);
             if (ec) {
@@ -124,6 +131,10 @@ namespace CoreDeck {
             for (const auto &entry: std::filesystem::directory_iterator(from, ec)) {
                 if (ec) {
                     error = ec.message();
+                    return false;
+                }
+                if (IsCancelRequested(progress)) {
+                    error = "Operation cancelled.";
                     return false;
                 }
 
@@ -138,8 +149,100 @@ namespace CoreDeck {
                     error = ec.message();
                     return false;
                 }
+                if (IsCancelRequested(progress)) {
+                    error = "Operation cancelled.";
+                    return false;
+                }
             }
 
+            return true;
+        }
+
+        std::filesystem::path UniqueSiblingPath(const std::filesystem::path &target, const std::string_view suffix) {
+            std::filesystem::path parent = target.parent_path();
+            if (parent.empty()) {
+                parent = ".";
+            }
+            std::string name = target.filename().string();
+            if (name.empty()) {
+                name = "sdk";
+            }
+            const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+            return parent / StrConcat(".", name, "-", std::string(suffix), "-", std::to_string(now));
+        }
+
+        class BootstrapDirectoryCleanup {
+        public:
+            explicit BootstrapDirectoryCleanup(std::filesystem::path sdkRoot)
+                : m_SdkRoot(std::move(sdkRoot)),
+                  m_CmdlineToolsRoot(m_SdkRoot / "cmdline-tools") {
+                std::error_code ec;
+                m_SdkRootExisted = std::filesystem::exists(m_SdkRoot, ec);
+                ec.clear();
+                m_CmdlineToolsRootExisted = std::filesystem::exists(m_CmdlineToolsRoot, ec);
+            }
+
+            ~BootstrapDirectoryCleanup() {
+                if (!m_Active) {
+                    return;
+                }
+
+                std::error_code ec;
+                if (!m_CmdlineToolsRootExisted) {
+                    std::filesystem::remove_all(m_CmdlineToolsRoot, ec);
+                }
+                if (!m_SdkRootExisted) {
+                    std::filesystem::remove_all(m_SdkRoot, ec);
+                }
+            }
+
+            void Disarm() {
+                m_Active = false;
+            }
+
+        private:
+            std::filesystem::path m_SdkRoot;
+            std::filesystem::path m_CmdlineToolsRoot;
+            bool m_SdkRootExisted = false;
+            bool m_CmdlineToolsRootExisted = false;
+            bool m_Active = true;
+        };
+
+        bool ReplaceDirectoryWithStagedInstall(
+            const std::filesystem::path &stagingDir,
+            const std::filesystem::path &installDir,
+            std::string &error
+        ) {
+            std::error_code ec;
+            std::filesystem::path backupDir;
+
+            if (std::filesystem::exists(installDir, ec)) {
+                backupDir = UniqueSiblingPath(installDir, "previous");
+                std::filesystem::rename(installDir, backupDir, ec);
+                if (ec) {
+                    error = StrConcat("Could not prepare existing directory for replacement: ", ec.message());
+                    return false;
+                }
+            }
+
+            std::filesystem::rename(stagingDir, installDir, ec);
+            if (ec) {
+                error = StrConcat("Could not move directory into place: ", ec.message());
+                if (!backupDir.empty()) {
+                    std::error_code restoreEc;
+                    if (!std::filesystem::exists(installDir, restoreEc)) {
+                        std::filesystem::rename(backupDir, installDir, restoreEc);
+                    }
+                    if (restoreEc) {
+                        error += StrConcat(" The previous directory could not be restored: ", restoreEc.message());
+                    }
+                }
+                return false;
+            }
+
+            if (!backupDir.empty()) {
+                std::filesystem::remove_all(backupDir, ec);
+            }
             return true;
         }
 
@@ -315,7 +418,11 @@ namespace CoreDeck {
             WinHttpCloseHandle(request);
             WinHttpCloseHandle(connect);
             WinHttpCloseHandle(session);
-            return transferOk && std::filesystem::exists(destination) && std::filesystem::file_size(destination) > 0;
+            std::error_code fileEc;
+            return transferOk &&
+                   std::filesystem::exists(destination, fileEc) &&
+                   std::filesystem::file_size(destination, fileEc) > 0 &&
+                   !fileEc;
         }
 
         std::string PowerShellQuote(const std::string &value) {
@@ -353,7 +460,8 @@ namespace CoreDeck {
                     return IsCancelRequested(progress);
                 }
             );
-            return completed && std::filesystem::exists(destination / "cmdline-tools");
+            std::error_code ec;
+            return completed && std::filesystem::exists(destination / "cmdline-tools", ec) && !ec;
         }
 #else
         size_t WriteFileCallback(const char *ptr, const size_t size, const size_t nmemb, void *userdata) {
@@ -420,7 +528,10 @@ namespace CoreDeck {
                 error = IsCancelRequested(progress) ? "Operation cancelled." : "Command-line tools download failed.";
                 return false;
             }
-            return std::filesystem::exists(destination) && std::filesystem::file_size(destination) > 0;
+            std::error_code fileEc;
+            return std::filesystem::exists(destination, fileEc) &&
+                   std::filesystem::file_size(destination, fileEc) > 0 &&
+                   !fileEc;
         }
 
         bool ExtractZip(
@@ -439,7 +550,8 @@ namespace CoreDeck {
                     return IsCancelRequested(progress);
                 }
             );
-            return completed && std::filesystem::exists(destination / "cmdline-tools");
+            std::error_code ec;
+            return completed && std::filesystem::exists(destination / "cmdline-tools", ec) && !ec;
         }
 #endif
     }
@@ -454,6 +566,38 @@ namespace CoreDeck {
 #else
         return "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip";
 #endif
+    }
+
+    bool CanInstallAndroidSdkIntoDirectory(const std::string &sdkRoot) {
+        const std::string normalized = Paths::NormalizePath(sdkRoot);
+        if (normalized.empty()) {
+            return false;
+        }
+
+        try {
+            std::error_code ec;
+            const std::filesystem::path root(normalized);
+            const bool exists = std::filesystem::exists(root, ec);
+            if (ec) {
+                return false;
+            }
+            if (!exists) {
+                return true;
+            }
+            if (!std::filesystem::is_directory(root, ec) || ec) {
+                return false;
+            }
+            if (std::filesystem::is_empty(root, ec)) {
+                return !ec;
+            }
+            if (ec) {
+                return false;
+            }
+
+            return HasSdkManager(normalized);
+        } catch (...) {
+            return false;
+        }
     }
 
     SdkInfo BuildSdkInfoFromSdkRoot(const std::string &sdkRoot, const std::string &javaHomePath) {
@@ -500,91 +644,122 @@ namespace CoreDeck {
         const std::string &sdkRoot,
         const std::shared_ptr<SdkOperationProgress> &progress
     ) {
-        if (sdkRoot.empty()) {
-            return Fail(progress, "Choose an Android SDK directory first.");
-        }
-        if (IsCancelRequested(progress)) {
-            return Cancelled(progress);
-        }
+        try {
+            if (sdkRoot.empty()) {
+                return Fail(progress, "Choose an Android SDK directory first.");
+            }
+            if (IsCancelRequested(progress)) {
+                return Cancelled(progress);
+            }
+            if (!CanInstallAndroidSdkIntoDirectory(sdkRoot)) {
+                return Fail(progress, "Choose an empty folder for the Android SDK download.");
+            }
+            BootstrapDirectoryCleanup cleanup(sdkRoot);
 
-        std::error_code ec;
-        SetProgress(progress, 0.02F, "Preparing SDK directory...");
-        std::filesystem::create_directories(sdkRoot, ec);
-        if (ec) {
-            return Fail(progress, StrConcat("Could not create SDK directory: ", ec.message()));
-        }
+            std::error_code ec;
+            SetProgress(progress, 0.02F, "Preparing SDK directory...");
+            std::filesystem::create_directories(sdkRoot, ec);
+            if (ec) {
+                return Fail(progress, StrConcat("Could not create SDK directory: ", ec.message()));
+            }
 
-        if (HasSdkManager(sdkRoot)) {
+            if (HasSdkManager(sdkRoot)) {
+                cleanup.Disarm();
+                return Success(progress);
+            }
+            if (IsCancelRequested(progress)) {
+                return Cancelled(progress);
+            }
+
+            const std::filesystem::path tempDir = CreateTempDirectory();
+            const std::filesystem::path zipPath = tempDir / "commandlinetools.zip";
+            const std::filesystem::path extractDir = tempDir / "extract";
+            std::filesystem::create_directories(extractDir, ec);
+            if (ec) {
+                std::filesystem::remove_all(tempDir, ec);
+                return Fail(progress, StrConcat("Could not create temporary directory: ", ec.message()));
+            }
+
+            std::string error;
+            const std::string url = CommandLineToolsDownloadUrl();
+            SetProgress(progress, 0.05F, "Downloading command-line tools...", url);
+            if (!DownloadFile(url, zipPath, progress, error)) {
+                std::filesystem::remove_all(tempDir, ec);
+                if (IsCancelRequested(progress)) {
+                    return Cancelled(progress);
+                }
+                return Fail(progress, error.empty() ? "Command-line tools download failed." : error);
+            }
+            if (IsCancelRequested(progress)) {
+                std::filesystem::remove_all(tempDir, ec);
+                return Cancelled(progress);
+            }
+
+            SetProgress(progress, 0.74F, "Extracting command-line tools...");
+            if (!ExtractZip(zipPath, extractDir, progress)) {
+                std::filesystem::remove_all(tempDir, ec);
+                if (IsCancelRequested(progress)) {
+                    return Cancelled(progress);
+                }
+                return Fail(progress, "Could not extract command-line tools.");
+            }
+            if (IsCancelRequested(progress)) {
+                std::filesystem::remove_all(tempDir, ec);
+                return Cancelled(progress);
+            }
+
+            SetProgress(progress, 0.88F, "Installing command-line tools...");
+            const std::filesystem::path extractedTools = extractDir / "cmdline-tools";
+            const std::filesystem::path cmdlineToolsRoot = std::filesystem::path(sdkRoot) / "cmdline-tools";
+            const std::filesystem::path latestTools = cmdlineToolsRoot / "latest";
+            std::filesystem::create_directories(cmdlineToolsRoot, ec);
+            if (ec) {
+                std::filesystem::remove_all(tempDir, ec);
+                return Fail(progress, StrConcat("Could not create cmdline-tools directory: ", ec.message()));
+            }
+            const std::filesystem::path stagingTools = UniqueSiblingPath(latestTools, "installing");
+            std::filesystem::remove_all(stagingTools, ec);
+            if (ec) {
+                std::filesystem::remove_all(tempDir, ec);
+                return Fail(progress, StrConcat("Could not prepare cmdline-tools staging directory: ", ec.message()));
+            }
+            std::filesystem::create_directories(stagingTools, ec);
+            if (ec) {
+                std::filesystem::remove_all(tempDir, ec);
+                return Fail(progress, StrConcat("Could not create cmdline-tools staging directory: ", ec.message()));
+            }
+
+            if (!CopyDirectoryContents(extractedTools, stagingTools, error, progress)) {
+                std::filesystem::remove_all(tempDir, ec);
+                std::filesystem::remove_all(stagingTools, ec);
+                if (IsCancelRequested(progress)) {
+                    return Cancelled(progress);
+                }
+                return Fail(progress, StrConcat("Could not install command-line tools: ", error));
+            }
+            if (IsCancelRequested(progress)) {
+                std::filesystem::remove_all(tempDir, ec);
+                std::filesystem::remove_all(stagingTools, ec);
+                return Cancelled(progress);
+            }
+            if (!ReplaceDirectoryWithStagedInstall(stagingTools, latestTools, error)) {
+                std::filesystem::remove_all(tempDir, ec);
+                std::filesystem::remove_all(stagingTools, ec);
+                return Fail(progress, error.empty() ? "Could not install command-line tools." : error);
+            }
+
+            std::filesystem::remove_all(tempDir, ec);
+            if (!HasSdkManager(sdkRoot)) {
+                return Fail(progress, "Command-line tools were installed, but sdkmanager was not found.");
+            }
+
+            cleanup.Disarm();
             return Success(progress);
+        } catch (const std::exception &ex) {
+            return Fail(progress, StrConcat("Command-line tools installation failed: ", ex.what()));
+        } catch (...) {
+            return Fail(progress, "Command-line tools installation failed unexpectedly.");
         }
-        if (IsCancelRequested(progress)) {
-            return Cancelled(progress);
-        }
-
-        const std::filesystem::path tempDir = CreateTempDirectory();
-        const std::filesystem::path zipPath = tempDir / "commandlinetools.zip";
-        const std::filesystem::path extractDir = tempDir / "extract";
-        std::filesystem::create_directories(extractDir, ec);
-        if (ec) {
-            std::filesystem::remove_all(tempDir, ec);
-            return Fail(progress, StrConcat("Could not create temporary directory: ", ec.message()));
-        }
-
-        std::string error;
-        const std::string url = CommandLineToolsDownloadUrl();
-        SetProgress(progress, 0.05F, "Downloading command-line tools...", url);
-        if (!DownloadFile(url, zipPath, progress, error)) {
-            std::filesystem::remove_all(tempDir, ec);
-            if (IsCancelRequested(progress)) {
-                return Cancelled(progress);
-            }
-            return Fail(progress, error.empty() ? "Command-line tools download failed." : error);
-        }
-        if (IsCancelRequested(progress)) {
-            std::filesystem::remove_all(tempDir, ec);
-            return Cancelled(progress);
-        }
-
-        SetProgress(progress, 0.74F, "Extracting command-line tools...");
-        if (!ExtractZip(zipPath, extractDir, progress)) {
-            std::filesystem::remove_all(tempDir, ec);
-            if (IsCancelRequested(progress)) {
-                return Cancelled(progress);
-            }
-            return Fail(progress, "Could not extract command-line tools.");
-        }
-        if (IsCancelRequested(progress)) {
-            std::filesystem::remove_all(tempDir, ec);
-            return Cancelled(progress);
-        }
-
-        SetProgress(progress, 0.88F, "Installing command-line tools...");
-        const std::filesystem::path extractedTools = extractDir / "cmdline-tools";
-        const std::filesystem::path latestTools = std::filesystem::path(sdkRoot) / "cmdline-tools" / "latest";
-        std::filesystem::create_directories(latestTools, ec);
-        if (ec) {
-            std::filesystem::remove_all(tempDir, ec);
-            return Fail(progress, StrConcat("Could not create cmdline-tools/latest: ", ec.message()));
-        }
-
-        if (!CopyDirectoryContents(extractedTools, latestTools, error)) {
-            std::filesystem::remove_all(tempDir, ec);
-            if (IsCancelRequested(progress)) {
-                return Cancelled(progress);
-            }
-            return Fail(progress, StrConcat("Could not install command-line tools: ", error));
-        }
-        if (IsCancelRequested(progress)) {
-            std::filesystem::remove_all(tempDir, ec);
-            return Cancelled(progress);
-        }
-
-        std::filesystem::remove_all(tempDir, ec);
-        if (!HasSdkManager(sdkRoot)) {
-            return Fail(progress, "Command-line tools were installed, but sdkmanager was not found.");
-        }
-
-        return Success(progress);
     }
 
     SdkBootstrapResult BootstrapBaseAndroidSdk(

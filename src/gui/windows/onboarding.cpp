@@ -2,9 +2,9 @@
 // Created by AbdulMuaz Aqeel on 15/04/2026.
 //
 
-#include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <exception>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -14,6 +14,7 @@
 
 #include "onboarding.h"
 #include "../application.h"
+#include "../jdk_download_panel.h"
 #include "../localization.h"
 #include "../widgets.h"
 #include "../theme.h"
@@ -30,6 +31,7 @@ namespace CoreDeck {
     namespace {
         enum class Step : uint8_t {
             Welcome,
+            JdkSetup,
             SdkSetup
         };
 
@@ -52,9 +54,9 @@ namespace CoreDeck {
             ImGui::TextColored(color, "%s", translatedText);
         }
 
-        void VerticalCenter(const float contentHeight, const float minOffset = 0.0F) {
+        void VerticalCenter(const float contentHeight) {
             const float available = ImGui::GetContentRegionAvail().y;
-            const float offset = std::max(minOffset, (available - contentHeight) * 0.5F);
+            const float offset = (available - contentHeight) * 0.5F;
             if (offset > 0.0F) {
                 ImGui::Dummy(ImVec2(0, offset));
             }
@@ -87,7 +89,7 @@ namespace CoreDeck {
             const float buttonWidth = Em(20.0F);
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - buttonWidth) * 0.5F);
             if (PositiveButton("Get Started", true, ImVec2(buttonWidth, 0))) {
-                step = Step::SdkSetup;
+                step = Step::JdkSetup;
             }
         }
 
@@ -212,7 +214,16 @@ namespace CoreDeck {
         void PollOnboardingSdkBootstrap(Context &context, OnboardingSdkBootstrapWork &work) {
             if (work.ToolsFuture.valid() &&
                 work.ToolsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const SdkBootstrapResult result = work.ToolsFuture.get();
+                SdkBootstrapResult result;
+                try {
+                    result = work.ToolsFuture.get();
+                } catch (const std::exception &ex) {
+                    FailOnboardingSdkBootstrap(work, StrConcat("Command-line tools installation failed: ", ex.what()));
+                    return;
+                } catch (...) {
+                    FailOnboardingSdkBootstrap(work, "Command-line tools installation failed unexpectedly.");
+                    return;
+                }
                 if (!result.Succeeded) {
                     if (result.Cancelled) {
                         work.Busy = false;
@@ -229,7 +240,16 @@ namespace CoreDeck {
 
             if (work.LicenseCheckFuture.valid() &&
                 work.LicenseCheckFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const LicenseCheckResult result = work.LicenseCheckFuture.get();
+                LicenseCheckResult result;
+                try {
+                    result = work.LicenseCheckFuture.get();
+                } catch (const std::exception &ex) {
+                    FailOnboardingSdkBootstrap(work, StrConcat("Could not query license state: ", ex.what()));
+                    return;
+                } catch (...) {
+                    FailOnboardingSdkBootstrap(work, "Could not query license state.");
+                    return;
+                }
                 if (CompleteOnboardingCancelIfRequested(work)) {
                     return;
                 }
@@ -252,7 +272,16 @@ namespace CoreDeck {
 
             if (work.LicenseAcceptFuture.valid() &&
                 work.LicenseAcceptFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const bool ok = work.LicenseAcceptFuture.get();
+                bool ok = false;
+                try {
+                    ok = work.LicenseAcceptFuture.get();
+                } catch (const std::exception &ex) {
+                    FailOnboardingSdkBootstrap(work, StrConcat("License acceptance failed: ", ex.what()));
+                    return;
+                } catch (...) {
+                    FailOnboardingSdkBootstrap(work, "License acceptance failed.");
+                    return;
+                }
                 if (CompleteOnboardingCancelIfRequested(work)) {
                     return;
                 }
@@ -266,7 +295,18 @@ namespace CoreDeck {
 
             if (work.PackagesFuture.valid() &&
                 work.PackagesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const SdkBootstrapResult result = work.PackagesFuture.get();
+                SdkBootstrapResult result;
+                try {
+                    result = work.PackagesFuture.get();
+                } catch (const std::exception &ex) {
+                    work.Busy = false;
+                    FailOnboardingSdkBootstrap(work, StrConcat("Android SDK setup failed: ", ex.what()));
+                    return;
+                } catch (...) {
+                    work.Busy = false;
+                    FailOnboardingSdkBootstrap(work, "Android SDK setup failed unexpectedly.");
+                    return;
+                }
                 work.Busy = false;
                 if (!result.Succeeded) {
                     if (result.Cancelled) {
@@ -420,11 +460,98 @@ namespace CoreDeck {
                 }
             }
 
+            if (versionState.HasJava && versionState.MajorVersion > 0 && versionState.MajorVersion < 17) {
+                WrappedColoredText(
+                    HexColor(Colors::WARNING),
+                    width,
+                    "This Java version is older than 17. You can keep it, or download a managed JDK below."
+                );
+            }
+
+            if (ShouldOfferManagedJdkDownload(versionState)) {
+                DrawJdkDownloadPanel(
+                    context,
+                    javaHomeBuffer,
+                    javaHomeBufferSize,
+                    versionState,
+                    width,
+                    enabled
+                );
+            }
+
             if (!enabled) {
                 ImGui::EndDisabled();
             }
 
-            return javaHomePath;
+            return NormalizeJavaHomePath(javaHomeBuffer);
+        }
+
+        void BuildJdkSetupStep(
+            Context &context,
+            Step &step,
+            char *javaHomeBuffer,
+            const size_t javaHomeBufferSize,
+            JavaHomeStatus &javaVersionState
+        ) {
+            VerticalCenter(520.0F);
+
+            ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
+            CenteredText("Configure Java", HexColor(Colors::TEXT_PRIMARY));
+            ImGui::PopFont();
+
+            ImGui::Spacing();
+            CenteredText("CoreDeck uses Java to run Android SDK command-line tools.", HexColor(Colors::TEXT_MUTED));
+
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::Spacing();
+
+            const float formWidth = Em(66.0F);
+            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - formWidth) * 0.5F);
+            ImGui::BeginGroup();
+
+            WrappedColoredText(
+                HexColor(Colors::WARNING),
+                formWidth,
+                "JDK 17 or later is recommended for modern Android SDK tools."
+            );
+            ImGui::Spacing();
+
+            const std::string javaHomePath = DrawOnboardingJdkPicker(
+                context,
+                javaHomeBuffer,
+                javaHomeBufferSize,
+                javaVersionState,
+                formWidth,
+                true
+            );
+            const bool javaHomeOk = javaVersionState.HasJava;
+            const bool jdkBusy = IsJdkDownloadBusy(context);
+
+            ImGui::EndGroup();
+
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::Spacing();
+
+            const float footerButtonWidth = Em(14.0F);
+            const float footerWidth = (footerButtonWidth * 2.0F) + ImGui::GetStyle().ItemSpacing.x;
+            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - footerWidth) * 0.5F);
+            ImGui::BeginGroup();
+
+            if (PrimaryButton("Back", !jdkBusy, ImVec2(footerButtonWidth, 0))) {
+                step = Step::Welcome;
+            }
+
+            ImGui::SameLine();
+            if (PositiveButton("Continue", javaHomeOk && !jdkBusy, ImVec2(footerButtonWidth, 0))) {
+                ApplyOnboardingJavaHome(context, javaHomePath);
+                strncpy(javaHomeBuffer, javaHomePath.c_str(), javaHomeBufferSize - 1);
+                javaHomeBuffer[javaHomeBufferSize - 1] = '\0';
+                step = Step::SdkSetup;
+            }
+
+            ImGui::EndGroup();
         }
 
         void StartOnboardingSdkInstall(
@@ -448,9 +575,6 @@ namespace CoreDeck {
             Step &step,
             char *pathBuffer,
             size_t pathBufferSize,
-            char *javaHomeBuffer,
-            size_t javaHomeBufferSize,
-            JavaHomeStatus &javaVersionState,
             OnboardingSdkBootstrapWork &bootstrap
         ) {
             PollOnboardingSdkBootstrap(context, bootstrap);
@@ -460,7 +584,7 @@ namespace CoreDeck {
                 pathBuffer[pathBufferSize - 1] = '\0';
             }
 
-            VerticalCenter(560.0F, Eh(3.0F));
+            VerticalCenter(420.0F);
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
             CenteredText("Locate your Android SDK", HexColor(Colors::TEXT_PRIMARY));
@@ -480,19 +604,6 @@ namespace CoreDeck {
             ImGui::BeginGroup();
 
             const bool canEditPaths = !bootstrap.Busy && !bootstrap.AwaitingLicenseConsent;
-            const std::string javaHomePath = DrawOnboardingJdkPicker(
-                context,
-                javaHomeBuffer,
-                javaHomeBufferSize,
-                javaVersionState,
-                formWidth,
-                canEditPaths
-            );
-            const bool javaHomeOk = javaHomePath.empty() || javaVersionState.HasJava;
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
 
             ImGui::Text("%s", Tr("SDK path"));
             ImGui::SetNextItemWidth(formWidth - browseWidth - ImGui::GetStyle().ItemSpacing.x);
@@ -518,6 +629,7 @@ namespace CoreDeck {
             const std::string currentPath = pathBuffer;
             const bool isValid = Paths::Onboarding::ValidateSdkPath(currentPath);
             const bool hasSdkManager = HasSdkManager(currentPath);
+            const bool canInstallSdkHere = CanInstallAndroidSdkIntoDirectory(currentPath);
             if (!currentPath.empty()) {
                 if (isValid) {
                     WrappedColoredText(
@@ -530,6 +642,12 @@ namespace CoreDeck {
                         HexColor(Colors::WARNING),
                         formWidth,
                         "Android SDK tools are incomplete. Install the base tools here, or continue and finish later from Android JDK/SDK preferences."
+                    );
+                } else if (!canInstallSdkHere) {
+                    WrappedColoredText(
+                        HexColor(Colors::WARNING),
+                        formWidth,
+                        "Choose an empty folder for the Android SDK download."
                     );
                 } else {
                     WrappedColoredText(
@@ -561,11 +679,10 @@ namespace CoreDeck {
 
             ImGui::Spacing();
             if (!isValid) {
-                const bool canAct = canEditPaths && javaHomeOk && !currentPath.empty();
+                const bool canAct = canEditPaths && !currentPath.empty() && canInstallSdkHere;
 
                 if (!hasSdkManager) {
                     if (PositiveButton("Install Android SDK Tools", canAct, ImVec2(formWidth, 0))) {
-                        ApplyOnboardingJavaHome(context, javaHomePath);
                         StartOnboardingSdkInstall(bootstrap, currentPath);
                     }
                 } else if (PositiveButton(
@@ -573,7 +690,6 @@ namespace CoreDeck {
                                canAct,
                                ImVec2(formWidth, 0)
                            )) {
-                    ApplyOnboardingJavaHome(context, javaHomePath);
                     bootstrap.SdkRoot = currentPath;
                     bootstrap.Progress = std::make_shared<SdkOperationProgress>();
                     StartOnboardingLicenseCheck(context, bootstrap);
@@ -591,17 +707,16 @@ namespace CoreDeck {
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - footerWidth) * 0.5F);
             ImGui::BeginGroup();
 
-            if (PrimaryButton("Back", true, ImVec2(footerButtonWidth, 0))) {
-                step = Step::Welcome;
+            if (PrimaryButton("Back", canEditPaths, ImVec2(footerButtonWidth, 0))) {
+                step = Step::JdkSetup;
             }
 
             ImGui::SameLine();
             if (PositiveButton(
                     "Continue",
-                    (isValid || hasSdkManager) && canEditPaths && javaHomeOk,
+                    (isValid || hasSdkManager) && canEditPaths,
                     ImVec2(footerButtonWidth, 0)
                 )) {
-                ApplyOnboardingJavaHome(context, javaHomePath);
                 ApplyOnboardingSdkPath(context, currentPath);
                 Paths::Onboarding::MarkFirstRunComplete();
 
@@ -658,15 +773,21 @@ namespace CoreDeck {
             case Step::Welcome:
                 BuildWelcomeStep(step);
                 break;
+            case Step::JdkSetup:
+                BuildJdkSetupStep(
+                    context,
+                    step,
+                    javaHomeBuffer,
+                    sizeof(javaHomeBuffer),
+                    javaVersionState
+                );
+                break;
             case Step::SdkSetup:
                 BuildSdkSetupStep(
                     context,
                     step,
                     pathBuffer,
                     sizeof(pathBuffer),
-                    javaHomeBuffer,
-                    sizeof(javaHomeBuffer),
-                    javaVersionState,
                     bootstrap
                 );
                 break;

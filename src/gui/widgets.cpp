@@ -581,6 +581,18 @@ namespace CoreDeck {
         return pressed;
     }
 
+    void HoverTooltip(const std::string &text, const ImGuiHoveredFlags flags) {
+        if (text.empty() || !ImGui::IsItemHovered(flags)) {
+            return;
+        }
+
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 48.0F);
+        ImGui::TextUnformatted(text.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+
     bool RoundedBeginPopupModal(const char *name, bool *pOpen, const ImGuiWindowFlags flags) {
         const std::string translatedName = TrLabel(name);
         const bool open = ImGui::BeginPopupModal(translatedName.c_str(), nullptr, flags);

@@ -138,6 +138,7 @@ add_library(coredeck_core STATIC
     src/core/emulator_console.cpp
     src/core/file_dialog.cpp
     src/core/jdk.cpp
+    src/core/jdk_download.cpp
     src/core/log_buffer.cpp
     src/core/log_filter.cpp
     src/core/options.cpp
@@ -208,6 +209,7 @@ add_executable(${PROJECT_NAME}
     src/gui/windows/update.cpp
     src/gui/application.cpp
     src/gui/fonts.cpp
+    src/gui/jdk_download_panel.cpp
     src/gui/localization.cpp
     src/gui/theme.cpp
     src/gui/widgets.cpp

@@ -1,3 +1,13 @@
+## [v0.8.0-beta.6](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.6) — 2026-07-26
+
+- Improve Android JDK/SDK package table height and resizing behavior
+- Add hover tooltips for truncated SDK package and system image table cells
+- Split first-run setup into separate JDK and SDK steps with a JDK 17+ recommendation
+- Add managed JDK downloads from official LTS package sources during onboarding and JDK setup
+- Avoid replacing an existing managed JDK until the new download has been verified
+- Ask users to pick an empty folder before downloading JDK or SDK files into a non-SDK directory
+- Clean up cancelled SDK setup downloads and show setup failures without crashing the settings window
+
 ## [v0.8.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.5) — 2026-07-26
 
 - Show full SDK Manager system image names and filter the AVD image picker to the host-supported ABI

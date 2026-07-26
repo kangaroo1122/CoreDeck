@@ -15,6 +15,7 @@
 
 #include "../core/avd.h"
 #include "../core/emulator.h"
+#include "../core/jdk_download.h"
 #include "../core/options.h"
 #include "../core/sdk.h"
 #include "../core/sdk_bootstrap.h"
@@ -239,6 +240,24 @@ namespace CoreDeck {
             std::future<SdkBootstrapResult> BootstrapFuture;
             std::string BootstrapSdkRoot;
         } SdkManagerWork;
+
+        struct JdkDownloadState {
+            JdkVendor SelectedVendor = JdkVendor::EclipseTemurin;
+            std::vector<JdkPackage> Packages;
+            int SelectedPackage = -1;
+            std::string Error;
+
+            struct {
+                std::atomic<bool> Loading{false};
+                bool Ready = false;
+                JdkVendor Vendor = JdkVendor::EclipseTemurin;
+                std::future<JdkPackageListResult> Future;
+            } List;
+
+            std::atomic<bool> Installing{false};
+            std::shared_ptr<SdkOperationProgress> Progress;
+            std::future<JdkInstallResult> InstallFuture;
+        } JdkDownloadWork;
 
         struct Jobs {
             struct {

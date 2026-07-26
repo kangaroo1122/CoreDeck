@@ -174,6 +174,8 @@ namespace CoreDeck {
 
     bool RoundedSelectable(const char *label, bool isSelected = false, ImGuiSelectableFlags flags = 0, const ImVec2 &size = ImVec2(0, 0));
 
+    void HoverTooltip(const std::string &text, ImGuiHoveredFlags flags = ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_AllowWhenDisabled);
+
     bool RoundedBeginPopupModal(const char *name, bool *pOpen = nullptr, ImGuiWindowFlags flags = 0);
 
     DialogResult SimpleDialog(const DialogData &data);

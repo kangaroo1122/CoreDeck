@@ -19,6 +19,8 @@ namespace CoreDeck {
 
     std::string CommandLineToolsDownloadUrl();
 
+    bool CanInstallAndroidSdkIntoDirectory(const std::string &sdkRoot);
+
     SdkInfo BuildSdkInfoFromSdkRoot(
         const std::string &sdkRoot,
         const std::string &javaHomePath = ""

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <exception>
 #include <future>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include "imgui_internal.h"
 
 #include "preferences.h"
+#include "../jdk_download_panel.h"
 #include "../widgets.h"
 #include "../fonts.h"
 #include "../localization.h"
@@ -212,6 +214,30 @@ namespace CoreDeck {
             );
         }
 
+        std::string DisplayOrDash(const std::string &value) {
+            return value.empty() ? "-" : value;
+        }
+
+        std::string SdkPackageRowTooltip(const SdkPackageDisplayRow &row) {
+            std::string tooltip = DisplayOrDash(row.Name);
+            if (!row.ApiLevel.empty()) {
+                tooltip = StrConcat(tooltip, "\n", Tr("API Level"), ": ", row.ApiLevel);
+            }
+            if (!row.Revision.empty()) {
+                tooltip = StrConcat(tooltip, "\n", Tr("Revision"), ": ", row.Revision);
+            }
+            if (!row.Version.empty()) {
+                tooltip = StrConcat(tooltip, "\n", Tr("Version"), ": ", row.Version);
+            }
+            if (!row.PackagePath.empty()) {
+                tooltip = StrConcat(tooltip, "\n", Tr("Package"), ": ", row.PackagePath);
+            }
+            if (!row.Location.empty()) {
+                tooltip = StrConcat(tooltip, "\n", Tr("Location"), ": ", row.Location);
+            }
+            return tooltip;
+        }
+
         ImVec4 SdkPackageStatusColor(const SdkPackageDisplayStatus status) {
             switch (status) {
                 case SdkPackageDisplayStatus::Installed:
@@ -252,9 +278,19 @@ namespace CoreDeck {
 
             if (work.List.Future.valid() &&
                 work.List.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                work.LastListResult = work.List.Future.get();
-                work.Packages = work.LastListResult.Packages;
-                work.Error = work.LastListResult.Error;
+                try {
+                    work.LastListResult = work.List.Future.get();
+                    work.Packages = work.LastListResult.Packages;
+                    work.Error = work.LastListResult.Error;
+                } catch (const std::exception &ex) {
+                    work.LastListResult = {};
+                    work.Packages.clear();
+                    work.Error = StrConcat("Could not fetch SDK packages: ", ex.what());
+                } catch (...) {
+                    work.LastListResult = {};
+                    work.Packages.clear();
+                    work.Error = "Could not fetch SDK packages.";
+                }
                 work.List.Loading = false;
                 work.List.Ready = true;
                 work.SelectedPackageRowId.clear();
@@ -262,21 +298,44 @@ namespace CoreDeck {
 
             if (work.OperationFuture.valid() &&
                 work.OperationFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const bool ok = work.OperationFuture.get();
-                work.OperationBusy = false;
-                ClearPendingSdkPackageInstall(work);
-                if (ok) {
-                    context.Host.Sdk = DetectAndroidSdk();
-                    context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
-                    context.Host.Manager.SetSdk(context.Host.Sdk);
-                    RefreshAvds(context);
-                    RefreshSdkPackageList(context);
+                try {
+                    const bool ok = work.OperationFuture.get();
+                    work.OperationBusy = false;
+                    ClearPendingSdkPackageInstall(work);
+                    if (ok) {
+                        context.Host.Sdk = DetectAndroidSdk();
+                        context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
+                        context.Host.Manager.SetSdk(context.Host.Sdk);
+                        RefreshAvds(context);
+                        RefreshSdkPackageList(context);
+                    }
+                } catch (const std::exception &ex) {
+                    work.OperationBusy = false;
+                    ClearPendingSdkPackageInstall(work);
+                    work.Error = StrConcat("SDK package operation failed: ", ex.what());
+                } catch (...) {
+                    work.OperationBusy = false;
+                    ClearPendingSdkPackageInstall(work);
+                    work.Error = "SDK package operation failed.";
                 }
             }
 
             if (work.LicenseCheckFuture.valid() &&
                 work.LicenseCheckFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const LicenseStatus status = work.LicenseCheckFuture.get();
+                LicenseStatus status = LicenseStatus::CheckFailed;
+                try {
+                    status = work.LicenseCheckFuture.get();
+                } catch (const std::exception &ex) {
+                    work.Error = StrConcat("Could not query license state: ", ex.what());
+                    work.LicenseBusy = false;
+                    ClearPendingSdkPackageInstall(work);
+                    return;
+                } catch (...) {
+                    work.Error = "Could not query license state.";
+                    work.LicenseBusy = false;
+                    ClearPendingSdkPackageInstall(work);
+                    return;
+                }
                 work.LicenseBusy = false;
                 if (status == LicenseStatus::AllAccepted) {
                     if (work.PendingPackagePaths.empty() || work.PendingSdk.SdkManagerPath.empty()) {
@@ -295,7 +354,22 @@ namespace CoreDeck {
 
             if (work.LicenseAcceptFuture.valid() &&
                 work.LicenseAcceptFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const bool ok = work.LicenseAcceptFuture.get();
+                bool ok = false;
+                try {
+                    ok = work.LicenseAcceptFuture.get();
+                } catch (const std::exception &ex) {
+                    work.Error = StrConcat("License acceptance failed: ", ex.what());
+                    work.LicenseBusy = false;
+                    work.AwaitingLicenseConsent = false;
+                    ClearPendingSdkPackageInstall(work);
+                    return;
+                } catch (...) {
+                    work.Error = "License acceptance failed.";
+                    work.LicenseBusy = false;
+                    work.AwaitingLicenseConsent = false;
+                    ClearPendingSdkPackageInstall(work);
+                    return;
+                }
                 work.LicenseBusy = false;
                 work.AwaitingLicenseConsent = false;
                 if (ok && !work.PendingPackagePaths.empty() && !work.PendingSdk.SdkManagerPath.empty()) {
@@ -310,7 +384,18 @@ namespace CoreDeck {
 
             if (work.BootstrapFuture.valid() &&
                 work.BootstrapFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                const SdkBootstrapResult result = work.BootstrapFuture.get();
+                SdkBootstrapResult result;
+                try {
+                    result = work.BootstrapFuture.get();
+                } catch (const std::exception &ex) {
+                    work.BootstrapBusy = false;
+                    work.Error = StrConcat("Command-line tools installation failed: ", ex.what());
+                    return;
+                } catch (...) {
+                    work.BootstrapBusy = false;
+                    work.Error = "Command-line tools installation failed unexpectedly.";
+                    return;
+                }
                 work.BootstrapBusy = false;
                 if (result.Succeeded) {
                     work.Error.clear();
@@ -655,7 +740,7 @@ namespace CoreDeck {
                 Eh(4.5F) +
                 (work.Progress && !work.BootstrapBusy.load() ? Eh(4.0F) : 0.0F) +
                 (work.AwaitingLicenseConsent ? Eh(8.0F) : 0.0F);
-            const float tableHeight = std::max(Eh(6.0F), ImGui::GetContentRegionAvail().y - reservedHeight);
+            const float tableHeight = std::max(Eh(12.0F), ImGui::GetContentRegionAvail().y - reservedHeight);
 
             PickerTableStyle pts;
             ImGui::BeginChild("##SdkPackageTableFrame", ImVec2(-1.0F, tableHeight), 1, ImGuiWindowFlags_NoScrollbar);
@@ -691,36 +776,50 @@ namespace CoreDeck {
                         );
                     }
 
+                    const std::string rowTooltip = SdkPackageRowTooltip(row);
                     ImGui::TableNextColumn();
                     const std::string label = StrConcat(row.Name, "###SdkPackage", row.Id);
                     if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
                         work.SelectedPackageRowId = row.Id;
                     }
+                    HoverTooltip(rowTooltip);
                     if (selected) {
                         ImGui::SetItemDefaultFocus();
                     }
 
                     ImGui::TableNextColumn();
                     if (platformTab) {
-                        ImGui::Text("%s", row.ApiLevel.empty() ? "-" : row.ApiLevel.c_str());
+                        const std::string apiLevel = DisplayOrDash(row.ApiLevel);
+                        ImGui::Text("%s", apiLevel.c_str());
+                        HoverTooltip(apiLevel);
                     } else {
-                        ImGui::Text("%s", row.Version.empty() ? "-" : row.Version.c_str());
+                        const std::string version = DisplayOrDash(row.Version);
+                        ImGui::Text("%s", version.c_str());
+                        HoverTooltip(version);
                     }
 
                     ImGui::TableNextColumn();
                     if (platformTab) {
-                        ImGui::Text("%s", row.Revision.empty() ? "-" : row.Revision.c_str());
+                        const std::string revision = DisplayOrDash(row.Revision);
+                        ImGui::Text("%s", revision.c_str());
+                        HoverTooltip(revision);
                     } else {
                         const char *status = SdkPackageDisplayStatusText(row.Status);
-                        ImGui::TextColored(SdkPackageStatusColor(row.Status), "%s", Tr(status));
+                        const std::string statusText = Tr(status);
+                        ImGui::TextColored(SdkPackageStatusColor(row.Status), "%s", statusText.c_str());
+                        HoverTooltip(statusText);
                     }
 
                     ImGui::TableNextColumn();
                     if (platformTab) {
                         const char *status = SdkPackageDisplayStatusText(row.Status);
-                        ImGui::TextColored(SdkPackageStatusColor(row.Status), "%s", Tr(status));
+                        const std::string statusText = Tr(status);
+                        ImGui::TextColored(SdkPackageStatusColor(row.Status), "%s", statusText.c_str());
+                        HoverTooltip(statusText);
                     } else {
-                        ImGui::TextDisabled("%s", row.PackagePath.empty() ? "-" : row.PackagePath.c_str());
+                        const std::string packagePath = DisplayOrDash(row.PackagePath);
+                        ImGui::TextDisabled("%s", packagePath.c_str());
+                        HoverTooltip(packagePath);
                     }
                 }
 
@@ -875,6 +974,7 @@ namespace CoreDeck {
             const std::string pathStr = sdkPathBuffer;
             const bool pathOk = Paths::Onboarding::ValidateSdkPath(pathStr);
             const bool hasSdkManager = HasSdkManager(pathStr);
+            const bool canInstallSdkHere = CanInstallAndroidSdkIntoDirectory(pathStr);
             const bool sdkManagerBusy = IsSdkManagerBusy(context.SdkManagerWork);
             const bool bootstrapBusy = context.SdkManagerWork.BootstrapBusy.load();
 
@@ -883,6 +983,8 @@ namespace CoreDeck {
                     ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("Valid Android SDK path."));
                 } else if (hasSdkManager) {
                     ImGui::TextColored(HexColor(Colors::WARNING), "%s", Tr("Command-line tools are installed. Install emulator and platform-tools below."));
+                } else if (!canInstallSdkHere) {
+                    ImGui::TextColored(HexColor(Colors::WARNING), "%s", Tr("Choose an empty folder for the Android SDK download."));
                 } else {
                     ImGui::TextColored(
                         HexColor(Colors::WARNING),
@@ -930,7 +1032,7 @@ namespace CoreDeck {
 
             if (!hasSdkManager) {
                 ImGui::SameLine();
-                if (PositiveButton("Install Command-line Tools", !sdkManagerBusy && !pathStr.empty())) {
+                if (PositiveButton("Install Command-line Tools", !sdkManagerBusy && !pathStr.empty() && canInstallSdkHere)) {
                     context.SdkManagerWork.Error.clear();
                     context.SdkManagerWork.Progress = std::make_shared<SdkOperationProgress>();
                     context.SdkManagerWork.BootstrapSdkRoot = pathStr;
@@ -1021,12 +1123,35 @@ namespace CoreDeck {
             ImGui::Spacing();
 
             const bool sdkManagerBusy = IsSdkManagerBusy(context.SdkManagerWork);
-            const bool canApplyJavaHome = (javaHomePath.empty() || versionState.HasJava) && !sdkManagerBusy;
+            const bool jdkDownloadBusy = IsJdkDownloadBusy(context);
+            if (versionState.HasJava && versionState.MajorVersion > 0 && versionState.MajorVersion < 17) {
+                ImGui::TextColored(
+                    HexColor(Colors::WARNING),
+                    "%s",
+                    Tr("This Java version is older than 17. You can keep it, or download a managed JDK below.")
+                );
+            }
+
+            if (ShouldOfferManagedJdkDownload(versionState)) {
+                DrawJdkDownloadPanel(
+                    context,
+                    javaHomeBuffer,
+                    javaHomeBufferSize,
+                    versionState,
+                    ImGui::GetContentRegionAvail().x,
+                    !sdkManagerBusy
+                );
+                ImGui::Spacing();
+                ImGui::Spacing();
+            }
+
+            const std::string effectiveJavaHomePath = NormalizeJavaHomePath(javaHomeBuffer);
+            const bool canApplyJavaHome = (effectiveJavaHomePath.empty() || versionState.HasJava) && !sdkManagerBusy && !jdkDownloadBusy;
             if (PrimaryButton("Apply JDK Path", canApplyJavaHome)) {
-                context.Prefs.JavaHomePath = javaHomePath;
+                context.Prefs.JavaHomePath = effectiveJavaHomePath;
                 context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
                 context.Host.Manager.SetSdk(context.Host.Sdk);
-                strncpy(javaHomeBuffer, javaHomePath.c_str(), javaHomeBufferSize - 1);
+                strncpy(javaHomeBuffer, effectiveJavaHomePath.c_str(), javaHomeBufferSize - 1);
                 javaHomeBuffer[javaHomeBufferSize - 1] = '\0';
                 PersistAppSettings(context);
                 RefreshSdkPackageList(context);
@@ -1041,7 +1166,7 @@ namespace CoreDeck {
             }
 
             ImGui::SameLine();
-            if (PrimaryButton("Use System Java", !sdkManagerBusy)) {
+            if (PrimaryButton("Use System Java", !sdkManagerBusy && !jdkDownloadBusy)) {
                 context.Prefs.JavaHomePath.clear();
                 context.Host.Sdk.JavaHomePath.clear();
                 context.Host.Manager.SetSdk(context.Host.Sdk);
@@ -1060,9 +1185,12 @@ namespace CoreDeck {
         const ImGuiViewport *viewport = ImGui::GetMainViewport();
         const ImVec2 center = viewport->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
-        ImGui::SetNextWindowSize(EmV(100.0F, 24.0F), ImGuiCond_Appearing);
+        ImGui::SetNextWindowSize(
+            ImVec2(std::min(Em(110.0F), viewport->WorkSize.x * 0.92F), std::min(Eh(36.0F), viewport->WorkSize.y * 0.88F)),
+            ImGuiCond_Appearing
+        );
         ImGui::SetNextWindowSizeConstraints(
-            ImVec2(std::min(Em(72.0F), viewport->WorkSize.x), std::min(Eh(20.0F), viewport->WorkSize.y)),
+            ImVec2(std::min(Em(72.0F), viewport->WorkSize.x), std::min(Eh(24.0F), viewport->WorkSize.y)),
             viewport->WorkSize
         );
 
@@ -1082,7 +1210,7 @@ namespace CoreDeck {
                 const std::string &javaHome = context.Prefs.JavaHomePath;
                 strncpy(javaHomeBuffer, javaHome.c_str(), sizeof(javaHomeBuffer) - 1);
                 javaHomeBuffer[sizeof(javaHomeBuffer) - 1] = '\0';
-                javaVersionState.Path.clear();
+                javaVersionState = {};
                 if (!context.Host.Sdk.IsFound) {
                     activeSection = PrefsSection::AndroidSdk;
                 }

@@ -12,6 +12,7 @@ namespace CoreDeck {
         std::string Path;
         std::string Text;
         bool HasJava = false;
+        int MajorVersion = 0;
     };
 
     std::string JavaExecutablePath(const std::string &path);
@@ -23,6 +24,8 @@ namespace CoreDeck {
     JavaHomeStatus ReadJavaHomeStatus(const std::string &javaHomePath);
 
     void RefreshJavaHomeStatus(JavaHomeStatus &state, const std::string &javaHomePath);
+
+    int JavaMajorVersionFromText(const std::string &text);
 }
 
 #endif // COREDECK_JDK_H

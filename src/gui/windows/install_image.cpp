@@ -364,10 +364,10 @@ namespace CoreDeck {
                     if (ImGui::BeginTable("##RemoteImageTable", 4, PICKER_TABLE_FLAGS, ImVec2(-1.0F, -1.0F))) {
                         ImGui::TableSetupScrollFreeze(0, 1);
                         const std::string nameColumn = StrConcat(" ", Tr("Name"));
-                        ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 3.4F);
-                        ImGui::TableSetupColumn(Tr("Type"), ImGuiTableColumnFlags_WidthStretch, 1.5F);
-                        ImGui::TableSetupColumn("API", ImGuiTableColumnFlags_WidthStretch, 1.4F);
-                        ImGui::TableSetupColumn(Tr("Status"), ImGuiTableColumnFlags_WidthStretch, 1.2F);
+                        ImGui::TableSetupColumn(nameColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 4.0F);
+                        ImGui::TableSetupColumn(Tr("Type"), ImGuiTableColumnFlags_WidthStretch, 1.25F);
+                        ImGui::TableSetupColumn("API", ImGuiTableColumnFlags_WidthStretch, 0.9F);
+                        ImGui::TableSetupColumn(Tr("Status"), ImGuiTableColumnFlags_WidthStretch, 1.0F);
                         ImGui::TableHeadersRow();
 
                         int visibleCount = 0;
@@ -399,31 +399,38 @@ namespace CoreDeck {
                                 }
                                 ImGui::TableNextColumn();
 
+                                const std::string displayName = SystemImageDisplayName(img.ApiLevel, img.DisplayName);
                                 const std::string label = StrConcat(
                                     " ",
-                                    SystemImageDisplayName(img.ApiLevel, img.DisplayName),
+                                    displayName,
                                     "##RemoteImage",
                                     std::to_string(i)
                                 );
                                 if (ImGui::Selectable(label.c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.0F, 0.0F))) {
                                     work.SelectedImage = i;
                                 }
+                                HoverTooltip(StrConcat(displayName, "\n", img.PackagePath));
                                 if (isSelected) {
                                     ImGui::SetItemDefaultFocus();
                                 }
 
                                 ImGui::TableNextColumn();
-                                ImGui::TextColored(HexColor(Color), "%s", Tr(Label));
+                                const std::string typeText = Tr(Label);
+                                ImGui::TextColored(HexColor(Color), "%s", typeText.c_str());
+                                HoverTooltip(typeText);
 
                                 ImGui::TableNextColumn();
                                 ImGui::Text("%s", img.ApiLevel.c_str());
+                                HoverTooltip(img.ApiLevel);
 
                                 ImGui::TableNextColumn();
+                                const std::string statusText = Tr(img.IsInstalled ? "Installed" : "Available");
                                 if (img.IsInstalled) {
-                                    ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("Installed"));
+                                    ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", statusText.c_str());
                                 } else {
-                                    ImGui::TextDisabled("%s", Tr("Available"));
+                                    ImGui::TextDisabled("%s", statusText.c_str());
                                 }
+                                HoverTooltip(statusText);
                             }
                         }
 

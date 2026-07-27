@@ -22,6 +22,7 @@ namespace CoreDeck {
         bool ShowOptionsPanel = true;
         bool ShowDetailsPanel = true;
         bool ShowLogPanel = true;
+        bool ShowDeviceExplorerPanel = false;
         int AvdSortMode = 0;
         bool AvdSortAscending = true;
         std::string JavaHomePath;

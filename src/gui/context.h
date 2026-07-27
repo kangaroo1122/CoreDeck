@@ -148,7 +148,11 @@ namespace CoreDeck {
             bool ShowOptionsPanel = true;
             bool ShowDetailsPanel = true;
             bool ShowLogPanel = true;
+            bool ShowDeviceExplorerPanel = false;
             std::uint32_t BottomDockId = 0;
+            std::uint32_t OutputLogDockId = 0;
+            std::uint32_t DeviceExplorerDockId = 0;
+            std::uint8_t BottomDockLayoutMask = 0xFF;
             GLFWwindow *MainWindow = nullptr;
             bool HideInvalidSdkPathBanner = false;
             bool FontReloadRequested = false;

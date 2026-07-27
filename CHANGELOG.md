@@ -1,3 +1,13 @@
+## [v0.9.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.3) — 2026-07-27
+
+- Switch UI font size selection from a slider to a dropdown
+- Ensure UI font size changes rebuild the active font cleanly
+- Show Output Log and Device Explorer as peer bottom windows, with independent View menu toggles
+- Use a 2:1 default split when both bottom windows are visible, while allowing the divider to be dragged
+- Restore a visible bottom panel when saved ImGui layout state has no bottom dock id
+- Add horizontal scrolling for long Output Log lines while keeping log text selectable
+- Move Device Explorer file actions into a top icon toolbar
+
 ## [v0.9.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.2) — 2026-07-27
 
 - Add UI font size control in Appearance preferences

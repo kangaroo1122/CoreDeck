@@ -661,27 +661,28 @@ namespace CoreDeck {
             ImGui::Dummy(ImVec2(0, 4));
 
             LabelText("Font size");
-            static bool fontSizeEditPending = false;
-            float uiFontSize = NormalizeUiFontSize(context.Prefs.UiFontSize);
+            const int currentFontSize = static_cast<int>(std::round(NormalizeUiFontSize(context.Prefs.UiFontSize)));
+            const std::string currentFontSizeLabel = StrConcat(std::to_string(currentFontSize), " px");
             ImGui::SetNextItemWidth(Em(20.0F));
-            const bool sizeChanged = ImGui::SliderFloat(
-                "##UiFontSize",
-                &uiFontSize,
-                MIN_UI_FONT_SIZE,
-                MAX_UI_FONT_SIZE,
-                "%.0f px"
-            );
-            if (sizeChanged) {
-                context.Prefs.UiFontSize = NormalizeUiFontSize(std::round(uiFontSize));
-                fontSizeEditPending = true;
-            }
-            if (fontSizeEditPending && ImGui::IsItemDeactivatedAfterEdit()) {
-                fontSizeEditPending = false;
-                RequestFontReload(context);
+            {
+                ComboStyle cs;
+                if (ImGui::BeginCombo("##UiFontSize", currentFontSizeLabel.c_str())) {
+                    for (int size = static_cast<int>(MIN_UI_FONT_SIZE); size <= static_cast<int>(MAX_UI_FONT_SIZE); size++) {
+                        const bool selected = size == currentFontSize;
+                        const std::string label = StrConcat(std::to_string(size), " px");
+                        if (RoundedSelectable(label.c_str(), selected)) {
+                            context.Prefs.UiFontSize = static_cast<float>(size);
+                            RequestFontReload(context);
+                        }
+                        if (selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
             }
             ImGui::SameLine();
             if (PrimaryButton("Reset Font Size", context.Prefs.UiFontSize != DEFAULT_UI_FONT_SIZE)) {
-                fontSizeEditPending = false;
                 context.Prefs.UiFontSize = DEFAULT_UI_FONT_SIZE;
                 RequestFontReload(context);
             }

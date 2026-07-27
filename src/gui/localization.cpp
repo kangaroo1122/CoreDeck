@@ -171,6 +171,8 @@ namespace CoreDeck {
             {"Show Details", "显示详情"},
             {"Hide Output Log", "隐藏输出日志"},
             {"Show Output Log", "显示输出日志"},
+            {"Hide Device Explorer", "隐藏设备文件浏览器"},
+            {"Show Device Explorer", "显示设备文件浏览器"},
             {"Hide Bottom Panel", "隐藏底部面板"},
             {"Show Bottom Panel", "显示底部面板"},
             {"Storage Overview", "存储概览"},

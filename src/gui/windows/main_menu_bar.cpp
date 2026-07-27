@@ -41,8 +41,16 @@ namespace CoreDeck {
                     context.UI.ShowDetailsPanel = !context.UI.ShowDetailsPanel;
                     PersistAppSettings(context);
                 }
-                if (RoundedMenuItem(context.UI.ShowLogPanel ? "Hide Bottom Panel" : "Show Bottom Panel")) {
+                if (RoundedMenuItem(context.UI.ShowLogPanel ? "Hide Output Log" : "Show Output Log")) {
                     context.UI.ShowLogPanel = !context.UI.ShowLogPanel;
+                    PersistAppSettings(context);
+                }
+                if (RoundedMenuItem(context.UI.ShowDeviceExplorerPanel ? "Hide Device Explorer" : "Show Device Explorer")) {
+                    context.UI.ShowDeviceExplorerPanel = !context.UI.ShowDeviceExplorerPanel;
+                    context.DeviceExplorer.Open = context.UI.ShowDeviceExplorerPanel;
+                    if (context.UI.ShowDeviceExplorerPanel) {
+                        context.DeviceExplorer.DockRequested = true;
+                    }
                     PersistAppSettings(context);
                 }
                 ImGui::Separator();

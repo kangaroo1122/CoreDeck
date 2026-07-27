@@ -21,6 +21,8 @@ namespace CoreDeck {
 
     void CancelDeviceExplorerWork(Context &context);
 
+    void PollDeviceExplorer(Context &context);
+
     void BuildDeviceExplorerWindow(Context &context);
 }
 

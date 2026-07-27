@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 #include "imgui.h"
@@ -57,6 +58,9 @@
 
 namespace CoreDeck {
     namespace {
+        constexpr std::uint8_t BOTTOM_DOCK_OUTPUT_LOG = 1U << 0U;
+        constexpr std::uint8_t BOTTOM_DOCK_DEVICE_EXPLORER = 1U << 1U;
+
         void ShowFatalError(const char *title, const char *message) {
 #if defined(_WIN32)
             MessageBoxA(nullptr, message, title, MB_OK | MB_ICONERROR);
@@ -64,6 +68,73 @@ namespace CoreDeck {
             (void) title;
             (void) std::fprintf(stderr, "%s\n", message);
 #endif
+        }
+
+        void ConfigureDockNode(const ImGuiID id) {
+            if (ImGuiDockNode *node = ImGui::DockBuilderGetNode(id)) {
+                node->LocalFlags |= ImGuiDockNodeFlags_NoWindowMenuButton;
+            }
+        }
+
+        std::uint8_t ResolveBottomDockLayoutMask(const Context &context) {
+            std::uint8_t mask = 0U;
+            if (context.UI.ShowLogPanel) {
+                mask |= BOTTOM_DOCK_OUTPUT_LOG;
+            }
+            if (context.UI.ShowDeviceExplorerPanel) {
+                mask |= BOTTOM_DOCK_DEVICE_EXPLORER;
+            }
+            return mask;
+        }
+
+        void EnsureVisibleBottomDockSeed(Context &context) {
+            if (context.UI.BottomDockId != 0 ||
+                context.UI.OutputLogDockId != 0 ||
+                context.UI.DeviceExplorerDockId != 0) {
+                return;
+            }
+            if (context.UI.ShowLogPanel || context.UI.ShowDeviceExplorerPanel) {
+                return;
+            }
+
+            context.UI.ShowLogPanel = true;
+        }
+
+        void ApplyBottomDockLayout(Context &context, const ImGuiID dockSpaceId, const bool force = false) {
+            if (context.UI.BottomDockId == 0) {
+                return;
+            }
+
+            const std::uint8_t mask = ResolveBottomDockLayoutMask(context);
+            if (!force && context.UI.BottomDockLayoutMask == mask) {
+                return;
+            }
+
+            context.UI.BottomDockLayoutMask = mask;
+            context.UI.OutputLogDockId = context.UI.BottomDockId;
+            context.UI.DeviceExplorerDockId = context.UI.BottomDockId;
+
+            ImGui::DockBuilderRemoveNodeChildNodes(context.UI.BottomDockId);
+
+            if (mask == (BOTTOM_DOCK_OUTPUT_LOG | BOTTOM_DOCK_DEVICE_EXPLORER)) {
+                ImGuiID explorerId = 0;
+                ImGuiID logId = 0;
+                ImGui::DockBuilderSplitNode(context.UI.BottomDockId, ImGuiDir_Right, 1.0F / 3.0F, &explorerId, &logId);
+                context.UI.OutputLogDockId = logId;
+                context.UI.DeviceExplorerDockId = explorerId;
+                ConfigureDockNode(logId);
+                ConfigureDockNode(explorerId);
+            }
+
+            if ((mask & BOTTOM_DOCK_OUTPUT_LOG) != 0U) {
+                ImGui::DockBuilderDockWindow("Output Log", context.UI.OutputLogDockId);
+            }
+            if ((mask & BOTTOM_DOCK_DEVICE_EXPLORER) != 0U) {
+                ImGui::DockBuilderDockWindow("Device Explorer###DeviceExplorer", context.UI.DeviceExplorerDockId);
+            }
+
+            ConfigureDockNode(context.UI.BottomDockId);
+            ImGui::DockBuilderFinish(dockSpaceId);
         }
     }
 
@@ -165,21 +236,22 @@ namespace CoreDeck {
                 ImGui::DockBuilderDockWindow("Options", leftId);
                 ImGui::DockBuilderDockWindow("AVDs", middleId);
                 ImGui::DockBuilderDockWindow("Details", rightId);
-                ImGui::DockBuilderDockWindow("Output Log", bottomId);
+                ApplyBottomDockLayout(m_Context, dockSpaceId, true);
 
-                ImGui::DockBuilderFinish(dockSpaceId);
-
-                auto configureNode = [](const ImGuiID id) {
-                    if (ImGuiDockNode *node = ImGui::DockBuilderGetNode(id)) {
-                        node->LocalFlags |= ImGuiDockNodeFlags_NoWindowMenuButton;
-                    }
-                };
-                configureNode(leftId);
-                configureNode(middleId);
-                configureNode(rightId);
-                configureNode(bottomId);
+                ConfigureDockNode(leftId);
+                ConfigureDockNode(middleId);
+                ConfigureDockNode(rightId);
+                ConfigureDockNode(bottomId);
             }
         }
+
+        static bool bottomDockSeedChecked = false;
+        if (!bottomDockSeedChecked) {
+            bottomDockSeedChecked = true;
+            EnsureVisibleBottomDockSeed(m_Context);
+        }
+
+        ApplyBottomDockLayout(m_Context, dockSpaceId);
 
 #if !defined(__APPLE__)
         BuildMainMenuBar(m_Context);
@@ -371,6 +443,7 @@ namespace CoreDeck {
 
     void Application::m_RebuildFonts() {
         ImGuiIO &io = ImGui::GetIO();
+        io.FontDefault = nullptr;
         io.Fonts->Clear();
         m_LoadFonts();
     }
@@ -585,6 +658,14 @@ namespace CoreDeck {
                     m_Context.UI.ShowLogPanel = !m_Context.UI.ShowLogPanel;
                     PersistAppSettings(m_Context);
                     break;
+                case NativeMenuAction::ToggleDeviceExplorer:
+                    m_Context.UI.ShowDeviceExplorerPanel = !m_Context.UI.ShowDeviceExplorerPanel;
+                    m_Context.DeviceExplorer.Open = m_Context.UI.ShowDeviceExplorerPanel;
+                    if (m_Context.UI.ShowDeviceExplorerPanel) {
+                        m_Context.DeviceExplorer.DockRequested = true;
+                    }
+                    PersistAppSettings(m_Context);
+                    break;
                 case NativeMenuAction::StorageOverview:
                     m_Context.UI.ShowStorageDialog = true;
                     break;
@@ -618,6 +699,7 @@ namespace CoreDeck {
             .ShowOptionsPanel = m_Context.UI.ShowOptionsPanel,
             .ShowDetailsPanel = m_Context.UI.ShowDetailsPanel,
             .ShowLogPanel = m_Context.UI.ShowLogPanel,
+            .ShowDeviceExplorerPanel = m_Context.UI.ShowDeviceExplorerPanel,
             .ShowToolsMenu = HasSelectedRunningAvd(m_Context),
             .UpdateCheckInFlight = m_Context.Updates.UpdateCheckInFlight,
         });
@@ -640,6 +722,7 @@ namespace CoreDeck {
         s.ShowOptionsPanel = context.UI.ShowOptionsPanel;
         s.ShowDetailsPanel = context.UI.ShowDetailsPanel;
         s.ShowLogPanel = context.UI.ShowLogPanel;
+        s.ShowDeviceExplorerPanel = context.UI.ShowDeviceExplorerPanel;
         s.AvdSortMode = static_cast<int>(context.Catalog.SortMode);
         s.AvdSortAscending = context.Catalog.SortAscending;
         return s;
@@ -664,6 +747,8 @@ namespace CoreDeck {
         context.UI.ShowOptionsPanel = settings.ShowOptionsPanel;
         context.UI.ShowDetailsPanel = settings.ShowDetailsPanel;
         context.UI.ShowLogPanel = settings.ShowLogPanel;
+        context.UI.ShowDeviceExplorerPanel = settings.ShowDeviceExplorerPanel;
+        context.DeviceExplorer.Open = settings.ShowDeviceExplorerPanel;
 
         if (const int sortMode = settings.AvdSortMode; sortMode >= 0 && sortMode <= 2) {
             context.Catalog.SortMode = static_cast<AvdSortMode>(sortMode);

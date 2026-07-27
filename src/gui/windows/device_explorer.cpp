@@ -416,7 +416,10 @@ namespace CoreDeck {
             HoverTooltip(Tr("Refresh files"));
 
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(std::max(Em(16.0F), ImGui::GetContentRegionAvail().x - Em(8.0F)));
+            const ImGuiStyle &style = ImGui::GetStyle();
+            const float goWidth = ImGui::CalcTextSize(Tr("Go")).x + (style.FramePadding.x * 2.0F);
+            const float pathWidth = std::max(Em(10.0F), ImGui::GetContentRegionAvail().x - goWidth - style.ItemSpacing.x);
+            ImGui::SetNextItemWidth(pathWidth);
             if (ImGui::InputText("##DeviceExplorerPath", work.PathBuffer, sizeof(work.PathBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
                 StartFileRefresh(context, work, work.PathBuffer);
             }
@@ -427,9 +430,11 @@ namespace CoreDeck {
         }
 
         void DrawFileTable(Context &context, Context::DeviceExplorerTabState &work) {
-            const float tableHeight = std::max(Eh(8.0F), ImGui::GetContentRegionAvail().y - Eh(7.0F));
+            const float tableHeight = std::max(Eh(8.0F), ImGui::GetContentRegionAvail().y);
+            const float tableWidth = std::max(ImGui::GetContentRegionAvail().x, Em(70.0F));
             PickerTableStyle pts;
-            if (!ImGui::BeginTable("DeviceExplorerFiles", 5, PICKER_TABLE_FLAGS, ImVec2(0, tableHeight))) {
+            const ImGuiTableFlags tableFlags = PICKER_TABLE_FLAGS | ImGuiTableFlags_ScrollX;
+            if (!ImGui::BeginTable("DeviceExplorerFiles", 5, tableFlags, ImVec2(0, tableHeight), tableWidth)) {
                 return;
             }
 
@@ -470,13 +475,16 @@ namespace CoreDeck {
             ImGui::EndTable();
         }
 
-        void DrawOperationBar(Context &context, Context::DeviceExplorerTabState &work) {
+        void DrawOperationToolbar(Context &context, Context::DeviceExplorerTabState &work) {
             const bool canOperate = CanRunFileOperation(work);
             const bool hasSelection = work.SelectedEntry >= 0 && work.SelectedEntry < static_cast<int>(work.Entries.size());
             const std::string serial = SelectedSerial(work);
             const SdkInfo sdk = context.Host.Sdk;
+            const float iconSize = ImGui::GetFrameHeight();
+            const ImVec2 iconButtonSize(iconSize, iconSize);
 
-            if (PrimaryButton(IconWithLabel(Icons::DOWNLOAD, "Download").c_str(), canOperate && hasSelection)) {
+            const std::string downloadLabel = StrConcat(Icons::DOWNLOAD, "##DeviceExplorerDownload");
+            if (PrimaryButton(downloadLabel.c_str(), canOperate && hasSelection, iconButtonSize)) {
                 const auto localFolder = FileDialog::PickFolder("Choose download folder");
                 if (localFolder) {
                     const std::string remotePath = work.Entries[work.SelectedEntry].Path;
@@ -493,8 +501,11 @@ namespace CoreDeck {
                     );
                 }
             }
+            HoverTooltip(Tr("Download"));
             ImGui::SameLine();
-            if (PrimaryButton(IconWithLabel(Icons::UPLOAD, "Upload File").c_str(), canOperate)) {
+
+            const std::string uploadFileLabel = StrConcat(Icons::UPLOAD, "##DeviceExplorerUploadFile");
+            if (PrimaryButton(uploadFileLabel.c_str(), canOperate, iconButtonSize)) {
                 const auto localFile = FileDialog::PickFile("Select file to upload", nullptr, 0, "");
                 if (localFile) {
                     const std::string remoteDirectory = work.CurrentPath;
@@ -511,8 +522,11 @@ namespace CoreDeck {
                     );
                 }
             }
+            HoverTooltip(Tr("Upload File"));
             ImGui::SameLine();
-            if (PrimaryButton(IconWithLabel(Icons::FOLDER, "Upload Folder").c_str(), canOperate)) {
+
+            const std::string uploadFolderLabel = StrConcat(Icons::FOLDER, "##DeviceExplorerUploadFolder");
+            if (PrimaryButton(uploadFolderLabel.c_str(), canOperate, iconButtonSize)) {
                 const auto localFolder = FileDialog::PickFolder("Select folder to upload");
                 if (localFolder) {
                     const std::string remoteDirectory = work.CurrentPath;
@@ -529,17 +543,25 @@ namespace CoreDeck {
                     );
                 }
             }
+            HoverTooltip(Tr("Upload Folder"));
             ImGui::SameLine();
-            if (NegativeButton(IconWithLabel(Icons::TRASH, "Delete").c_str(), canOperate && hasSelection)) {
+
+            const std::string deleteLabel = StrConcat(Icons::TRASH, "##DeviceExplorerDelete");
+            if (NegativeButton(deleteLabel.c_str(), canOperate && hasSelection, iconButtonSize)) {
                 work.PendingDelete = work.Entries[work.SelectedEntry];
                 work.ConfirmDelete = true;
             }
+            HoverTooltip(Tr("Delete"));
 
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(Em(18.0F));
+            ImGui::Spacing();
+            const ImGuiStyle &style = ImGui::GetStyle();
+            const float createButtonWidth = iconButtonSize.x;
+            const float folderInputWidth = std::max(Em(8.0F), ImGui::GetContentRegionAvail().x - createButtonWidth - style.ItemSpacing.x);
+            ImGui::SetNextItemWidth(folderInputWidth);
             ImGui::InputTextWithHint("##DeviceExplorerNewFolder", Tr("Folder name"), work.NewFolderBuffer, sizeof(work.NewFolderBuffer));
             ImGui::SameLine();
-            if (PositiveButton(IconWithLabel(Icons::FOLDER_PLUS, "Create Folder").c_str(), canOperate && work.NewFolderBuffer[0] != '\0')) {
+            const std::string createFolderLabel = StrConcat(Icons::FOLDER_PLUS, "##DeviceExplorerCreateFolder");
+            if (PositiveButton(createFolderLabel.c_str(), canOperate && work.NewFolderBuffer[0] != '\0', iconButtonSize)) {
                 if (!IsValidDevicePathSegment(work.NewFolderBuffer)) {
                     work.Error = "Invalid folder name.";
                     return;
@@ -558,6 +580,7 @@ namespace CoreDeck {
                     true
                 );
             }
+            HoverTooltip(Tr("Create Folder"));
         }
 
         void DrawDeleteDialog(Context &context, Context::DeviceExplorerTabState &work) {
@@ -688,37 +711,12 @@ namespace CoreDeck {
             context.DeviceExplorer.Tabs.clear();
         }
 
-        void BuildDeviceExplorerPanel(Context &context, Context::DeviceExplorerTabState *work) {
-            if (context.UI.BottomDockId != 0 && context.DeviceExplorer.DockRequested) {
-                ImGui::SetNextWindowDockID(context.UI.BottomDockId, ImGuiCond_FirstUseEver);
-                context.DeviceExplorer.DockRequested = false;
-            }
-            if (context.DeviceExplorer.FocusRequested) {
-                ImGui::SetNextWindowFocus();
-                context.DeviceExplorer.FocusRequested = false;
-            }
-
-            const std::string title = TrLabel("Device Explorer###DeviceExplorer");
-            bool isOpen = context.DeviceExplorer.Open;
-            if (!ImGui::Begin(title.c_str(), &isOpen, WINDOW_FLAGS)) {
-                context.DeviceExplorer.Open = isOpen;
-                ImGui::End();
-                if (!context.DeviceExplorer.Open) {
-                    CancelAllTabs(context);
-                }
-                return;
-            }
-            context.DeviceExplorer.Open = isOpen;
-
+        void DrawDeviceExplorerPanel(Context &context, Context::DeviceExplorerTabState *work) {
             if (work == nullptr) {
                 if (!context.DeviceExplorer.Error.empty()) {
                     ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(context.DeviceExplorer.Error.c_str()));
                 } else {
                     ImGui::TextDisabled("%s", Tr("Select a running AVD first."));
-                }
-                ImGui::End();
-                if (!context.DeviceExplorer.Open) {
-                    CancelAllTabs(context);
                 }
                 return;
             }
@@ -731,6 +729,8 @@ namespace CoreDeck {
             DrawDeviceHeader(context, *work);
             ImGui::Spacing();
             DrawPathToolbar(context, *work);
+            ImGui::Spacing();
+            DrawOperationToolbar(context, *work);
             ImGui::Separator();
 
             if (!work->Error.empty()) {
@@ -746,14 +746,7 @@ namespace CoreDeck {
             }
 
             DrawFileTable(context, *work);
-            ImGui::Spacing();
-            DrawOperationBar(context, *work);
             DrawDeleteDialog(context, *work);
-
-            ImGui::End();
-            if (!context.DeviceExplorer.Open) {
-                CancelAllTabs(context);
-            }
         }
     }
 
@@ -783,8 +776,9 @@ namespace CoreDeck {
         auto tab = FindOrCreateTab(context, serial, avdName);
         context.DeviceExplorer.Status.clear();
         context.DeviceExplorer.Error.clear();
-        context.UI.ShowLogPanel = true;
-        if (!context.DeviceExplorer.Open) {
+        const bool wasVisible = context.UI.ShowDeviceExplorerPanel;
+        context.UI.ShowDeviceExplorerPanel = true;
+        if (!context.DeviceExplorer.Open || !wasVisible) {
             context.DeviceExplorer.DockRequested = true;
         }
         context.DeviceExplorer.Open = true;
@@ -854,15 +848,46 @@ namespace CoreDeck {
         context.DeviceExplorer.OpenInEmulatorBusy = false;
     }
 
-    void BuildDeviceExplorerWindow(Context &context) {
+    void PollDeviceExplorer(Context &context) {
         PollSharedFolderOpen(context);
         PollAllDeviceExplorerWork(context);
+    }
 
-        if (!context.UI.ShowLogPanel || !context.DeviceExplorer.Open) {
+    void BuildDeviceExplorerWindow(Context &context) {
+        PollDeviceExplorer(context);
+        if (!context.UI.ShowDeviceExplorerPanel) {
             return;
         }
 
+        const ImGuiID dockId = context.UI.DeviceExplorerDockId != 0
+                                  ? context.UI.DeviceExplorerDockId
+                                  : context.UI.BottomDockId;
+        if (dockId != 0 && context.DeviceExplorer.DockRequested) {
+            ImGui::SetNextWindowDockID(dockId, ImGuiCond_Always);
+            context.DeviceExplorer.DockRequested = false;
+        }
+        if (context.DeviceExplorer.FocusRequested) {
+            ImGui::SetNextWindowFocus();
+            context.DeviceExplorer.FocusRequested = false;
+        }
+
+        const std::string title = TrLabel("Device Explorer###DeviceExplorer");
+        if (!ImGui::Begin(title.c_str(), nullptr, WINDOW_FLAGS)) {
+            ImGui::End();
+            return;
+        }
+        context.DeviceExplorer.Open = true;
+
+        if (ImGui::GetWindowDockID() != 0) {
+            context.UI.DeviceExplorerDockId = ImGui::GetWindowDockID();
+            if (context.UI.BottomDockId == 0) {
+                context.UI.BottomDockId = context.UI.DeviceExplorerDockId;
+            }
+        }
+
         auto tab = ResolveSelectedExplorerTab(context);
-        BuildDeviceExplorerPanel(context, tab.get());
+        DrawDeviceExplorerPanel(context, tab.get());
+
+        ImGui::End();
     }
 }

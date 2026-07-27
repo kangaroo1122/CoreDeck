@@ -28,6 +28,7 @@ namespace {
     NSMenuItem *g_ToggleOptionsItem = nil;
     NSMenuItem *g_ToggleDetailsItem = nil;
     NSMenuItem *g_ToggleOutputLogItem = nil;
+    NSMenuItem *g_ToggleDeviceExplorerItem = nil;
     NSMenuItem *g_StorageOverviewItem = nil;
     NSMenuItem *g_ToolsMenuItem = nil;
     NSMenuItem *g_DeviceExplorerItem = nil;
@@ -155,7 +156,8 @@ namespace {
         [g_ToggleAvdListItem setTitle:Translated(state.ShowAvdListPanel ? "Hide AVD List" : "Show AVD List")];
         [g_ToggleOptionsItem setTitle:Translated(state.ShowOptionsPanel ? "Hide Options" : "Show Options")];
         [g_ToggleDetailsItem setTitle:Translated(state.ShowDetailsPanel ? "Hide Details" : "Show Details")];
-        [g_ToggleOutputLogItem setTitle:Translated(state.ShowLogPanel ? "Hide Bottom Panel" : "Show Bottom Panel")];
+        [g_ToggleOutputLogItem setTitle:Translated(state.ShowLogPanel ? "Hide Output Log" : "Show Output Log")];
+        [g_ToggleDeviceExplorerItem setTitle:Translated(state.ShowDeviceExplorerPanel ? "Hide Device Explorer" : "Show Device Explorer")];
         [g_StorageOverviewItem setTitle:Translated("Storage Overview")];
 
         SetMenuTitle(g_ToolsMenuItem, Translated("Tools"));
@@ -175,6 +177,7 @@ namespace {
         [g_ToggleOptionsItem setEnabled:state.Interactive];
         [g_ToggleDetailsItem setEnabled:state.Interactive];
         [g_ToggleOutputLogItem setEnabled:state.Interactive];
+        [g_ToggleDeviceExplorerItem setEnabled:state.Interactive];
         [g_StorageOverviewItem setEnabled:state.Interactive];
         [g_ToolsMenuItem setEnabled:state.Interactive && state.ShowToolsMenu];
         [g_DeviceExplorerItem setEnabled:state.Interactive && state.ShowToolsMenu];
@@ -227,12 +230,14 @@ namespace CoreDeck::MacosMenu {
             g_ToggleAvdListItem = ActionItem(Translated("Hide AVD List"), NativeMenuAction::ToggleAvdList);
             g_ToggleOptionsItem = ActionItem(Translated("Hide Options"), NativeMenuAction::ToggleOptions);
             g_ToggleDetailsItem = ActionItem(Translated("Hide Details"), NativeMenuAction::ToggleDetails);
-            g_ToggleOutputLogItem = ActionItem(Translated("Hide Bottom Panel"), NativeMenuAction::ToggleOutputLog);
+            g_ToggleOutputLogItem = ActionItem(Translated("Hide Output Log"), NativeMenuAction::ToggleOutputLog);
+            g_ToggleDeviceExplorerItem = ActionItem(Translated("Show Device Explorer"), NativeMenuAction::ToggleDeviceExplorer);
             g_StorageOverviewItem = ActionItem(Translated("Storage Overview"), NativeMenuAction::StorageOverview);
             [viewMenu addItem:g_ToggleAvdListItem];
             [viewMenu addItem:g_ToggleOptionsItem];
             [viewMenu addItem:g_ToggleDetailsItem];
             [viewMenu addItem:g_ToggleOutputLogItem];
+            [viewMenu addItem:g_ToggleDeviceExplorerItem];
             [viewMenu addItem:[NSMenuItem separatorItem]];
             [viewMenu addItem:g_StorageOverviewItem];
 
@@ -281,6 +286,7 @@ namespace CoreDeck::MacosMenu {
             g_ToggleOptionsItem = nil;
             g_ToggleDetailsItem = nil;
             g_ToggleOutputLogItem = nil;
+            g_ToggleDeviceExplorerItem = nil;
             g_StorageOverviewItem = nil;
             g_ToolsMenuItem = nil;
             g_DeviceExplorerItem = nil;

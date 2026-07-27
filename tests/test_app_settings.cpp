@@ -13,6 +13,7 @@ TEST_CASE("AppSettings enables wipe-and-run confirmation by default", "[app_sett
     REQUIRE(settings.ConfirmBeforeWipeAndRun);
     REQUIRE(settings.JavaHomePath.empty());
     REQUIRE(settings.UiFontSize == 16.0F);
+    REQUIRE_FALSE(settings.ShowDeviceExplorerPanel);
 }
 
 TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[app_settings][migration]") {
@@ -39,6 +40,7 @@ TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[ap
     REQUIRE(settings.ShowOptionsPanel);
     REQUIRE_FALSE(settings.ShowDetailsPanel);
     REQUIRE(settings.ShowLogPanel);
+    REQUIRE_FALSE(settings.ShowDeviceExplorerPanel);
     REQUIRE(settings.AvdSortMode == 2);
     REQUIRE_FALSE(settings.AvdSortAscending);
     REQUIRE(settings.JavaHomePath.empty());

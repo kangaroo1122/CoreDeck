@@ -3,7 +3,6 @@
 //
 
 #include <algorithm>
-#include <cfloat>
 #include <cstddef>
 #include <cstdio>
 #include <string>
@@ -127,8 +126,16 @@ namespace CoreDeck {
 
             const ImGuiStyle &style = ImGui::GetStyle();
             const float counterWidth = ImGui::CalcTextSize(counter.c_str()).x;
-            const float totalWidth = regexToggleWidth + searchWidth + counterWidth + (navButtonWidth * 2.0F) + (style.ItemSpacing.x * 4.0F);
-            ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - totalWidth);
+            const float fixedWidth = regexToggleWidth + counterWidth + (navButtonWidth * 2.0F) + (style.ItemSpacing.x * 4.0F);
+            const float contentMaxX = ImGui::GetWindowContentRegionMax().x;
+            float startX = ImGui::GetCursorPosX();
+            if ((contentMaxX - startX) < fixedWidth + Em(10.0F)) {
+                ImGui::NewLine();
+                startX = ImGui::GetWindowContentRegionMin().x;
+            }
+            const float availableSearchWidth = std::max(Em(8.0F), contentMaxX - startX - fixedWidth);
+            const float resolvedSearchWidth = std::min(searchWidth, availableSearchWidth);
+            ImGui::SetCursorPosX(std::max(startX, contentMaxX - fixedWidth - resolvedSearchWidth));
 
             // Regex toggle
             if (ToggleButton(".*##RegexToggle", state.UseRegex, ImVec2(regexToggleWidth, squareButtonSize))) {
@@ -143,7 +150,7 @@ namespace CoreDeck {
             searchBuffer[sizeof(searchBuffer) - 1] = '\0';
 
             const std::string hint = IconWithLabel(Icons::SEARCH, state.UseRegex ? "Regex" : "Search logs...");
-            ImGui::SetNextItemWidth(searchWidth);
+            ImGui::SetNextItemWidth(resolvedSearchWidth);
             if (regexInvalid) {
                 ImGui::PushStyleColor(ImGuiCol_Border, HexColor(Colors::NEGATIVE));
             }
@@ -197,16 +204,6 @@ namespace CoreDeck {
             return navChanged;
         }
 
-        int CallbackSetSelection(ImGuiInputTextCallbackData *data) {
-            const auto *selection = static_cast<SyncSelection *>(data->UserData);
-            if (selection && selection->Active) {
-                data->CursorPos = selection->End;
-                data->SelectionStart = selection->Start;
-                data->SelectionEnd = selection->End;
-            }
-            return 0;
-        }
-
         std::size_t LineIndexFor(const std::string &joined, const std::size_t offset) {
             std::size_t line = 0;
             const std::size_t end = std::min(offset, joined.size());
@@ -218,15 +215,20 @@ namespace CoreDeck {
             return line;
         }
 
-        ImGuiWindow *GetLogChildWindow() {
-            return ImGui::FindWindowByID(ImGui::GetID("##LogText"));
+        int CallbackSetSelection(ImGuiInputTextCallbackData *data) {
+            const auto *selection = static_cast<SyncSelection *>(data->UserData);
+            if (selection && selection->Active) {
+                data->CursorPos = selection->End;
+                data->SelectionStart = selection->Start;
+                data->SelectionEnd = selection->End;
+            }
+            return 0;
         }
 
-        bool ApplyScrollToLine(const int lineIndex) {
+        bool ApplyScrollToLine(const int lineIndex, ImGuiWindow *window) {
             if (lineIndex < 0) {
                 return false;
             }
-            ImGuiWindow *window = GetLogChildWindow();
             if (!window) {
                 return false;
             }
@@ -237,16 +239,71 @@ namespace CoreDeck {
             return true;
         }
 
-        bool ApplyScrollToBottom() {
-            ImGuiWindow *w = GetLogChildWindow();
-            if (!w) {
+        bool ApplyScrollToBottom(ImGuiWindow *window) {
+            if (!window) {
                 return false;
             }
-            w->Scroll.y = w->ScrollMax.y;
+            window->Scroll.y = window->ScrollMax.y;
             return true;
         }
 
-        void RenderLogBody(const PanelView &view, const SyncSelection &sync, const bool focusLog) {
+        void DriveAutoScroll(
+            const PanelInputs &inputs,
+            const Context &context,
+            const PanelView &view,
+            const bool hasQuery,
+            ImGuiWindow *window
+        ) {
+            if (!inputs.Log || !context.Logs.AutoScroll || hasQuery || !view.HasContent) {
+                return;
+            }
+            if (!inputs.Log->HasNewContent()) {
+                return;
+            }
+
+            ApplyScrollToBottom(window);
+            inputs.Log->ResetNewContentFlag();
+        }
+
+        ImVec2 ResolveLogContentSize(const std::string &display) {
+            const ImGuiStyle &style = ImGui::GetStyle();
+            const ImVec2 available = ImGui::GetContentRegionAvail();
+            const char *textStart = display.data();
+            const char *textEnd = textStart + display.size();
+            const char *lineStart = textStart;
+            float maxLineWidth = 0.0F;
+            int lineCount = 1;
+
+            for (const char *cursor = textStart; cursor < textEnd; ++cursor) {
+                if (*cursor != '\n') {
+                    continue;
+                }
+                maxLineWidth = std::max(maxLineWidth, ImGui::CalcTextSize(lineStart, cursor, false).x);
+                lineStart = cursor + 1;
+                ++lineCount;
+            }
+            maxLineWidth = std::max(maxLineWidth, ImGui::CalcTextSize(lineStart, textEnd, false).x);
+
+            return ImVec2(
+                std::max(available.x, maxLineWidth + (style.FramePadding.x * 2.0F) + style.ScrollbarSize),
+                std::max(
+                    available.y,
+                    (static_cast<float>(lineCount) * ImGui::GetTextLineHeight()) +
+                        (style.FramePadding.y * 2.0F) +
+                        style.ScrollbarSize
+                )
+            );
+        }
+
+        bool RenderLogBody(
+            const PanelInputs &inputs,
+            const Context &context,
+            const PanelView &view,
+            const SyncSelection &sync,
+            const bool focusLog,
+            const int scrollLine,
+            const bool hasQuery
+        ) {
             const std::string &display = view.HasContent ? view.Filter.Joined : view.Placeholder;
             std::vector<char> buffer(display.begin(), display.end());
             buffer.push_back('\0');
@@ -257,6 +314,16 @@ namespace CoreDeck {
                 flags |= ImGuiInputTextFlags_CallbackAlways;
             }
 
+            const ImVec2 contentSize = ResolveLogContentSize(display);
+            ImGui::SetNextWindowContentSize(contentSize);
+            ImGui::BeginChild("##LogText", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
+            ImGuiWindow *logWindow = ImGui::GetCurrentWindow();
+
+            bool scrollApplied = true;
+            if (scrollLine >= 0) {
+                scrollApplied = ApplyScrollToLine(scrollLine, logWindow);
+            }
+
             if (!view.HasContent) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             }
@@ -265,10 +332,10 @@ namespace CoreDeck {
                 ImGui::SetKeyboardFocusHere();
             }
             ImGui::InputTextMultiline(
-                "##LogText",
+                "##LogTextInput",
                 buffer.data(),
                 buffer.size(),
-                ImVec2(-FLT_MIN, -FLT_MIN),
+                contentSize,
                 flags,
                 sync.Active ? CallbackSetSelection : nullptr,
                 sync.Active ? const_cast<SyncSelection *>(&sync) : nullptr // NOLINT(cppcoreguidelines-pro-type-const-cast)
@@ -277,19 +344,77 @@ namespace CoreDeck {
             if (!view.HasContent) {
                 ImGui::PopStyleColor();
             }
-        }
 
-        void DriveAutoScroll(const PanelInputs &inputs, const Context &context, const PanelView &view, const bool hasQuery) {
-            if (!inputs.Log || !context.Logs.AutoScroll || hasQuery || !view.HasContent) {
-                return;
-            }
-            if (!inputs.Log->HasNewContent()) {
-                return;
+            if (scrollLine < 0) {
+                DriveAutoScroll(inputs, context, view, hasQuery, logWindow);
             }
 
-            ApplyScrollToBottom();
-            inputs.Log->ResetNewContentFlag();
+            ImGui::EndChild();
+            return scrollApplied;
         }
+
+        void DrawLogPanelContent(Context &context) {
+            const PanelInputs inputs = ResolveInputs(context);
+            Context::LogViewState scratch{};
+            Context::LogViewState &state = inputs.HasSelection ? ResolveViewState(context, inputs.AvdName) : scratch;
+
+            PanelView view = BuildView(inputs, state);
+            const int matchCount = static_cast<int>(view.Filter.Matches.size());
+
+            if (state.ActiveMatchIndex >= matchCount) {
+                state.ActiveMatchIndex = 0;
+            }
+            state.ActiveMatchIndex = std::max(state.ActiveMatchIndex, 0);
+
+            const bool copyClicked = RenderToolbarButtons(inputs, view.HasContent);
+            bool queryChanged = false;
+            const bool navChanged = RenderSearchBar(state, view, matchCount, queryChanged);
+
+            if (queryChanged) {
+                state.ActiveMatchIndex = 0;
+                view = BuildView(inputs, state);
+                context.Logs.PendingScroll = !view.Filter.Matches.empty();
+                if (!view.Filter.Matches.empty()) {
+                    context.Logs.PendingSyncFrames = 2;
+                }
+            }
+            if (navChanged) {
+                context.Logs.PendingScroll = true;
+                context.Logs.PendingFocus = true;
+                context.Logs.PendingSyncFrames = 2;
+            }
+
+            if (copyClicked && view.HasContent) {
+                ImGui::SetClipboardText(view.Filter.Joined.c_str());
+            }
+
+            SyncSelection sync;
+            int scrollLine = -1;
+            const bool haveActiveMatch = !view.Filter.Matches.empty() && state.ActiveMatchIndex < static_cast<int>(view.Filter.Matches.size());
+            if (haveActiveMatch && context.Logs.PendingSyncFrames > 0) {
+                const auto &[StartOffset, EndOffset] = view.Filter.Matches[state.ActiveMatchIndex];
+                sync.Active = true;
+                sync.Start = static_cast<int>(StartOffset);
+                sync.End = static_cast<int>(EndOffset);
+            }
+            if (haveActiveMatch && context.Logs.PendingScroll) {
+                const auto &[StartOffset, _] = view.Filter.Matches[state.ActiveMatchIndex];
+                scrollLine = static_cast<int>(LineIndexFor(view.Filter.Joined, StartOffset));
+            }
+
+            const bool focusLog = context.Logs.PendingFocus && haveActiveMatch;
+
+            const bool scrollApplied = RenderLogBody(inputs, context, view, sync, focusLog, scrollLine, !state.Search.empty());
+            if (scrollApplied) {
+                context.Logs.PendingScroll = false;
+            }
+
+            context.Logs.PendingFocus = false;
+            if (context.Logs.PendingSyncFrames > 0) {
+                --context.Logs.PendingSyncFrames;
+            }
+        }
+
     }
 
     void BuildAvdLogsWindow(Context &context) {
@@ -298,81 +423,19 @@ namespace CoreDeck {
         }
 
         const std::string title = TrLabel("Output Log###Output Log");
-        if (context.UI.BottomDockId != 0) {
-            ImGui::SetNextWindowDockID(context.UI.BottomDockId, ImGuiCond_FirstUseEver);
+        const ImGuiID dockId = context.UI.OutputLogDockId != 0 ? context.UI.OutputLogDockId : context.UI.BottomDockId;
+        if (dockId != 0) {
+            ImGui::SetNextWindowDockID(dockId, ImGuiCond_FirstUseEver);
         }
         ImGui::Begin(title.c_str());
         if (ImGui::GetWindowDockID() != 0) {
-            context.UI.BottomDockId = ImGui::GetWindowDockID();
-        }
-
-        const PanelInputs inputs = ResolveInputs(context);
-        Context::LogViewState scratch{};
-        Context::LogViewState &state = inputs.HasSelection ? ResolveViewState(context, inputs.AvdName) : scratch;
-
-        PanelView view = BuildView(inputs, state);
-        const int matchCount = static_cast<int>(view.Filter.Matches.size());
-
-        if (state.ActiveMatchIndex >= matchCount) {
-            state.ActiveMatchIndex = 0;
-        }
-        state.ActiveMatchIndex = std::max(state.ActiveMatchIndex, 0);
-
-        const bool copyClicked = RenderToolbarButtons(inputs, view.HasContent);
-        bool queryChanged = false;
-        const bool navChanged = RenderSearchBar(state, view, matchCount, queryChanged);
-
-        if (queryChanged) {
-            state.ActiveMatchIndex = 0;
-            view = BuildView(inputs, state);
-            context.Logs.PendingScroll = !view.Filter.Matches.empty();
-            if (!view.Filter.Matches.empty()) {
-                context.Logs.PendingSyncFrames = 2;
+            context.UI.OutputLogDockId = ImGui::GetWindowDockID();
+            if (context.UI.BottomDockId == 0) {
+                context.UI.BottomDockId = context.UI.OutputLogDockId;
             }
         }
-        if (navChanged) {
-            context.Logs.PendingScroll = true;
-            context.Logs.PendingFocus = true;
-            context.Logs.PendingSyncFrames = 2;
-        }
 
-        if (copyClicked && view.HasContent) {
-            ImGui::SetClipboardText(view.Filter.Joined.c_str());
-        }
-
-        SyncSelection sync;
-        int scrollLine = -1;
-        const bool haveActiveMatch = !view.Filter.Matches.empty() && state.ActiveMatchIndex < static_cast<int>(view.Filter.Matches.size());
-        if (haveActiveMatch && context.Logs.PendingSyncFrames > 0) {
-            const auto &[StartOffset, EndOffset] = view.Filter.Matches[state.ActiveMatchIndex];
-            sync.Active = true;
-            sync.Start = static_cast<int>(StartOffset);
-            sync.End = static_cast<int>(EndOffset);
-        }
-        if (haveActiveMatch && context.Logs.PendingScroll) {
-            const auto &[StartOffset, _] = view.Filter.Matches[state.ActiveMatchIndex];
-            scrollLine = static_cast<int>(LineIndexFor(view.Filter.Joined, StartOffset));
-        }
-
-        const bool focusLog = context.Logs.PendingFocus && haveActiveMatch;
-
-        bool scrollApplied = true;
-        if (scrollLine >= 0) {
-            scrollApplied = ApplyScrollToLine(scrollLine);
-        }
-        if (scrollApplied) {
-            context.Logs.PendingScroll = false;
-        }
-
-        context.Logs.PendingFocus = false;
-        if (context.Logs.PendingSyncFrames > 0) {
-            --context.Logs.PendingSyncFrames;
-        }
-
-        RenderLogBody(view, sync, focusLog);
-        if (scrollLine < 0) {
-            DriveAutoScroll(inputs, context, view, !state.Search.empty());
-        }
+        DrawLogPanelContent(context);
 
         ImGui::End();
     }

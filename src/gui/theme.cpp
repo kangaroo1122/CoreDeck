@@ -201,7 +201,15 @@ namespace CoreDeck {
         ApplyColorPalette(themeMode == ThemeMode::Light ? LIGHT_PALETTE : DARK_PALETTE);
 
         auto &style = ImGui::GetStyle();
+        const float fontSizeBase = style.FontSizeBase;
+        const float fontScaleMain = style.FontScaleMain;
+        const float fontScaleDpi = style.FontScaleDpi;
+        const float nextFrameFontSizeBase = style._NextFrameFontSizeBase;
         style = ImGuiStyle();
+        style.FontSizeBase = fontSizeBase;
+        style.FontScaleMain = fontScaleMain;
+        style.FontScaleDpi = fontScaleDpi;
+        style._NextFrameFontSizeBase = nextFrameFontSizeBase;
 
         if (themeMode == ThemeMode::Light) {
             ImGui::StyleColorsLight();

@@ -1,3 +1,9 @@
+## [v0.9.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.4) — 2026-07-27
+
+- Fix UI font size changes by updating ImGui's active base font size after startup, theme resets, and font rebuilds
+- Upgrade shared folder sync to a snapshot-based three-way reconcile that propagates one-sided changes and deletes
+- Preserve conflicting shared-folder edits as conflict-named copies while keeping sync scoped to regular files inside the share
+
 ## [v0.9.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.3) — 2026-07-27
 
 - Switch UI font size selection from a slider to a dropdown

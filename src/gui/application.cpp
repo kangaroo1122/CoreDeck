@@ -100,6 +100,19 @@ namespace CoreDeck {
             context.UI.ShowLogPanel = true;
         }
 
+        float ResolveUiFontPixelSize(const Context &context, const float fontPixelScale) {
+            const float scale = (fontPixelScale > 0.0F) ? fontPixelScale : 1.0F;
+            return NormalizeUiFontSize(context.Prefs.UiFontSize) * scale;
+        }
+
+        void ApplyImGuiFontSizeBase(const Context &context, const float fontPixelScale) {
+            const float fontSize = ResolveUiFontPixelSize(context, fontPixelScale);
+            auto &style = ImGui::GetStyle();
+            // Since ImGui 1.92, AddFont* size does not by itself change the active UI font size.
+            style.FontSizeBase = fontSize;
+            style._NextFrameFontSizeBase = fontSize;
+        }
+
         void ApplyBottomDockLayout(Context &context, const ImGuiID dockSpaceId, const bool force = false) {
             if (context.UI.BottomDockId == 0) {
                 return;
@@ -164,6 +177,7 @@ namespace CoreDeck {
         m_LoadFonts();
 
         ApplyCustomImGuiTheme(m_Context.Prefs.Theme, m_DpiScale);
+        ApplyImGuiFontSizeBase(m_Context, m_FontPixelScale);
 
         const char *glslVersion = "#version 330";
         ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
@@ -362,8 +376,7 @@ namespace CoreDeck {
             {resourcesDir, "assets", "fonts", "FontAwesome7Free-Solid-900.otf"}
         );
 
-        const float dpi = (m_FontPixelScale > 0.0F) ? m_FontPixelScale : 1.0F;
-        const float textSize = NormalizeUiFontSize(m_Context.Prefs.UiFontSize) * dpi;
+        const float textSize = ResolveUiFontPixelSize(m_Context, m_FontPixelScale);
         const float iconSize = textSize * 0.75F;
         const float glyphMinAdvance = textSize;
 
@@ -446,6 +459,7 @@ namespace CoreDeck {
         io.FontDefault = nullptr;
         io.Fonts->Clear();
         m_LoadFonts();
+        ApplyImGuiFontSizeBase(m_Context, m_FontPixelScale);
     }
 
     void Application::m_HandleFontReloadRequest() {

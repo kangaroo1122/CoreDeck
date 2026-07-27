@@ -23,6 +23,11 @@ namespace CoreDeck {
         std::string Output;
     };
 
+    struct SharedFolderReconcileChanges {
+        std::vector<std::string> DeviceDeletedPaths;
+        std::vector<std::string> ConflictPaths;
+    };
+
     std::string GetSharedFolderHostPath(const std::string &avdName = "");
 
     std::string GetSharedFolderDevicePath();
@@ -57,7 +62,8 @@ namespace CoreDeck {
         const std::string &stagingPath,
         const std::string &hostPath,
         const std::string &snapshotPath,
-        std::string *error = nullptr
+        std::string *error = nullptr,
+        SharedFolderReconcileChanges *changes = nullptr
     );
 
     bool EnsureSharedFolderHostPath(std::string *error = nullptr);

@@ -1,10 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
 
 #include "core/paths.h"
 #include "core/shared_folder.h"
@@ -47,6 +49,42 @@ namespace {
         std::error_code ec;
         fs::last_write_time(path, time, ec);
         REQUIRE_FALSE(ec);
+    }
+
+    std::uint64_t HashFileForSnapshot(const fs::path &path) {
+        std::ifstream file(path, std::ios::binary);
+        REQUIRE(file.is_open());
+
+        std::uint64_t hash = 14695981039346656037ULL;
+        char buffer[4096] = {};
+        while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0) {
+            for (std::streamsize i = 0; i < file.gcount(); i++) {
+                hash ^= static_cast<unsigned char>(buffer[i]);
+                hash *= 1099511628211ULL;
+            }
+        }
+        REQUIRE_FALSE(file.bad());
+        return hash;
+    }
+
+    void WriteSnapshot(
+        const fs::path &snapshot,
+        const fs::path &root,
+        const std::vector<std::string> &relativePaths
+    ) {
+        fs::create_directories(snapshot.parent_path());
+        std::ofstream file(snapshot, std::ios::binary);
+        REQUIRE(file.is_open());
+
+        for (const auto &relativePath: relativePaths) {
+            const fs::path path = root / relativePath;
+            file << "v2\t"
+                 << fs::file_size(path) << '\t'
+                 << fs::last_write_time(path).time_since_epoch().count() << '\t'
+                 << HashFileForSnapshot(path) << '\t'
+                 << relativePath << '\n';
+        }
+        REQUIRE(file.good());
     }
 }
 
@@ -204,4 +242,172 @@ TEST_CASE("shared folder reconcile removes host files deleted from the device sn
     CHECK_FALSE(fs::exists(host / "deleted-on-device.txt"));
     CHECK(ReadTextFile(host / "host-only.txt") == "new host file");
     CHECK(ReadTextFile(host / "kept.txt") == "device kept");
+}
+
+TEST_CASE("shared folder reconcile keeps host changes when the device copy is unchanged", "[shared_folder][sync]") {
+    TempTree temp("reconcile_host_changed");
+    const fs::path base = temp.Path / "base";
+    const fs::path staging = temp.Path / "staging";
+    const fs::path host = temp.Path / "host";
+    const fs::path snapshot = temp.Path / "snapshot.txt";
+
+    WriteTextFile(base / "changed.txt", "base");
+    WriteTextFile(host / "changed.txt", "host changed");
+    WriteTextFile(staging / "changed.txt", "base");
+
+    const auto now = fs::file_time_type::clock::now();
+    SetModifiedTime(base / "changed.txt", now);
+    SetModifiedTime(staging / "changed.txt", now);
+    SetModifiedTime(host / "changed.txt", now - std::chrono::seconds(20));
+    WriteSnapshot(snapshot, base, {"changed.txt"});
+
+    SharedFolderReconcileChanges changes;
+    std::string error;
+    REQUIRE(ReconcilePulledSharedFolder(staging.string(), host.string(), snapshot.string(), &error, &changes));
+    CHECK(error.empty());
+
+    CHECK(ReadTextFile(host / "changed.txt") == "host changed");
+    CHECK(changes.DeviceDeletedPaths.empty());
+    CHECK(changes.ConflictPaths.empty());
+}
+
+TEST_CASE("shared folder reconcile pulls device changes when the host copy is unchanged", "[shared_folder][sync]") {
+    TempTree temp("reconcile_device_changed");
+    const fs::path base = temp.Path / "base";
+    const fs::path staging = temp.Path / "staging";
+    const fs::path host = temp.Path / "host";
+    const fs::path snapshot = temp.Path / "snapshot.txt";
+
+    WriteTextFile(base / "changed.txt", "base");
+    WriteTextFile(host / "changed.txt", "base");
+    WriteTextFile(staging / "changed.txt", "device changed");
+
+    const auto now = fs::file_time_type::clock::now();
+    SetModifiedTime(base / "changed.txt", now);
+    SetModifiedTime(host / "changed.txt", now);
+    SetModifiedTime(staging / "changed.txt", now - std::chrono::seconds(20));
+    WriteSnapshot(snapshot, base, {"changed.txt"});
+
+    SharedFolderReconcileChanges changes;
+    std::string error;
+    REQUIRE(ReconcilePulledSharedFolder(staging.string(), host.string(), snapshot.string(), &error, &changes));
+    CHECK(error.empty());
+
+    CHECK(ReadTextFile(host / "changed.txt") == "device changed");
+    CHECK(changes.DeviceDeletedPaths.empty());
+    CHECK(changes.ConflictPaths.empty());
+}
+
+TEST_CASE("shared folder reconcile schedules device deletes for files removed on host", "[shared_folder][sync]") {
+    TempTree temp("reconcile_host_deleted");
+    const fs::path base = temp.Path / "base";
+    const fs::path staging = temp.Path / "staging";
+    const fs::path host = temp.Path / "host";
+    const fs::path snapshot = temp.Path / "snapshot.txt";
+
+    WriteTextFile(base / "deleted-on-host.txt", "base");
+    WriteTextFile(staging / "deleted-on-host.txt", "base");
+    WriteSnapshot(snapshot, base, {"deleted-on-host.txt"});
+
+    SharedFolderReconcileChanges changes;
+    std::string error;
+    REQUIRE(ReconcilePulledSharedFolder(staging.string(), host.string(), snapshot.string(), &error, &changes));
+    CHECK(error.empty());
+
+    REQUIRE(changes.DeviceDeletedPaths.size() == 1);
+    CHECK(changes.DeviceDeletedPaths[0] == "deleted-on-host.txt");
+    CHECK(changes.ConflictPaths.empty());
+    CHECK_FALSE(fs::exists(host / "deleted-on-host.txt"));
+}
+
+TEST_CASE("shared folder reconcile deletes only the file and keeps parent directories inside the share", "[shared_folder][sync]") {
+    TempTree temp("reconcile_host_deleted_parent_kept");
+    const fs::path base = temp.Path / "base";
+    const fs::path staging = temp.Path / "staging";
+    const fs::path host = temp.Path / "host";
+    const fs::path snapshot = temp.Path / "snapshot.txt";
+
+    WriteTextFile(base / "nested" / "deleted.txt", "base");
+    WriteTextFile(host / "nested" / "deleted.txt", "base");
+    WriteSnapshot(snapshot, base, {"nested/deleted.txt"});
+
+    SharedFolderReconcileChanges changes;
+    std::string error;
+    REQUIRE(ReconcilePulledSharedFolder(staging.string(), host.string(), snapshot.string(), &error, &changes));
+    CHECK(error.empty());
+
+    CHECK_FALSE(fs::exists(host / "nested" / "deleted.txt"));
+    CHECK(fs::exists(host / "nested"));
+    REQUIRE(changes.DeviceDeletedPaths.size() == 1);
+    CHECK(changes.DeviceDeletedPaths[0] == "nested/deleted.txt");
+}
+
+TEST_CASE("shared folder reconcile keeps both copies when host and device both change", "[shared_folder][sync]") {
+    TempTree temp("reconcile_conflict");
+    const fs::path base = temp.Path / "base";
+    const fs::path staging = temp.Path / "staging";
+    const fs::path host = temp.Path / "host";
+    const fs::path snapshot = temp.Path / "snapshot.txt";
+
+    WriteTextFile(base / "both.txt", "base");
+    WriteTextFile(host / "both.txt", "host changed");
+    WriteTextFile(staging / "both.txt", "device changed");
+    WriteSnapshot(snapshot, base, {"both.txt"});
+
+    SharedFolderReconcileChanges changes;
+    std::string error;
+    REQUIRE(ReconcilePulledSharedFolder(staging.string(), host.string(), snapshot.string(), &error, &changes));
+    CHECK(error.empty());
+
+    CHECK(ReadTextFile(host / "both.txt") == "host changed");
+    REQUIRE(changes.ConflictPaths.size() == 1);
+    CHECK(changes.ConflictPaths[0] == "both.conflict-device.txt");
+    CHECK(ReadTextFile(host / "both.conflict-device.txt") == "device changed");
+}
+
+TEST_CASE("shared folder reconcile saves a host edit as a conflict when the device deletes it", "[shared_folder][sync]") {
+    TempTree temp("reconcile_host_edit_device_delete");
+    const fs::path base = temp.Path / "base";
+    const fs::path staging = temp.Path / "staging";
+    const fs::path host = temp.Path / "host";
+    const fs::path snapshot = temp.Path / "snapshot.txt";
+
+    WriteTextFile(base / "deleted-on-device.txt", "base");
+    WriteTextFile(host / "deleted-on-device.txt", "host changed");
+    WriteSnapshot(snapshot, base, {"deleted-on-device.txt"});
+
+    SharedFolderReconcileChanges changes;
+    std::string error;
+    REQUIRE(ReconcilePulledSharedFolder(staging.string(), host.string(), snapshot.string(), &error, &changes));
+    CHECK(error.empty());
+
+    CHECK_FALSE(fs::exists(host / "deleted-on-device.txt"));
+    REQUIRE(changes.ConflictPaths.size() == 1);
+    CHECK(changes.ConflictPaths[0] == "deleted-on-device.conflict-host.txt");
+    CHECK(ReadTextFile(host / "deleted-on-device.conflict-host.txt") == "host changed");
+    CHECK(changes.DeviceDeletedPaths.empty());
+}
+
+TEST_CASE("shared folder reconcile saves a device edit as a conflict when the host deletes it", "[shared_folder][sync]") {
+    TempTree temp("reconcile_device_edit_host_delete");
+    const fs::path base = temp.Path / "base";
+    const fs::path staging = temp.Path / "staging";
+    const fs::path host = temp.Path / "host";
+    const fs::path snapshot = temp.Path / "snapshot.txt";
+
+    WriteTextFile(base / "deleted-on-host.txt", "base");
+    WriteTextFile(staging / "deleted-on-host.txt", "device changed");
+    WriteSnapshot(snapshot, base, {"deleted-on-host.txt"});
+
+    SharedFolderReconcileChanges changes;
+    std::string error;
+    REQUIRE(ReconcilePulledSharedFolder(staging.string(), host.string(), snapshot.string(), &error, &changes));
+    CHECK(error.empty());
+
+    CHECK_FALSE(fs::exists(host / "deleted-on-host.txt"));
+    REQUIRE(changes.ConflictPaths.size() == 1);
+    CHECK(changes.ConflictPaths[0] == "deleted-on-host.conflict-device.txt");
+    CHECK(ReadTextFile(host / "deleted-on-host.conflict-device.txt") == "device changed");
+    REQUIRE(changes.DeviceDeletedPaths.size() == 1);
+    CHECK(changes.DeviceDeletedPaths[0] == "deleted-on-host.txt");
 }

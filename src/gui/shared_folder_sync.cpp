@@ -96,7 +96,9 @@ namespace CoreDeck {
                 job.Busy = false;
                 if (result.Success) {
                     job.InitialSynced = true;
-                    context.SharedFolderSync.Status = "Shared folder synced.";
+                    context.SharedFolderSync.Status = result.Output.find("Shared folder conflicts were saved as:") != std::string::npos
+                                                        ? "Shared folder synced with conflicts."
+                                                        : "Shared folder synced.";
                     context.SharedFolderSync.Error.clear();
                 } else {
                     context.SharedFolderSync.Status.clear();

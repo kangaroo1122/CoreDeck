@@ -6,6 +6,7 @@
 #define COREDECK_CONTEXT_H
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <future>
 #include <memory>
@@ -13,13 +14,16 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../core/adb.h"
 #include "../core/avd.h"
+#include "../core/device_file.h"
 #include "../core/emulator.h"
 #include "../core/jdk_download.h"
 #include "../core/options.h"
 #include "../core/sdk.h"
 #include "../core/sdk_bootstrap.h"
 #include "../core/sdk_packages.h"
+#include "../core/shared_folder.h"
 #include "../core/skin.h"
 #include "../core/system_image.h"
 #include "localization.h"
@@ -143,6 +147,7 @@ namespace CoreDeck {
             bool ShowOptionsPanel = true;
             bool ShowDetailsPanel = true;
             bool ShowLogPanel = true;
+            std::uint32_t BottomDockId = 0;
             GLFWwindow *MainWindow = nullptr;
             bool HideInvalidSdkPathBanner = false;
             bool FontReloadRequested = false;
@@ -258,6 +263,71 @@ namespace CoreDeck {
             std::shared_ptr<SdkOperationProgress> Progress;
             std::future<JdkInstallResult> InstallFuture;
         } JdkDownloadWork;
+
+        struct DeviceExplorerTabState {
+            std::string Key;
+            std::string Title;
+            std::vector<AdbDevice> Devices;
+            std::vector<DeviceFileEntry> Entries;
+            int SelectedDevice = -1;
+            int SelectedEntry = -1;
+            std::string CurrentPath = "/sdcard";
+            char PathBuffer[512] = "/sdcard";
+            char NewFolderBuffer[128] = {};
+            std::string PreferredSerial;
+            std::string PreferredAvdName;
+            std::string Error;
+            std::string Status;
+            bool DeviceListReady = false;
+            bool FileListReady = false;
+            bool RefreshDevicesRequested = true;
+            bool RefreshFilesAfterOperation = false;
+            bool EnsureCurrentDirectoryBeforeRefresh = false;
+            bool ConfirmDelete = false;
+            DeviceFileEntry PendingDelete;
+            std::shared_ptr<std::atomic<bool>> CancelRequested = std::make_shared<std::atomic<bool>>(false);
+
+            struct {
+                std::atomic<bool> Loading{false};
+                std::future<std::vector<AdbDevice>> Future;
+            } DeviceList;
+
+            struct {
+                std::atomic<bool> Loading{false};
+                std::future<DeviceFileListResult> Future;
+            } FileList;
+
+            std::atomic<bool> OperationBusy{false};
+            std::future<DeviceFileOperationResult> OperationFuture;
+        };
+
+        struct DeviceExplorerState {
+            std::vector<std::shared_ptr<DeviceExplorerTabState>> Tabs;
+            bool Open = false;
+            bool FocusRequested = false;
+            bool DockRequested = true;
+            std::string Error;
+            std::string Status;
+            std::atomic<bool> OpenInEmulatorBusy{false};
+            std::future<DeviceFileOperationResult> OpenInEmulatorFuture;
+        } DeviceExplorer;
+
+        struct SharedFolderSyncJob {
+            std::string AvdName;
+            std::string Serial;
+            bool Busy = false;
+            bool InitialSynced = false;
+            bool PendingStop = false;
+            SharedFolderSyncMode Mode = SharedFolderSyncMode::Bidirectional;
+            std::chrono::steady_clock::time_point LastAttempt{};
+            std::future<SharedFolderSyncResult> Future;
+        };
+
+        struct SharedFolderSyncState {
+            std::unordered_map<std::string, SharedFolderSyncJob> PerAvd;
+            std::string Error;
+            std::string Status;
+        } SharedFolderSync;
 
         struct Jobs {
             struct {

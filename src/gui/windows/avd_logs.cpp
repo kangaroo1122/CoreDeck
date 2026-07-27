@@ -298,7 +298,13 @@ namespace CoreDeck {
         }
 
         const std::string title = TrLabel("Output Log###Output Log");
+        if (context.UI.BottomDockId != 0) {
+            ImGui::SetNextWindowDockID(context.UI.BottomDockId, ImGuiCond_FirstUseEver);
+        }
         ImGui::Begin(title.c_str());
+        if (ImGui::GetWindowDockID() != 0) {
+            context.UI.BottomDockId = ImGui::GetWindowDockID();
+        }
 
         const PanelInputs inputs = ResolveInputs(context);
         Context::LogViewState scratch{};

@@ -605,6 +605,7 @@ namespace CoreDeck {
         sdk.SdkPath = sdkRoot;
         sdk.JavaHomePath = javaHomePath;
         sdk.EmulatorPath = Paths::JoinPaths({sdkRoot, "emulator", "emulator" + Paths::GetExecutableExtension()});
+        sdk.AdbPath = Paths::JoinPaths({sdkRoot, "platform-tools", "adb" + Paths::GetExecutableExtension()});
 
         auto loadFromBinDir = [&](const std::string &binDir) {
             if (sdk.AvdManagerPath.empty()) {

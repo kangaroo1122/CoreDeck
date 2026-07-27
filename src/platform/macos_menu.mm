@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "../gui/localization.h"
+#include "../core/shared_folder.h"
 
 namespace {
     std::mutex g_ActionMutex;
@@ -28,6 +29,11 @@ namespace {
     NSMenuItem *g_ToggleDetailsItem = nil;
     NSMenuItem *g_ToggleOutputLogItem = nil;
     NSMenuItem *g_StorageOverviewItem = nil;
+    NSMenuItem *g_ToolsMenuItem = nil;
+    NSMenuItem *g_DeviceExplorerItem = nil;
+    NSMenuItem *g_SharedFolderMenuItem = nil;
+    NSMenuItem *g_OpenSharedFolderHostItem = nil;
+    NSMenuItem *g_OpenSharedFolderEmulatorItem = nil;
     NSMenuItem *g_HelpMenuItem = nil;
     NSMenuItem *g_CheckForUpdatesItem = nil;
 
@@ -149,8 +155,15 @@ namespace {
         [g_ToggleAvdListItem setTitle:Translated(state.ShowAvdListPanel ? "Hide AVD List" : "Show AVD List")];
         [g_ToggleOptionsItem setTitle:Translated(state.ShowOptionsPanel ? "Hide Options" : "Show Options")];
         [g_ToggleDetailsItem setTitle:Translated(state.ShowDetailsPanel ? "Hide Details" : "Show Details")];
-        [g_ToggleOutputLogItem setTitle:Translated(state.ShowLogPanel ? "Hide Output Log" : "Show Output Log")];
+        [g_ToggleOutputLogItem setTitle:Translated(state.ShowLogPanel ? "Hide Bottom Panel" : "Show Bottom Panel")];
         [g_StorageOverviewItem setTitle:Translated("Storage Overview")];
+
+        SetMenuTitle(g_ToolsMenuItem, Translated("Tools"));
+        [g_DeviceExplorerItem setTitle:Translated("Device Explorer")];
+        SetMenuTitle(g_SharedFolderMenuItem, Translated("Shared Folder"));
+        [g_OpenSharedFolderHostItem setTitle:Translated(CoreDeck::GetOpenSharedFolderHostLabel())];
+        [g_OpenSharedFolderEmulatorItem setTitle:Translated("Open Shared Folder in Emulator")];
+        [g_ToolsMenuItem setHidden:!state.ShowToolsMenu];
 
         SetMenuTitle(g_HelpMenuItem, Translated("Help"));
         [g_CheckForUpdatesItem setTitle:Translated("Check for Updates...")];
@@ -163,6 +176,11 @@ namespace {
         [g_ToggleDetailsItem setEnabled:state.Interactive];
         [g_ToggleOutputLogItem setEnabled:state.Interactive];
         [g_StorageOverviewItem setEnabled:state.Interactive];
+        [g_ToolsMenuItem setEnabled:state.Interactive && state.ShowToolsMenu];
+        [g_DeviceExplorerItem setEnabled:state.Interactive && state.ShowToolsMenu];
+        [g_SharedFolderMenuItem setEnabled:state.Interactive && state.ShowToolsMenu];
+        [g_OpenSharedFolderHostItem setEnabled:state.Interactive && state.ShowToolsMenu];
+        [g_OpenSharedFolderEmulatorItem setEnabled:state.Interactive && state.ShowToolsMenu];
         [g_HelpMenuItem setEnabled:state.Interactive];
         [g_CheckForUpdatesItem setEnabled:state.Interactive && !state.UpdateCheckInFlight];
     }
@@ -209,7 +227,7 @@ namespace CoreDeck::MacosMenu {
             g_ToggleAvdListItem = ActionItem(Translated("Hide AVD List"), NativeMenuAction::ToggleAvdList);
             g_ToggleOptionsItem = ActionItem(Translated("Hide Options"), NativeMenuAction::ToggleOptions);
             g_ToggleDetailsItem = ActionItem(Translated("Hide Details"), NativeMenuAction::ToggleDetails);
-            g_ToggleOutputLogItem = ActionItem(Translated("Hide Output Log"), NativeMenuAction::ToggleOutputLog);
+            g_ToggleOutputLogItem = ActionItem(Translated("Hide Bottom Panel"), NativeMenuAction::ToggleOutputLog);
             g_StorageOverviewItem = ActionItem(Translated("Storage Overview"), NativeMenuAction::StorageOverview);
             [viewMenu addItem:g_ToggleAvdListItem];
             [viewMenu addItem:g_ToggleOptionsItem];
@@ -217,6 +235,27 @@ namespace CoreDeck::MacosMenu {
             [viewMenu addItem:g_ToggleOutputLogItem];
             [viewMenu addItem:[NSMenuItem separatorItem]];
             [viewMenu addItem:g_StorageOverviewItem];
+
+            g_ToolsMenuItem = [[NSMenuItem alloc] initWithTitle:Translated("Tools") action:nil keyEquivalent:@""];
+            [mainMenu addItem:g_ToolsMenuItem];
+            NSMenu *toolsMenu = [[NSMenu alloc] initWithTitle:Translated("Tools")];
+            [g_ToolsMenuItem setSubmenu:toolsMenu];
+            g_DeviceExplorerItem = ActionItem(Translated("Device Explorer"), NativeMenuAction::DeviceExplorer);
+            [toolsMenu addItem:g_DeviceExplorerItem];
+            g_SharedFolderMenuItem = [[NSMenuItem alloc] initWithTitle:Translated("Shared Folder") action:nil keyEquivalent:@""];
+            NSMenu *sharedFolderMenu = [[NSMenu alloc] initWithTitle:Translated("Shared Folder")];
+            [g_SharedFolderMenuItem setSubmenu:sharedFolderMenu];
+            g_OpenSharedFolderHostItem = ActionItem(
+                Translated(CoreDeck::GetOpenSharedFolderHostLabel()),
+                NativeMenuAction::OpenSharedFolderHost
+            );
+            g_OpenSharedFolderEmulatorItem = ActionItem(
+                Translated("Open Shared Folder in Emulator"),
+                NativeMenuAction::OpenSharedFolderEmulator
+            );
+            [sharedFolderMenu addItem:g_OpenSharedFolderHostItem];
+            [sharedFolderMenu addItem:g_OpenSharedFolderEmulatorItem];
+            [toolsMenu addItem:g_SharedFolderMenuItem];
 
             g_HelpMenuItem = [[NSMenuItem alloc] initWithTitle:Translated("Help") action:nil keyEquivalent:@""];
             [mainMenu addItem:g_HelpMenuItem];
@@ -243,6 +282,11 @@ namespace CoreDeck::MacosMenu {
             g_ToggleDetailsItem = nil;
             g_ToggleOutputLogItem = nil;
             g_StorageOverviewItem = nil;
+            g_ToolsMenuItem = nil;
+            g_DeviceExplorerItem = nil;
+            g_SharedFolderMenuItem = nil;
+            g_OpenSharedFolderHostItem = nil;
+            g_OpenSharedFolderEmulatorItem = nil;
             g_HelpMenuItem = nil;
             g_CheckForUpdatesItem = nil;
             std::lock_guard lock(g_ActionMutex);

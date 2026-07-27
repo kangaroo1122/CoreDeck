@@ -5,9 +5,13 @@
 #include <vector>
 
 namespace CoreDeck {
+    std::vector<std::string> FindBundledFontPaths();
+
     std::vector<std::string> FindSystemCjkFontPaths();
 
     std::string FindSystemCjkFontPath();
+
+    std::vector<std::string> FindFontCandidatePaths();
 
     std::string FontPathDisplayName(const std::string &path);
 

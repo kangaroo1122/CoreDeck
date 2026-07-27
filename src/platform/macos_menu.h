@@ -17,6 +17,9 @@ namespace CoreDeck {
         ToggleDetails,
         ToggleOutputLog,
         StorageOverview,
+        DeviceExplorer,
+        OpenSharedFolderHost,
+        OpenSharedFolderEmulator,
         About,
         CheckForUpdates,
     };
@@ -27,6 +30,7 @@ namespace CoreDeck {
         bool ShowOptionsPanel = true;
         bool ShowDetailsPanel = true;
         bool ShowLogPanel = true;
+        bool ShowToolsMenu = false;
         bool UpdateCheckInFlight = false;
     };
 

@@ -51,6 +51,7 @@ namespace CoreDeck {
         }
 
         sdk.EmulatorPath = Paths::JoinPaths({sdk.SdkPath, "emulator", "emulator" + Paths::GetExecutableExtension()});
+        sdk.AdbPath = Paths::JoinPaths({sdk.SdkPath, "platform-tools", "adb" + Paths::GetExecutableExtension()});
 
         const std::string latestBin = Paths::JoinPaths({sdk.SdkPath, "cmdline-tools", "latest", "bin"});
         sdk.AvdManagerPath = FindCmdlineTool(latestBin, "avdmanager");

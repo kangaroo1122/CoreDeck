@@ -1,3 +1,14 @@
+## [v0.9.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.1) — 2026-07-27
+
+- Add a Tools menu for the selected running AVD, with Device Explorer and Shared Folder actions
+- Show Device Explorer as a bottom-panel tab that follows the selected running AVD
+- Support device file browsing, upload, download, folder upload, folder creation, and guarded deletion
+- Add per-AVD shared folders under CoreDeck's config directory with adb-backed bidirectional sync
+- Keep the newest same-name shared files by modified time and leave host shared folders in place after shutdown
+- Open the shared folder on the host or inside Android from the Tools menu
+- Use bundled PingFang SC Heavy as the default UI font
+- Apply font selector choices to the primary UI font and clarify candidate ordering
+
 ## [v0.8.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0) — 2026-07-26
 
 - Improve first-run JDK/SDK setup spacing when download controls are visible

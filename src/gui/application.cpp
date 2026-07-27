@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <vector>
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_impl_glfw.h"
@@ -29,6 +30,7 @@
 #include "application.h"
 #include "fonts.h"
 #include "localization.h"
+#include "shared_folder_sync.h"
 #include "theme.h"
 #include "../core/app_settings.h"
 #include "../core/paths.h"
@@ -39,6 +41,7 @@
 #include "windows/avd_options.h"
 #include "windows/create_avd.h"
 #include "windows/delete_avd.h"
+#include "windows/device_explorer.h"
 #include "windows/install_image.h"
 #include "windows/main_menu_bar.h"
 #include "windows/onboarding.h"
@@ -149,6 +152,7 @@ namespace CoreDeck {
                 ImGuiID topId = 0;
                 ImGuiID bottomId = 0;
                 ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Down, 0.40F, &bottomId, &topId);
+                m_Context.UI.BottomDockId = bottomId;
 
                 ImGuiID leftId = 0;
                 ImGuiID centerId = 0;
@@ -187,6 +191,7 @@ namespace CoreDeck {
         BuildAvdInfoWindow(m_Context);
         BuildRenameAvdWindow(m_Context);
         BuildAvdLogsWindow(m_Context);
+        BuildDeviceExplorerWindow(m_Context);
         BuildAboutWindow(m_Context);
         BuildPreferencesWindow(m_Context);
         BuildUpdateNoticeWindow(m_Context);
@@ -197,6 +202,7 @@ namespace CoreDeck {
         BuildStorageWindow(m_Context);
 
         m_Context.Host.Manager.Update();
+        DriveSharedFolderSync(m_Context);
     }
 
 
@@ -273,7 +279,11 @@ namespace CoreDeck {
         ImGuiIO &io = ImGui::GetIO();
 
         const std::string resourcesDir = Paths::GetResourcesDirectory();
-        const std::string textFontPath = Paths::JoinPaths(
+        const std::vector<std::string> bundledFonts = FindBundledFontPaths();
+        const std::string defaultTextFontPath = !bundledFonts.empty()
+                                                    ? bundledFonts.front()
+                                                    : Paths::JoinPaths({resourcesDir, "assets", "fonts", "PingFang SC Heavy.ttf"});
+        const std::string fallbackTextFontPath = Paths::JoinPaths(
             {resourcesDir, "assets", "fonts", "JetBrainsMono-Regular.ttf"}
         );
         const std::string iconFontPath = Paths::JoinPaths(
@@ -285,23 +295,49 @@ namespace CoreDeck {
         constexpr float BASE_ICON_SIZE = 12.0F;
         constexpr float BASE_GLYPH_MIN_ADVANCE = 16.0F;
 
+        auto isBundledLatinOnlyFont = [](const std::string &path) {
+            const std::string fileName = std::filesystem::path(path).filename().string();
+            return fileName == "JetBrainsMono-Regular.ttf" || fileName == "JetBrainsMono-Bold.ttf";
+        };
+
+        static ImVector<ImWchar> textGlyphRanges;
+        ImFontGlyphRangesBuilder textGlyphBuilder;
+        static constexpr ImWchar TEXT_RANGES[] = {
+            0x0020,
+            0x00FF,
+            0x2000,
+            0x206F,
+            0,
+        };
+        textGlyphBuilder.AddRanges(TEXT_RANGES);
+        textGlyphBuilder.AddRanges(io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+        textGlyphBuilder.AddText(SimplifiedChineseGlyphText());
+        textGlyphRanges.clear();
+        textGlyphBuilder.BuildRanges(&textGlyphRanges);
+
         ImFont *textFont = nullptr;
+        std::string loadedTextFontPath;
+        const bool hasValidCustomFont = IsSupportedFontPath(m_Context.Prefs.CustomCjkFontPath);
+        const std::string textFontPath = hasValidCustomFont
+                                             ? m_Context.Prefs.CustomCjkFontPath
+                                             : defaultTextFontPath;
         if (std::filesystem::exists(textFontPath)) {
-            static constexpr ImWchar TEXT_RANGES[] = {
-                0x0020,
-                0x00FF,
-                0x2000,
-                0x206F,
-                0,
-            };
-            textFont = io.Fonts->AddFontFromFileTTF(textFontPath.c_str(), BASE_TEXT_SIZE * dpi, nullptr, TEXT_RANGES);
+            textFont = io.Fonts->AddFontFromFileTTF(textFontPath.c_str(), BASE_TEXT_SIZE * dpi, nullptr, textGlyphRanges.Data);
+            if (textFont != nullptr) {
+                loadedTextFontPath = textFontPath;
+            }
         }
 
-        const bool hasValidCustomCjkFont = IsSupportedFontPath(m_Context.Prefs.CustomCjkFontPath);
+        if (textFont == nullptr && std::filesystem::exists(fallbackTextFontPath)) {
+            textFont = io.Fonts->AddFontFromFileTTF(fallbackTextFontPath.c_str(), BASE_TEXT_SIZE * dpi, nullptr, TEXT_RANGES);
+            if (textFont != nullptr) {
+                loadedTextFontPath = fallbackTextFontPath;
+            }
+        }
+
         const std::string automaticCjkFontPath = FindSystemCjkFontPath();
-        const std::string cjkFontPath = hasValidCustomCjkFont
-                                            ? m_Context.Prefs.CustomCjkFontPath
-                                            : automaticCjkFontPath;
+        const std::string cjkFontPath =
+            (textFont == nullptr || isBundledLatinOnlyFont(loadedTextFontPath)) ? automaticCjkFontPath : "";
 
         if (IsSupportedFontPath(cjkFontPath)) {
             static ImVector<ImWchar> cjkGlyphRanges;
@@ -448,6 +484,9 @@ namespace CoreDeck {
     }
 
     void Application::m_Shutdown() {
+        PullRunningSharedFoldersBeforeShutdown(m_Context);
+        CancelDeviceExplorerWork(m_Context);
+
         if (m_ImGuiBackendsInitialized) {
             ImGui_ImplOpenGL3_Shutdown();
             ImGui_ImplGlfw_Shutdown();
@@ -549,6 +588,15 @@ namespace CoreDeck {
                 case NativeMenuAction::StorageOverview:
                     m_Context.UI.ShowStorageDialog = true;
                     break;
+                case NativeMenuAction::DeviceExplorer:
+                    OpenDeviceExplorer(m_Context);
+                    break;
+                case NativeMenuAction::OpenSharedFolderHost:
+                    OpenSharedFolderOnHost(m_Context);
+                    break;
+                case NativeMenuAction::OpenSharedFolderEmulator:
+                    OpenSharedFolderInEmulator(m_Context);
+                    break;
                 case NativeMenuAction::About:
                     m_Context.UI.ShowAboutDialog = true;
                     break;
@@ -570,6 +618,7 @@ namespace CoreDeck {
             .ShowOptionsPanel = m_Context.UI.ShowOptionsPanel,
             .ShowDetailsPanel = m_Context.UI.ShowDetailsPanel,
             .ShowLogPanel = m_Context.UI.ShowLogPanel,
+            .ShowToolsMenu = HasSelectedRunningAvd(m_Context),
             .UpdateCheckInFlight = m_Context.Updates.UpdateCheckInFlight,
         });
 #endif

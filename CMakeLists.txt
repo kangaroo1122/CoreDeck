@@ -134,9 +134,11 @@ if(NOT WIN32)
 endif()
 
 add_library(coredeck_core STATIC
+    src/core/adb.cpp
     src/core/app_settings.cpp
     src/core/avd.cpp
     src/core/crash_reporter.cpp
+    src/core/device_file.cpp
     src/core/emulator.cpp
     src/core/emulator_console.cpp
     src/core/file_dialog.cpp
@@ -150,6 +152,7 @@ add_library(coredeck_core STATIC
     src/core/process_stats.cpp
     src/core/sdk_bootstrap.cpp
     src/core/sdk_packages.cpp
+    src/core/shared_folder.cpp
     src/core/sdk.cpp
     src/core/skin.cpp
     src/core/system_image.cpp
@@ -199,6 +202,7 @@ add_executable(${PROJECT_NAME}
     src/gui/windows/avd_logs.cpp
     src/gui/windows/avd_options.cpp
     src/gui/windows/delete_avd.cpp
+    src/gui/windows/device_explorer.cpp
     src/gui/windows/create_avd.cpp
     src/gui/windows/device_profile.cpp
     src/gui/windows/install_image.cpp
@@ -214,6 +218,7 @@ add_executable(${PROJECT_NAME}
     src/gui/fonts.cpp
     src/gui/jdk_download_panel.cpp
     src/gui/localization.cpp
+    src/gui/shared_folder_sync.cpp
     src/gui/theme.cpp
     src/gui/widgets.cpp
 )

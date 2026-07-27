@@ -462,6 +462,15 @@ namespace CoreDeck {
         return it->second.Pid;
     }
 
+    int EmulatorManager::GetConsolePort(const std::string &avdName) const {
+        std::lock_guard lock(m_Mutex);
+        const auto it = m_Instances.find(avdName);
+        if (it == m_Instances.end() || !it->second.IsRunning) {
+            return 0;
+        }
+        return it->second.ConsolePort;
+    }
+
     void EmulatorManager::Update() {
         std::vector<ProcessId> toUntrack;
         {

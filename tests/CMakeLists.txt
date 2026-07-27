@@ -13,6 +13,9 @@ add_executable(coredeck_tests
         test_sdk_packages.cpp
         test_system_image.cpp
         test_jdk_download.cpp
+        test_adb.cpp
+        test_device_file.cpp
+        test_shared_folder.cpp
         test_version_check.cpp
 )
 

@@ -6,6 +6,8 @@
 #include <GLFW/glfw3.h>
 
 #include "main_menu_bar.h"
+#include "device_explorer.h"
+#include "../../core/shared_folder.h"
 #include "../widgets.h"
 #include "../theme.h"
 #include "../application.h"
@@ -39,13 +41,29 @@ namespace CoreDeck {
                     context.UI.ShowDetailsPanel = !context.UI.ShowDetailsPanel;
                     PersistAppSettings(context);
                 }
-                if (RoundedMenuItem(context.UI.ShowLogPanel ? "Hide Output Log" : "Show Output Log")) {
+                if (RoundedMenuItem(context.UI.ShowLogPanel ? "Hide Bottom Panel" : "Show Bottom Panel")) {
                     context.UI.ShowLogPanel = !context.UI.ShowLogPanel;
                     PersistAppSettings(context);
                 }
                 ImGui::Separator();
                 if (RoundedMenuItem("Storage Overview")) {
                     context.UI.ShowStorageDialog = true;
+                }
+                ImGui::EndMenu();
+            }
+
+            if (HasSelectedRunningAvd(context) && RoundedBeginMenu("Tools")) {
+                if (RoundedMenuItem("Device Explorer")) {
+                    OpenDeviceExplorer(context);
+                }
+                if (RoundedBeginMenu("Shared Folder")) {
+                    if (RoundedMenuItem(GetOpenSharedFolderHostLabel())) {
+                        OpenSharedFolderOnHost(context);
+                    }
+                    if (RoundedMenuItem("Open Shared Folder in Emulator")) {
+                        OpenSharedFolderInEmulator(context);
+                    }
+                    ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
             }

@@ -5,8 +5,19 @@
 #include <filesystem>
 #include <vector>
 
+#include "../core/paths.h"
+
 namespace CoreDeck {
     namespace {
+        std::vector<std::string> BundledFontCandidates() {
+            const std::string resourcesDir = Paths::GetResourcesDirectory();
+            return {
+                Paths::JoinPaths({resourcesDir, "assets", "fonts", "PingFang SC Heavy.ttf"}),
+                Paths::JoinPaths({resourcesDir, "assets", "fonts", "JetBrainsMono-Regular.ttf"}),
+                Paths::JoinPaths({resourcesDir, "assets", "fonts", "JetBrainsMono-Bold.ttf"}),
+            };
+        }
+
         std::vector<std::string> SystemCjkFontCandidates() {
 #if defined(_WIN32)
             return {
@@ -42,15 +53,25 @@ namespace CoreDeck {
             });
             return value;
         }
+
+        void AppendSupportedFonts(std::vector<std::string> &fonts, const std::vector<std::string> &candidates) {
+            for (const auto &path: candidates) {
+                if (IsSupportedFontPath(path) && std::ranges::find(fonts, path) == fonts.end()) {
+                    fonts.push_back(path);
+                }
+            }
+        }
+    }
+
+    std::vector<std::string> FindBundledFontPaths() {
+        std::vector<std::string> fonts;
+        AppendSupportedFonts(fonts, BundledFontCandidates());
+        return fonts;
     }
 
     std::vector<std::string> FindSystemCjkFontPaths() {
         std::vector<std::string> fonts;
-        for (const auto &path: SystemCjkFontCandidates()) {
-            if (IsSupportedFontPath(path)) {
-                fonts.push_back(path);
-            }
-        }
+        AppendSupportedFonts(fonts, SystemCjkFontCandidates());
         return fonts;
     }
 
@@ -60,6 +81,13 @@ namespace CoreDeck {
             return fonts.front();
         }
         return "";
+    }
+
+    std::vector<std::string> FindFontCandidatePaths() {
+        std::vector<std::string> fonts;
+        AppendSupportedFonts(fonts, BundledFontCandidates());
+        AppendSupportedFonts(fonts, SystemCjkFontCandidates());
+        return fonts;
     }
 
     std::string FontPathDisplayName(const std::string &path) {

@@ -6,11 +6,14 @@
 
 #include "avd_list.h"
 #include "delete_avd.h"
+#include "device_explorer.h"
 #include "rename_avd.h"
 #include "../application.h"
 #include "../localization.h"
+#include "../shared_folder_sync.h"
 #include "../widgets.h"
 #include "../theme.h"
+#include "../../core/shared_folder.h"
 
 namespace CoreDeck {
     namespace {
@@ -131,7 +134,50 @@ namespace CoreDeck {
             if (wipeData) {
                 args.emplace_back("-wipe-data");
             }
-            context.Host.Manager.Launch(avd.Name, args);
+            std::string sharedFolderError;
+            context.DeviceExplorer.Status.clear();
+            context.DeviceExplorer.Error.clear();
+            if (!EnsureSharedFolderHostPath(avd.Name, &sharedFolderError)) {
+                context.DeviceExplorer.Status.clear();
+                context.DeviceExplorer.Error = sharedFolderError.empty()
+                                                   ? "Could not prepare shared folder."
+                                                   : sharedFolderError;
+            }
+            if (context.Host.Manager.Launch(avd.Name, args)) {
+                const int consolePort = context.Host.Manager.GetConsolePort(avd.Name);
+                RequestSharedFolderSync(context, avd.Name, EmulatorSerialForConsolePort(consolePort));
+            }
+        }
+
+        bool HasBusySharedFolderSync(const Context &context) {
+            for (const auto &[_, job]: context.SharedFolderSync.PerAvd) {
+                if (job.Busy) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void DrawToolMessages(const Context &context) {
+            if (!context.DeviceExplorer.Error.empty()) {
+                ImGui::Spacing();
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(context.DeviceExplorer.Error.c_str()));
+                return;
+            }
+            if (!context.SharedFolderSync.Error.empty()) {
+                ImGui::Spacing();
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(context.SharedFolderSync.Error.c_str()));
+                return;
+            }
+            if (context.DeviceExplorer.OpenInEmulatorBusy.load() && !context.DeviceExplorer.Status.empty()) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("%s", Tr(context.DeviceExplorer.Status.c_str()));
+                return;
+            }
+            if (HasBusySharedFolderSync(context) && !context.SharedFolderSync.Status.empty()) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("%s", Tr(context.SharedFolderSync.Status.c_str()));
+            }
         }
 
         void BuildWipeAndRunDialog(Context &context) {
@@ -223,10 +269,19 @@ namespace CoreDeck {
 
             ImGui::SameLine();
             if (isRunning) {
-                const bool isStopping = context.Host.Manager.IsStopping(avd.Name);
+                const bool isStopping = context.Host.Manager.IsStopping(avd.Name) ||
+                                        IsSharedFolderStopPending(context, avd.Name);
                 const std::string label = IconWithLabel(Icons::STOP, isStopping ? "Stopping..." : "Stop");
                 if (NegativeButton(label.c_str(), !isStopping) && !isStopping) {
-                    context.Host.Manager.Stop(avd.Name);
+                    RequestAvdStopWithSharedFolderSync(context, avd.Name);
+                }
+                ImGui::SameLine();
+                if (PrimaryButton(Icons::FOLDER, !isStopping)) {
+                    const int consolePort = context.Host.Manager.GetConsolePort(avd.Name);
+                    OpenDeviceExplorer(context, EmulatorSerialForConsolePort(consolePort), avd.Name);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", Tr("Open Device Explorer"));
                 }
             } else {
                 if (PositiveButton(Icons::PLAY)) {
@@ -258,6 +313,7 @@ namespace CoreDeck {
         }
 
         BuildWipeAndRunDialog(context);
+        DrawToolMessages(context);
 
         ImGui::Separator();
 

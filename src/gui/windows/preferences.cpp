@@ -440,9 +440,13 @@ namespace CoreDeck {
         std::string CjkFontPreviewLabel(
             const std::string &customPath,
             const bool customPathValid,
+            const std::vector<std::string> &bundledFonts,
             const std::vector<std::string> &candidates
         ) {
             if (customPath.empty()) {
+                if (!bundledFonts.empty()) {
+                    return StrConcat(Tr("Automatic"), " - ", FontPathDisplayName(bundledFonts.front()));
+                }
                 if (!candidates.empty()) {
                     return StrConcat(Tr("Automatic"), " - ", FontPathDisplayName(candidates.front()));
                 }
@@ -452,6 +456,44 @@ namespace CoreDeck {
                 return FontPathDisplayName(customPath);
             }
             return Tr("Selected font is no longer available.");
+        }
+
+        void DrawFontCandidateRows(
+            Context &context,
+            const std::vector<std::string> &fonts,
+            const char *sectionLabel,
+            const char *idPrefix,
+            const bool customPathValid,
+            const std::vector<std::string> &allCandidates,
+            const char *&fontError
+        ) {
+            if (fonts.empty()) {
+                return;
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("%s", Tr(sectionLabel));
+            for (int i = 0; i < static_cast<int>(fonts.size()); i++) {
+                const auto &candidate = fonts[i];
+                const bool selected =
+                    customPathValid &&
+                    !context.Prefs.CustomCjkFontPath.empty() &&
+                    context.Prefs.CustomCjkFontPath == candidate;
+                const std::string label = StrConcat(
+                    FontPathDisplayName(candidate),
+                    "###",
+                    idPrefix,
+                    std::to_string(i)
+                );
+                if (RoundedSelectable(label.c_str(), selected)) {
+                    context.Prefs.CustomCjkFontPath = candidate;
+                    fontError = nullptr;
+                    RequestFontReload(context);
+                }
+                if (selected && CjkFontPathInCandidates(allCandidates, candidate)) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
         }
 
         void DrawAppearanceSection(Context &context) {
@@ -498,17 +540,20 @@ namespace CoreDeck {
 
             ImGui::Dummy(ImVec2(0, 4));
 
-            LabelText("CJK fallback font");
+            LabelText("UI font");
             ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_SUBTLE));
-            ImGui::TextWrapped("%s", Tr("Used for Chinese glyphs while keeping the built-in UI font."));
+            ImGui::TextWrapped("%s", Tr("Automatic uses bundled PingFang SC Heavy. Built-in fonts are listed first, followed by system font candidates."));
             ImGui::PopStyleColor();
 
             static const char *fontError = nullptr;
+            const std::vector<std::string> bundledFonts = FindBundledFontPaths();
             const std::vector<std::string> cjkCandidates = FindSystemCjkFontPaths();
+            const std::vector<std::string> allFontCandidates = FindFontCandidatePaths();
             const bool customPathValid = IsSupportedFontPath(context.Prefs.CustomCjkFontPath);
             const std::string preview = CjkFontPreviewLabel(
                 context.Prefs.CustomCjkFontPath,
                 customPathValid,
+                bundledFonts,
                 cjkCandidates
             );
 
@@ -524,31 +569,27 @@ namespace CoreDeck {
                         RequestFontReload(context);
                     }
 
-                    if (!cjkCandidates.empty()) {
-                        ImGui::Separator();
-                        ImGui::TextDisabled("%s", Tr("System candidates"));
-                        for (int i = 0; i < static_cast<int>(cjkCandidates.size()); i++) {
-                            const auto &candidate = cjkCandidates[i];
-                            const bool selected =
-                                !context.Prefs.CustomCjkFontPath.empty() &&
-                                context.Prefs.CustomCjkFontPath == candidate;
-                            const std::string label = StrConcat(
-                                FontPathDisplayName(candidate),
-                                "###CjkFontCandidate",
-                                std::to_string(i)
-                            );
-                            if (RoundedSelectable(label.c_str(), selected)) {
-                                context.Prefs.CustomCjkFontPath = candidate;
-                                fontError = nullptr;
-                                RequestFontReload(context);
-                            }
-                            if (selected) {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-                    }
+                    DrawFontCandidateRows(
+                        context,
+                        bundledFonts,
+                        "Built-in fonts",
+                        "CjkFontBundled",
+                        customPathValid,
+                        allFontCandidates,
+                        fontError
+                    );
 
-                    if (customPathValid && !CjkFontPathInCandidates(cjkCandidates, context.Prefs.CustomCjkFontPath)) {
+                    DrawFontCandidateRows(
+                        context,
+                        cjkCandidates,
+                        "System candidates",
+                        "CjkFontSystem",
+                        customPathValid,
+                        allFontCandidates,
+                        fontError
+                    );
+
+                    if (customPathValid && !CjkFontPathInCandidates(allFontCandidates, context.Prefs.CustomCjkFontPath)) {
                         ImGui::Separator();
                         ImGui::TextDisabled("%s", Tr("Manual font"));
                         const std::string manualLabel = StrConcat(
@@ -568,7 +609,7 @@ namespace CoreDeck {
             static constexpr const char *FONT_FILTERS[] = {"*.ttf", "*.otf", "*.ttc"};
             if (PrimaryButton("Choose Font...", true, ImVec2(chooseWidth, 0))) {
                 const auto picked = FileDialog::PickFile(
-                    Tr("Select a CJK font file"),
+                    Tr("Select a font file"),
                     FONT_FILTERS,
                     IM_ARRAYSIZE(FONT_FILTERS),
                     Tr("Font files"),
@@ -591,16 +632,21 @@ namespace CoreDeck {
             const std::string effectivePath =
                 customPathValid
                     ? context.Prefs.CustomCjkFontPath
-                    : (!cjkCandidates.empty() ? cjkCandidates.front() : std::string{});
+                    : (!bundledFonts.empty()
+                           ? bundledFonts.front()
+                           : (!cjkCandidates.empty() ? cjkCandidates.front() : std::string{}));
 
             if (fontError != nullptr) {
                 ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(fontError));
             } else if (!context.Prefs.CustomCjkFontPath.empty() && !customPathValid) {
                 ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr("Selected font is no longer available."));
             } else if (effectivePath.empty()) {
-                ImGui::TextColored(HexColor(Colors::WARNING), "%s", Tr("No system CJK font detected."));
+                ImGui::TextColored(HexColor(Colors::WARNING), "%s", Tr("No font candidates detected."));
             } else {
-                const char *pathLabel = context.Prefs.CustomCjkFontPath.empty() ? "Auto-detected font" : "Selected font";
+                const char *pathLabel = "Selected font";
+                if (context.Prefs.CustomCjkFontPath.empty()) {
+                    pathLabel = !bundledFonts.empty() ? "Built-in font" : "Auto-detected font";
+                }
                 ImGui::TextDisabled("%s", Tr(pathLabel));
                 ImGui::SameLine();
                 ImGui::TextWrapped("%s", effectivePath.c_str());

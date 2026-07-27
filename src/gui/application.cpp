@@ -291,9 +291,9 @@ namespace CoreDeck {
         );
 
         const float dpi = (m_FontPixelScale > 0.0F) ? m_FontPixelScale : 1.0F;
-        constexpr float BASE_TEXT_SIZE = 16.0F;
-        constexpr float BASE_ICON_SIZE = 12.0F;
-        constexpr float BASE_GLYPH_MIN_ADVANCE = 16.0F;
+        const float textSize = NormalizeUiFontSize(m_Context.Prefs.UiFontSize) * dpi;
+        const float iconSize = textSize * 0.75F;
+        const float glyphMinAdvance = textSize;
 
         auto isBundledLatinOnlyFont = [](const std::string &path) {
             const std::string fileName = std::filesystem::path(path).filename().string();
@@ -322,14 +322,14 @@ namespace CoreDeck {
                                              ? m_Context.Prefs.CustomCjkFontPath
                                              : defaultTextFontPath;
         if (std::filesystem::exists(textFontPath)) {
-            textFont = io.Fonts->AddFontFromFileTTF(textFontPath.c_str(), BASE_TEXT_SIZE * dpi, nullptr, textGlyphRanges.Data);
+            textFont = io.Fonts->AddFontFromFileTTF(textFontPath.c_str(), textSize, nullptr, textGlyphRanges.Data);
             if (textFont != nullptr) {
                 loadedTextFontPath = textFontPath;
             }
         }
 
         if (textFont == nullptr && std::filesystem::exists(fallbackTextFontPath)) {
-            textFont = io.Fonts->AddFontFromFileTTF(fallbackTextFontPath.c_str(), BASE_TEXT_SIZE * dpi, nullptr, TEXT_RANGES);
+            textFont = io.Fonts->AddFontFromFileTTF(fallbackTextFontPath.c_str(), textSize, nullptr, TEXT_RANGES);
             if (textFont != nullptr) {
                 loadedTextFontPath = fallbackTextFontPath;
             }
@@ -352,7 +352,7 @@ namespace CoreDeck {
             cjkConfig.PixelSnapH = true;
             io.Fonts->AddFontFromFileTTF(
                 cjkFontPath.c_str(),
-                BASE_TEXT_SIZE * dpi,
+                textSize,
                 &cjkConfig,
                 cjkGlyphRanges.Data
             );
@@ -362,10 +362,10 @@ namespace CoreDeck {
             ImFontConfig iconConfig;
             iconConfig.MergeMode = true;
             iconConfig.PixelSnapH = true;
-            iconConfig.GlyphMinAdvanceX = BASE_GLYPH_MIN_ADVANCE * dpi;
+            iconConfig.GlyphMinAdvanceX = glyphMinAdvance;
 
             static constexpr ImWchar ICON_RANGES[] = {0xf000, 0xf8ff, 0};
-            io.Fonts->AddFontFromFileTTF(iconFontPath.c_str(), BASE_ICON_SIZE * dpi, &iconConfig, ICON_RANGES);
+            io.Fonts->AddFontFromFileTTF(iconFontPath.c_str(), iconSize, &iconConfig, ICON_RANGES);
         }
     }
 
@@ -634,6 +634,7 @@ namespace CoreDeck {
         s.ThemeMode = static_cast<int>(context.Prefs.Theme);
         s.Language = static_cast<int>(context.Prefs.Language);
         s.CustomCjkFontPath = context.Prefs.CustomCjkFontPath;
+        s.UiFontSize = NormalizeUiFontSize(context.Prefs.UiFontSize);
         s.JavaHomePath = context.Prefs.JavaHomePath;
         s.ShowAvdListPanel = context.UI.ShowAvdListPanel;
         s.ShowOptionsPanel = context.UI.ShowOptionsPanel;
@@ -655,6 +656,7 @@ namespace CoreDeck {
                                      : AppLanguage::English;
         SetCurrentLanguage(context.Prefs.Language);
         context.Prefs.CustomCjkFontPath = settings.CustomCjkFontPath;
+        context.Prefs.UiFontSize = NormalizeUiFontSize(settings.UiFontSize);
         context.Prefs.JavaHomePath = settings.JavaHomePath;
         context.Host.Sdk.JavaHomePath = settings.JavaHomePath;
         context.Host.Manager.SetSdk(context.Host.Sdk);

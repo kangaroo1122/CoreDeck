@@ -5,6 +5,12 @@
 #include <vector>
 
 namespace CoreDeck {
+    constexpr float DEFAULT_UI_FONT_SIZE = 16.0F;
+    constexpr float MIN_UI_FONT_SIZE = 12.0F;
+    constexpr float MAX_UI_FONT_SIZE = 36.0F;
+
+    float NormalizeUiFontSize(float size);
+
     std::vector<std::string> FindBundledFontPaths();
 
     std::vector<std::string> FindSystemCjkFontPaths();

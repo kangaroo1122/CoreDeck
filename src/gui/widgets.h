@@ -139,7 +139,10 @@ namespace CoreDeck {
         const ImVec4 &leftIconColor = ImVec4(1.0F, 1.0F, 1.0F, 1.0F),
         const char *rightActionIcon = nullptr,
         const char *rightActionTooltip = nullptr,
-        bool *rightActionClicked = nullptr
+        bool *rightActionClicked = nullptr,
+        const char *secondaryRightActionIcon = nullptr,
+        const char *secondaryRightActionTooltip = nullptr,
+        bool *secondaryRightActionClicked = nullptr
     );
 
     bool PropertyText(const char *label, const char *value, bool isClickable = false, bool hasSpaceBetween = false);

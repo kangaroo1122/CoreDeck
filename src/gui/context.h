@@ -127,6 +127,7 @@ namespace CoreDeck {
             ThemeMode Theme = ThemeMode::Dark;
             AppLanguage Language = AppLanguage::English;
             std::string CustomCjkFontPath;
+            float UiFontSize = 16.0F;
             std::string JavaHomePath;
         } Prefs;
 

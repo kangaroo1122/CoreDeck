@@ -17,6 +17,7 @@ namespace CoreDeck {
         int ThemeMode = 0;
         int Language = 0;
         std::string CustomCjkFontPath;
+        float UiFontSize = 16.0F;
         bool ShowAvdListPanel = true;
         bool ShowOptionsPanel = true;
         bool ShowDetailsPanel = true;

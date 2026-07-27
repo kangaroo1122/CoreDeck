@@ -1,3 +1,11 @@
+## [v0.9.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.2) — 2026-07-27
+
+- Add UI font size control in Appearance preferences
+- Split Android SDK and Java (JDK) preferences into separate menu entries
+- Propagate device-side shared file deletions back to the host shared folder
+- Add per-row Device Explorer actions for running AVDs while keeping the Tools menu entry
+- Hide routine shared-folder sync status from the AVD list to avoid layout jitter
+
 ## [v0.9.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.1) — 2026-07-27
 
 - Add a Tools menu for the selected running AVD, with Device Explorer and Shared Folder actions

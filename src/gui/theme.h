@@ -24,6 +24,7 @@ namespace CoreDeck {
         constexpr const char *DESKTOP = "\xef\x84\x88";
         constexpr const char *GEAR = "\xef\x80\x93";
         constexpr const char *TERMINAL = "\xef\x84\xa0";
+        constexpr const char *JAVA = "\xef\x83\xb4";
         constexpr const char *INFO = "\xef\x81\x9a";
         constexpr const char *SEARCH = "\xef\x80\x82";
         constexpr const char *PLUS = "\xef\x81\xa7";

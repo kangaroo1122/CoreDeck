@@ -1,7 +1,9 @@
 #include "shared_folder.h"
 
 #include <cctype>
+#include <fstream>
 #include <filesystem>
+#include <set>
 #include <system_error>
 #include <utility>
 
@@ -37,6 +39,18 @@ namespace CoreDeck {
             return {.Success = false, .Output = std::move(message)};
         }
 
+        struct PullSharedFolderResult : SharedFolderSyncResult {
+            std::filesystem::path StagingPath;
+            std::string HostPath;
+        };
+
+        PullSharedFolderResult PullFailure(std::string message) {
+            PullSharedFolderResult result;
+            result.Success = false;
+            result.Output = std::move(message);
+            return result;
+        }
+
         SharedFolderSyncResult RunSharedFolderAdbCommand(
             const SdkInfo &sdk,
             const std::vector<std::string> &args,
@@ -61,12 +75,251 @@ namespace CoreDeck {
             return {.Success = ok, .Output = std::move(output)};
         }
 
-        std::filesystem::path BuildStagingPath(const std::string &avdName) {
+        std::string BuildAvdStateFolderName(const std::string &avdName) {
             std::string folderName = SanitizeFolderName(avdName);
             if (folderName.empty()) {
                 folderName = "default";
             }
+            return folderName;
+        }
+
+        std::filesystem::path BuildStagingPath(const std::string &avdName) {
+            const std::string folderName = BuildAvdStateFolderName(avdName);
             return Paths::JoinPaths({Paths::GetAppConfigPath("shared_staging"), folderName});
+        }
+
+        std::filesystem::path BuildSnapshotPath(const std::string &avdName) {
+            return Paths::JoinPaths({Paths::GetAppConfigPath("shared_state"), BuildAvdStateFolderName(avdName) + ".txt"});
+        }
+
+        bool IsSafeSnapshotRelativePath(const std::string &relativePath) {
+            if (relativePath.empty()) {
+                return false;
+            }
+
+            const std::filesystem::path path(relativePath);
+            if (path.is_absolute() || path.has_root_name()) {
+                return false;
+            }
+
+            for (const auto &part: path) {
+                const std::string segment = part.string();
+                if (segment.empty() || segment == "." || segment == "..") {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool CollectRelativeFilePaths(
+            const std::filesystem::path &rootPath,
+            std::set<std::string> *files,
+            std::string *error
+        ) {
+            if (files == nullptr) {
+                return false;
+            }
+            files->clear();
+
+            std::error_code ec;
+            if (!std::filesystem::is_directory(rootPath, ec) || ec) {
+                if (error != nullptr) {
+                    *error = ec ? ec.message() : "Shared folder path is not a directory.";
+                }
+                return false;
+            }
+
+            std::filesystem::recursive_directory_iterator it(
+                rootPath,
+                std::filesystem::directory_options::skip_permission_denied,
+                ec
+            );
+            if (ec) {
+                if (error != nullptr) {
+                    *error = ec.message();
+                }
+                return false;
+            }
+
+            const std::filesystem::recursive_directory_iterator end;
+            while (it != end) {
+                if (it->is_regular_file(ec)) {
+                    if (ec) {
+                        if (error != nullptr) {
+                            *error = ec.message();
+                        }
+                        return false;
+                    }
+
+                    std::filesystem::path relative = std::filesystem::relative(it->path(), rootPath, ec);
+                    if (ec) {
+                        if (error != nullptr) {
+                            *error = ec.message();
+                        }
+                        return false;
+                    }
+                    files->insert(relative.generic_string());
+                } else if (ec) {
+                    if (error != nullptr) {
+                        *error = ec.message();
+                    }
+                    return false;
+                }
+
+                it.increment(ec);
+                if (ec) {
+                    if (error != nullptr) {
+                        *error = ec.message();
+                    }
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool LoadSharedFolderSnapshot(
+            const std::string &snapshotPath,
+            std::set<std::string> *files,
+            std::string *error
+        ) {
+            if (files == nullptr) {
+                return false;
+            }
+            files->clear();
+
+            std::error_code ec;
+            if (snapshotPath.empty() || !std::filesystem::exists(snapshotPath, ec)) {
+                return !ec;
+            }
+            if (ec) {
+                if (error != nullptr) {
+                    *error = ec.message();
+                }
+                return false;
+            }
+
+            std::ifstream file(snapshotPath);
+            if (!file.is_open()) {
+                if (error != nullptr) {
+                    *error = "Could not read shared folder sync state.";
+                }
+                return false;
+            }
+
+            std::string line;
+            while (std::getline(file, line)) {
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                if (IsSafeSnapshotRelativePath(line)) {
+                    files->insert(line);
+                }
+            }
+            return true;
+        }
+
+        void PruneEmptyParents(const std::filesystem::path &hostRoot, std::filesystem::path parent) {
+            std::error_code ec;
+            while (parent != hostRoot && parent.has_relative_path()) {
+                if (!std::filesystem::is_directory(parent, ec) || ec || !std::filesystem::is_empty(parent, ec) || ec) {
+                    break;
+                }
+                std::filesystem::remove(parent, ec);
+                if (ec) {
+                    break;
+                }
+                parent = parent.parent_path();
+            }
+        }
+
+        bool RemoveHostFilesDeletedOnDevice(
+            const std::filesystem::path &hostRoot,
+            const std::set<std::string> &previousFiles,
+            const std::set<std::string> &currentDeviceFiles,
+            std::string *error
+        ) {
+            std::error_code ec;
+            for (const auto &relativePath: previousFiles) {
+                if (currentDeviceFiles.contains(relativePath) || !IsSafeSnapshotRelativePath(relativePath)) {
+                    continue;
+                }
+
+                const std::filesystem::path target = hostRoot / std::filesystem::path(relativePath);
+                const auto status = std::filesystem::symlink_status(target, ec);
+                if (ec) {
+                    if (error != nullptr) {
+                        *error = ec.message();
+                    }
+                    return false;
+                }
+                if (!std::filesystem::exists(status)) {
+                    continue;
+                }
+                if (!std::filesystem::is_regular_file(status) && !std::filesystem::is_symlink(status)) {
+                    continue;
+                }
+
+                std::filesystem::remove(target, ec);
+                if (ec) {
+                    if (error != nullptr) {
+                        *error = ec.message();
+                    }
+                    return false;
+                }
+                PruneEmptyParents(hostRoot, target.parent_path());
+            }
+            return true;
+        }
+
+        bool SaveSharedFolderSnapshot(
+            const std::string &snapshotPath,
+            const std::string &rootPath,
+            std::string *error
+        ) {
+            std::set<std::string> files;
+            if (!CollectRelativeFilePaths(rootPath, &files, error)) {
+                return false;
+            }
+
+            const std::filesystem::path path(snapshotPath);
+            std::error_code ec;
+            std::filesystem::create_directories(path.parent_path(), ec);
+            if (ec) {
+                if (error != nullptr) {
+                    *error = ec.message();
+                }
+                return false;
+            }
+
+            const std::filesystem::path tempPath = path.string() + ".tmp";
+            std::ofstream file(tempPath);
+            if (!file.is_open()) {
+                if (error != nullptr) {
+                    *error = "Could not write shared folder sync state.";
+                }
+                return false;
+            }
+            for (const auto &relativePath: files) {
+                file << relativePath << '\n';
+            }
+            file.close();
+            if (!file.good()) {
+                if (error != nullptr) {
+                    *error = "Could not write shared folder sync state.";
+                }
+                return false;
+            }
+
+            std::filesystem::remove(path, ec);
+            ec.clear();
+            std::filesystem::rename(tempPath, path, ec);
+            if (ec) {
+                if (error != nullptr) {
+                    *error = ec.message();
+                }
+                return false;
+            }
+            return true;
         }
 
         SharedFolderSyncResult PushSharedFolderToDevice(
@@ -103,7 +356,7 @@ namespace CoreDeck {
             return pushed;
         }
 
-        SharedFolderSyncResult PullSharedFolderFromDevice(
+        PullSharedFolderResult PullSharedFolderFromDevice(
             const SdkInfo &sdk,
             const std::string &serial,
             const std::string &avdName,
@@ -111,14 +364,14 @@ namespace CoreDeck {
         ) {
             std::string error;
             if (!EnsureSharedFolderHostPath(avdName, &error)) {
-                return Failure(error.empty() ? "Could not prepare shared folder." : error);
+                return PullFailure(error.empty() ? "Could not prepare shared folder." : error);
             }
 
             const std::string hostPath = GetSharedFolderHostPath(avdName);
             const std::string devicePath = GetSharedFolderDevicePath();
             const auto created = CreateDeviceDirectory(sdk, serial, devicePath, shouldCancel);
             if (!created.Success) {
-                return Failure(created.Output.empty() ? "Could not create shared folder on device." : created.Output);
+                return PullFailure(created.Output.empty() ? "Could not create shared folder on device." : created.Output);
             }
 
             const std::filesystem::path stagingPath = BuildStagingPath(avdName);
@@ -127,7 +380,7 @@ namespace CoreDeck {
             ec.clear();
             std::filesystem::create_directories(stagingPath, ec);
             if (ec) {
-                return Failure(ec.message());
+                return PullFailure(ec.message());
             }
 
             auto pulled = RunSharedFolderAdbCommand(
@@ -135,21 +388,20 @@ namespace CoreDeck {
                 BuildPullSharedFolderFromDeviceArgs(serial, devicePath, stagingPath.string()),
                 shouldCancel
             );
+            PullSharedFolderResult result;
+            result.Success = pulled.Success;
+            result.Output = std::move(pulled.Output);
+            result.StagingPath = stagingPath;
+            result.HostPath = hostPath;
             if (!pulled.Success) {
                 std::filesystem::remove_all(stagingPath, ec);
-                return pulled;
+                return result;
             }
 
-            if (!MergePulledSharedFolder(stagingPath.string(), hostPath, &error)) {
-                std::filesystem::remove_all(stagingPath, ec);
-                return Failure(error.empty() ? "Could not sync shared folder." : error);
-            }
-
-            std::filesystem::remove_all(stagingPath, ec);
             if (!created.Output.empty()) {
-                pulled.Output = created.Output + pulled.Output;
+                result.Output = created.Output + result.Output;
             }
-            return pulled;
+            return result;
         }
     }
 
@@ -379,6 +631,43 @@ namespace CoreDeck {
         return true;
     }
 
+    bool ReconcilePulledSharedFolder(
+        const std::string &stagingPath,
+        const std::string &hostPath,
+        const std::string &snapshotPath,
+        std::string *error
+    ) {
+        if (error != nullptr) {
+            error->clear();
+        }
+
+        const std::filesystem::path stagingRoot = stagingPath;
+        const std::filesystem::path hostRoot = hostPath;
+
+        std::error_code ec;
+        std::filesystem::create_directories(hostRoot, ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return false;
+        }
+
+        std::set<std::string> previousFiles;
+        std::set<std::string> currentDeviceFiles;
+        if (!LoadSharedFolderSnapshot(snapshotPath, &previousFiles, error)) {
+            return false;
+        }
+        if (!CollectRelativeFilePaths(stagingRoot, &currentDeviceFiles, error)) {
+            return false;
+        }
+        if (!RemoveHostFilesDeletedOnDevice(hostRoot, previousFiles, currentDeviceFiles, error)) {
+            return false;
+        }
+
+        return MergePulledSharedFolder(stagingPath, hostPath, error);
+    }
+
     bool EnsureSharedFolderHostPath(const std::string &avdName, std::string *error) {
         if (error != nullptr) {
             error->clear();
@@ -433,11 +722,44 @@ namespace CoreDeck {
         }
 
         auto pulled = PullSharedFolderFromDevice(sdk, serial, avdName, shouldCancel);
-        if (!pulled.Success || mode == SharedFolderSyncMode::DeviceToHost) {
+        if (!pulled.Success) {
+            return pulled;
+        }
+
+        const std::string snapshotPath = BuildSnapshotPath(avdName).string();
+        std::string error;
+        auto cleanupStaging = [&] {
+            std::error_code ec;
+            std::filesystem::remove_all(pulled.StagingPath, ec);
+        };
+
+        if (!ReconcilePulledSharedFolder(pulled.StagingPath.string(), pulled.HostPath, snapshotPath, &error)) {
+            cleanupStaging();
+            return Failure(error.empty() ? "Could not sync shared folder." : error);
+        }
+
+        if (mode == SharedFolderSyncMode::DeviceToHost) {
+            if (!SaveSharedFolderSnapshot(snapshotPath, pulled.StagingPath.string(), &error)) {
+                cleanupStaging();
+                return Failure(error.empty() ? "Could not update shared folder sync state." : error);
+            }
+            cleanupStaging();
             return pulled;
         }
 
         auto pushed = PushSharedFolderToDevice(sdk, serial, avdName, shouldCancel);
+        if (!pushed.Success) {
+            cleanupStaging();
+            if (!pulled.Output.empty()) {
+                pushed.Output = pulled.Output + pushed.Output;
+            }
+            return pushed;
+        }
+        if (!SaveSharedFolderSnapshot(snapshotPath, pulled.HostPath, &error)) {
+            cleanupStaging();
+            return Failure(error.empty() ? "Could not update shared folder sync state." : error);
+        }
+        cleanupStaging();
         if (!pulled.Output.empty()) {
             pushed.Output = pulled.Output + pushed.Output;
         }

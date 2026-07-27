@@ -53,6 +53,13 @@ namespace CoreDeck {
         std::string *error = nullptr
     );
 
+    bool ReconcilePulledSharedFolder(
+        const std::string &stagingPath,
+        const std::string &hostPath,
+        const std::string &snapshotPath,
+        std::string *error = nullptr
+    );
+
     bool EnsureSharedFolderHostPath(std::string *error = nullptr);
 
     bool EnsureSharedFolderHostPath(const std::string &avdName, std::string *error = nullptr);

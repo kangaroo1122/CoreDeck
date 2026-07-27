@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <future>
@@ -34,11 +35,7 @@ namespace CoreDeck {
             Appearance,
             General,
             AndroidSdk,
-        };
-
-        enum class AndroidConfigTab : uint8_t {
-            Jdk,
-            Sdk,
+            JavaJdk,
         };
 
         struct SidebarItem {
@@ -50,7 +47,8 @@ namespace CoreDeck {
         constexpr SidebarItem SIDEBAR_ITEMS[] = {
             {.Section = PrefsSection::Appearance, .Icon = Icons::CIRCLE, .Label = "Appearance"},
             {.Section = PrefsSection::General, .Icon = Icons::GEAR, .Label = "General"},
-            {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android JDK/SDK"},
+            {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android SDK"},
+            {.Section = PrefsSection::JavaJdk, .Icon = Icons::JAVA, .Label = "Java (JDK)"},
         };
 
         constexpr ImGuiWindowFlags PREFERENCES_WINDOW_FLAGS =
@@ -659,6 +657,34 @@ namespace CoreDeck {
                     RequestFontReload(context);
                 }
             }
+
+            ImGui::Dummy(ImVec2(0, 4));
+
+            LabelText("Font size");
+            static bool fontSizeEditPending = false;
+            float uiFontSize = NormalizeUiFontSize(context.Prefs.UiFontSize);
+            ImGui::SetNextItemWidth(Em(20.0F));
+            const bool sizeChanged = ImGui::SliderFloat(
+                "##UiFontSize",
+                &uiFontSize,
+                MIN_UI_FONT_SIZE,
+                MAX_UI_FONT_SIZE,
+                "%.0f px"
+            );
+            if (sizeChanged) {
+                context.Prefs.UiFontSize = NormalizeUiFontSize(std::round(uiFontSize));
+                fontSizeEditPending = true;
+            }
+            if (fontSizeEditPending && ImGui::IsItemDeactivatedAfterEdit()) {
+                fontSizeEditPending = false;
+                RequestFontReload(context);
+            }
+            ImGui::SameLine();
+            if (PrimaryButton("Reset Font Size", context.Prefs.UiFontSize != DEFAULT_UI_FONT_SIZE)) {
+                fontSizeEditPending = false;
+                context.Prefs.UiFontSize = DEFAULT_UI_FONT_SIZE;
+                RequestFontReload(context);
+            }
         }
 
         void DrawGeneralSection(Context &context) {
@@ -1127,7 +1153,6 @@ namespace CoreDeck {
             const size_t javaHomeBufferSize,
             JavaHomeStatus &versionState
         ) {
-            SubsectionHeader("JDK", "Java used by Android SDK command-line tools launched from CoreDeck.");
             const float browseWidth = Em(12.0F);
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
             LabelText("JDK home");
@@ -1224,69 +1249,6 @@ namespace CoreDeck {
                 RefreshSdkPackageList(context);
             }
         }
-
-        void DrawAndroidSdkTabbedSection(
-            Context &context,
-            char *sdkPathBuffer,
-            const size_t sdkBufferSize,
-            char *javaHomeBuffer,
-            const size_t javaHomeBufferSize,
-            JavaHomeStatus &javaVersionState,
-            AndroidConfigTab &activeTab
-        ) {
-            PollSdkManagerWork(context, sdkPathBuffer, sdkBufferSize);
-
-            const bool sdkBusy = IsSdkManagerBusy(context.SdkManagerWork);
-            const bool jdkBusy = IsJdkDownloadBusy(context);
-            if (jdkBusy) {
-                activeTab = AndroidConfigTab::Jdk;
-            } else if (sdkBusy) {
-                activeTab = AndroidConfigTab::Sdk;
-            }
-
-            const bool jdkTabEnabled = activeTab == AndroidConfigTab::Jdk || !sdkBusy;
-            const bool sdkTabEnabled = activeTab == AndroidConfigTab::Sdk || !jdkBusy;
-
-            if (!jdkTabEnabled) {
-                ImGui::BeginDisabled();
-            }
-            if (CategoryChip("JDK###AndroidPrefsJdkTab", activeTab == AndroidConfigTab::Jdk)) {
-                activeTab = AndroidConfigTab::Jdk;
-            }
-            if (!jdkTabEnabled) {
-                ImGui::EndDisabled();
-            }
-
-            ImGui::SameLine();
-            if (!sdkTabEnabled) {
-                ImGui::BeginDisabled();
-            }
-            if (CategoryChip("SDK###AndroidPrefsSdkTab", activeTab == AndroidConfigTab::Sdk)) {
-                activeTab = AndroidConfigTab::Sdk;
-            }
-            if (!sdkTabEnabled) {
-                ImGui::EndDisabled();
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            if (activeTab == AndroidConfigTab::Jdk) {
-                DrawJdkSection(
-                    context,
-                    javaHomeBuffer,
-                    javaHomeBufferSize,
-                    javaVersionState
-                );
-            } else {
-                DrawAndroidSdkSection(
-                    context,
-                    sdkPathBuffer,
-                    sdkBufferSize
-                );
-            }
-        }
     }
 
     void BuildPreferencesWindow(Context &context) {
@@ -1310,7 +1272,6 @@ namespace CoreDeck {
         static char javaHomeBuffer[2048];
         static JavaHomeStatus javaVersionState;
         static auto activeSection = PrefsSection::Appearance;
-        static auto activeAndroidTab = AndroidConfigTab::Jdk;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         if (RoundedBeginPopupModal("Preferences###CoreDeckPrefs", &context.UI.ShowPreferences, PREFERENCES_WINDOW_FLAGS)) {
@@ -1326,8 +1287,14 @@ namespace CoreDeck {
                 javaVersionState = {};
                 if (!context.Host.Sdk.IsFound) {
                     activeSection = PrefsSection::AndroidSdk;
-                    activeAndroidTab = AndroidConfigTab::Sdk;
                 }
+            }
+
+            PollSdkManagerWork(context, sdkPathBuffer, sizeof(sdkPathBuffer));
+            if (IsJdkDownloadBusy(context)) {
+                activeSection = PrefsSection::JavaJdk;
+            } else if (IsSdkManagerBusy(context.SdkManagerWork)) {
+                activeSection = PrefsSection::AndroidSdk;
             }
 
             const float sidebarWidth = Em(22.0F);
@@ -1385,15 +1352,20 @@ namespace CoreDeck {
                     DrawAppearanceSection(context);
                     break;
                 case PrefsSection::AndroidSdk:
-                    SectionHeader("Android JDK/SDK", "Manage Java, the Android SDK location, platforms, and tools.");
-                    DrawAndroidSdkTabbedSection(
+                    SectionHeader("Android SDK", "Where CoreDeck looks for the emulator and command-line tools.");
+                    DrawAndroidSdkSection(
                         context,
                         sdkPathBuffer,
-                        sizeof(sdkPathBuffer),
+                        sizeof(sdkPathBuffer)
+                    );
+                    break;
+                case PrefsSection::JavaJdk:
+                    SectionHeader("Java (JDK)", "Java used by Android SDK command-line tools launched from CoreDeck.");
+                    DrawJdkSection(
+                        context,
                         javaHomeBuffer,
                         sizeof(javaHomeBuffer),
-                        javaVersionState,
-                        activeAndroidTab
+                        javaVersionState
                     );
                     break;
             }

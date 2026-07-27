@@ -184,3 +184,24 @@ TEST_CASE("shared folder merge skips source files that collide with host directo
     CHECK(ReadTextFile(host / "conflict" / "host.txt") == "host nested");
     CHECK(ReadTextFile(host / "other.txt") == "device other");
 }
+
+TEST_CASE("shared folder reconcile removes host files deleted from the device snapshot", "[shared_folder][sync]") {
+    TempTree temp("reconcile_deletions");
+    const fs::path staging = temp.Path / "staging";
+    const fs::path host = temp.Path / "host";
+    const fs::path snapshot = temp.Path / "snapshot.txt";
+
+    WriteTextFile(host / "deleted-on-device.txt", "old host copy");
+    WriteTextFile(host / "host-only.txt", "new host file");
+    WriteTextFile(host / "kept.txt", "old host kept");
+    WriteTextFile(staging / "kept.txt", "device kept");
+    WriteTextFile(snapshot, "deleted-on-device.txt\nkept.txt\n");
+
+    std::string error;
+    REQUIRE(ReconcilePulledSharedFolder(staging.string(), host.string(), snapshot.string(), &error));
+    CHECK(error.empty());
+
+    CHECK_FALSE(fs::exists(host / "deleted-on-device.txt"));
+    CHECK(ReadTextFile(host / "host-only.txt") == "new host file");
+    CHECK(ReadTextFile(host / "kept.txt") == "device kept");
+}

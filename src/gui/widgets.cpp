@@ -188,13 +188,19 @@ namespace CoreDeck {
         const ImVec4 &leftIconColor,
         const char *rightActionIcon,
         const char *rightActionTooltip,
-        bool *rightActionClicked
+        bool *rightActionClicked,
+        const char *secondaryRightActionIcon,
+        const char *secondaryRightActionTooltip,
+        bool *secondaryRightActionClicked
     ) {
         StyleColor sc;
         StyleVar sv;
 
         if (rightActionClicked != nullptr) {
             *rightActionClicked = false;
+        }
+        if (secondaryRightActionClicked != nullptr) {
+            *secondaryRightActionClicked = false;
         }
 
         if (isSelected) {
@@ -227,9 +233,12 @@ namespace CoreDeck {
 
         bool actionClicked = false;
         const bool hasRightAction = rightActionIcon && rightActionIcon[0] != '\0' && rightActionClicked != nullptr;
+        const bool hasSecondaryRightAction =
+            secondaryRightActionIcon && secondaryRightActionIcon[0] != '\0' && secondaryRightActionClicked != nullptr;
         const float itemHeight = itemMax.y - itemMin.y;
-        const float actionSize = hasRightAction ? itemHeight : 0.0F;
-        const float rightReserve = hasRightAction ? actionSize + padding.x : 0.0F;
+        const int actionCount = static_cast<int>(hasRightAction) + static_cast<int>(hasSecondaryRightAction);
+        const float actionSize = actionCount > 0 ? itemHeight : 0.0F;
+        const float rightReserve = actionCount > 0 ? (actionSize * static_cast<float>(actionCount)) + padding.x : 0.0F;
 
         if (leftIcon && leftIcon[0] != '\0') {
             const ImVec2 iconSize = ImGui::CalcTextSize(leftIcon);
@@ -261,11 +270,12 @@ namespace CoreDeck {
             );
         }
 
-        if (hasRightAction) {
-            const ImVec2 actionMin(itemMax.x - actionSize, itemMin.y);
-            const ImVec2 actionMax(itemMax.x, itemMax.y);
+        auto drawRightAction = [&](const char *icon, const char *tooltip, bool *clickedOut, const int indexFromRight) {
+            const ImVec2 actionMin(itemMax.x - (actionSize * static_cast<float>(indexFromRight + 1)), itemMin.y);
+            ImVec2 actionMax(itemMax.x, itemMax.y);
+            actionMax.x -= actionSize * static_cast<float>(indexFromRight);
             const bool isActionHovered = ImGui::IsMouseHoveringRect(actionMin, actionMax);
-            const ImVec2 actionIconSize = ImGui::CalcTextSize(rightActionIcon);
+            const ImVec2 actionIconSize = ImGui::CalcTextSize(icon);
             const ImVec2 actionIconPos(
                 actionMin.x + ((actionSize - actionIconSize.x) * 0.5F),
                 itemMin.y + ((itemHeight - actionIconSize.y) * 0.5F)
@@ -279,20 +289,32 @@ namespace CoreDeck {
                     6.0F
                 );
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                if (rightActionTooltip && rightActionTooltip[0] != '\0') {
-                    ImGui::SetTooltip("%s", Tr(rightActionTooltip));
+                if (tooltip && tooltip[0] != '\0') {
+                    ImGui::SetTooltip("%s", Tr(tooltip));
                 }
                 if (clicked) {
                     actionClicked = true;
-                    *rightActionClicked = true;
+                    *clickedOut = true;
                 }
             }
 
             ImGui::GetWindowDrawList()->AddText(
                 actionIconPos,
                 ImGui::ColorConvertFloat4ToU32(isActionHovered ? HexColor(Colors::TEXT_PRIMARY) : HexColor(Colors::TEXT_MUTED)),
-                rightActionIcon
+                icon
             );
+        };
+
+        if (hasSecondaryRightAction) {
+            drawRightAction(
+                secondaryRightActionIcon,
+                secondaryRightActionTooltip,
+                secondaryRightActionClicked,
+                hasRightAction ? 1 : 0
+            );
+        }
+        if (hasRightAction) {
+            drawRightAction(rightActionIcon, rightActionTooltip, rightActionClicked, 0);
         }
 
         return clicked && !actionClicked;

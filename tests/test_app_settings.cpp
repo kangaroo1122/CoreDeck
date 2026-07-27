@@ -12,6 +12,7 @@ TEST_CASE("AppSettings enables wipe-and-run confirmation by default", "[app_sett
     const AppSettings settings;
     REQUIRE(settings.ConfirmBeforeWipeAndRun);
     REQUIRE(settings.JavaHomePath.empty());
+    REQUIRE(settings.UiFontSize == 16.0F);
 }
 
 TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[app_settings][migration]") {
@@ -41,4 +42,16 @@ TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[ap
     REQUIRE(settings.AvdSortMode == 2);
     REQUIRE_FALSE(settings.AvdSortAscending);
     REQUIRE(settings.JavaHomePath.empty());
+    REQUIRE(settings.UiFontSize == 16.0F);
+}
+
+TEST_CASE("AppSettings preserves a saved UI font size", "[app_settings][font]") {
+    const std::string settingsJson = R"({
+        "SchemaVersion": 1,
+        "UiFontSize": 20.0
+    })";
+
+    const auto settings = rfl::json::read<AppSettings, rfl::DefaultIfMissing>(settingsJson).value();
+
+    REQUIRE(settings.UiFontSize == 20.0F);
 }

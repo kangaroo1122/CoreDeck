@@ -149,15 +149,6 @@ namespace CoreDeck {
             }
         }
 
-        bool HasBusySharedFolderSync(const Context &context) {
-            for (const auto &[_, job]: context.SharedFolderSync.PerAvd) {
-                if (job.Busy) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         void DrawToolMessages(const Context &context) {
             if (!context.DeviceExplorer.Error.empty()) {
                 ImGui::Spacing();
@@ -172,11 +163,6 @@ namespace CoreDeck {
             if (context.DeviceExplorer.OpenInEmulatorBusy.load() && !context.DeviceExplorer.Status.empty()) {
                 ImGui::Spacing();
                 ImGui::TextDisabled("%s", Tr(context.DeviceExplorer.Status.c_str()));
-                return;
-            }
-            if (HasBusySharedFolderSync(context) && !context.SharedFolderSync.Status.empty()) {
-                ImGui::Spacing();
-                ImGui::TextDisabled("%s", Tr(context.SharedFolderSync.Status.c_str()));
             }
         }
 
@@ -274,14 +260,6 @@ namespace CoreDeck {
                 const std::string label = IconWithLabel(Icons::STOP, isStopping ? "Stopping..." : "Stop");
                 if (NegativeButton(label.c_str(), !isStopping) && !isStopping) {
                     RequestAvdStopWithSharedFolderSync(context, avd.Name);
-                }
-                ImGui::SameLine();
-                if (PrimaryButton(Icons::FOLDER, !isStopping)) {
-                    const int consolePort = context.Host.Manager.GetConsolePort(avd.Name);
-                    OpenDeviceExplorer(context, EmulatorSerialForConsolePort(consolePort), avd.Name);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", Tr("Open Device Explorer"));
                 }
             } else {
                 if (PositiveButton(Icons::PLAY)) {
@@ -394,6 +372,9 @@ namespace CoreDeck {
             const auto &avd = context.Catalog.Avds[i];
             const bool isSelected = context.Catalog.SelectedAvd == i;
             const bool isRunning = context.Host.Manager.IsRunning(avd.Name);
+            const bool isStopping = isRunning &&
+                                    (context.Host.Manager.IsStopping(avd.Name) ||
+                                     IsSharedFolderStopPending(context, avd.Name));
 
             ImGui::PushID(i);
             const char *avdStatusText = isRunning ? "Running..." : "Ready";
@@ -401,6 +382,7 @@ namespace CoreDeck {
             const std::string avdRightText = StrConcat(Tr(AvdTypeLabel(avd)), " - ", Tr(avdStatusText));
             const auto [Icon, Color] = DeviceIconStyleFor(avd.Device);
             bool renameClicked = false;
+            bool deviceExplorerClicked = false;
             if (SelectableItem(
                 avd.DisplayName.c_str(),
                 isSelected,
@@ -410,9 +392,17 @@ namespace CoreDeck {
                 HexColor(Color),
                 Icons::PENCIL,
                 "Rename display name",
-                &renameClicked
+                &renameClicked,
+                isRunning && !isStopping ? Icons::FOLDER : nullptr,
+                "Open Device Explorer",
+                &deviceExplorerClicked
             )) {
                 context.Catalog.SelectedAvd = i;
+            }
+            if (deviceExplorerClicked && !isStopping) {
+                context.Catalog.SelectedAvd = i;
+                const int consolePort = context.Host.Manager.GetConsolePort(avd.Name);
+                OpenDeviceExplorer(context, EmulatorSerialForConsolePort(consolePort), avd.Name);
             }
             if (renameClicked) {
                 context.Catalog.SelectedAvd = i;

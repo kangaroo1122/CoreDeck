@@ -672,7 +672,7 @@ namespace CoreDeck {
                     WrappedColoredText(
                         HexColor(Colors::WARNING),
                         formWidth,
-                        "Android SDK tools are incomplete. Install the base tools here, or continue and finish later from Android JDK/SDK preferences."
+                        "Android SDK tools are incomplete. Install the base tools here, or continue and finish later from Android SDK preferences."
                     );
                 } else if (!canInstallSdkHere) {
                     WrappedColoredText(

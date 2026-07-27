@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -61,6 +62,13 @@ namespace CoreDeck {
                 }
             }
         }
+    }
+
+    float NormalizeUiFontSize(const float size) {
+        if (!std::isfinite(size)) {
+            return DEFAULT_UI_FONT_SIZE;
+        }
+        return std::clamp(size, MIN_UI_FONT_SIZE, MAX_UI_FONT_SIZE);
     }
 
     std::vector<std::string> FindBundledFontPaths() {

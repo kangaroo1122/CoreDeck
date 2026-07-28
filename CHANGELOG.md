@@ -50,10 +50,13 @@
 
 ## [v0.8.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0) — 2026-07-26
 
-- Improve first-run JDK/SDK setup spacing when download controls are visible
-- Update the About dialog website link
-- Split Android JDK/SDK preferences into separate JDK and SDK tabs
-- Fix native macOS menu bar titles after changing language
+- Add Android SDK Platforms and SDK Tools management, including first-run installation for command-line tools, platform-tools, emulator, and the latest stable SDK Platform
+- Add managed JDK setup with separate onboarding and preferences, JDK 17+ guidance, official LTS downloads, configurable Java home, and safer replacement/cleanup behavior
+- Add Appearance preferences for Light/Dark theme switching and Simplified Chinese language support with CJK font fallback selection
+- Improve AVD creation and management with installed/all system image filtering, host-supported ABI filtering, current-image highlighting, display-name renaming, emulator port allocation fixes, and reliable cold boots for affected Quick Boot snapshots
+- Improve SDK, system image, preferences, and onboarding layouts with resizable dialogs, adaptive package tables, hover tooltips for truncated names, and better spacing on shorter windows
+- Use the native macOS menu bar for app, view, and help actions while keeping the in-window menu on Windows and Linux; keep menu titles in sync after language changes
+- Update About and release links, add manual release workflow support, package unsigned macOS DMGs, validate Windows ARM64 builds, fix WiX MSI packaging, and correct Windows live CPU usage readings
 
 ## [v0.8.0-beta.7](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.8.0-beta.7) — 2026-07-26
 

@@ -1,3 +1,10 @@
+## [v0.9.0-beta.7](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.7) — 2026-07-28
+
+- Remove the per-row Device Explorer shortcut from the AVD list and keep Device Explorer controlled by the View state
+- Keep Device Explorer in a waiting state while a selected emulator is still booting, then refresh files after the device becomes ready
+- Hide transient shared-folder open status above the AVD list to prevent list layout jitter
+- Fix bottom panel docking so Output Log and Device Explorer fill the bottom area correctly when either panel is hidden, and restore the 2:1 split when both are visible
+
 ## [v0.9.0-beta.6](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.6) — 2026-07-28
 
 - Make Device Explorer follow the selected running AVD automatically and return to `Select a running AVD first.` when the selected AVD is stopped or unavailable

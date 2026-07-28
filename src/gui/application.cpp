@@ -103,6 +103,57 @@ namespace CoreDeck {
             context.UI.ShowLogPanel = true;
         }
 
+        ImGuiDockNode *DockNodeFor(const ImGuiID id) {
+            return id == 0 ? nullptr : ImGui::DockBuilderGetNode(id);
+        }
+
+        ImGuiDockNode *FindSharedBottomDockNode(
+            const ImGuiID firstDockId,
+            const ImGuiID secondDockId,
+            const ImGuiID dockSpaceId
+        ) {
+            ImGuiDockNode *first = DockNodeFor(firstDockId);
+            ImGuiDockNode *second = DockNodeFor(secondDockId);
+            if (first == nullptr || second == nullptr) {
+                return nullptr;
+            }
+
+            for (ImGuiDockNode *candidate = first; candidate != nullptr; candidate = candidate->ParentNode) {
+                if (candidate->ID == dockSpaceId || candidate->IsDockSpace()) {
+                    continue;
+                }
+                for (ImGuiDockNode *other = second; other != nullptr; other = other->ParentNode) {
+                    if (candidate == other) {
+                        return candidate;
+                    }
+                }
+            }
+            return nullptr;
+        }
+
+        void ResolveBottomDockIdFromExistingLayout(Context &context, const ImGuiID dockSpaceId) {
+            if (ImGuiDockNode *shared = FindSharedBottomDockNode(
+                    context.UI.OutputLogDockId,
+                    context.UI.DeviceExplorerDockId,
+                    dockSpaceId
+                )) {
+                context.UI.BottomDockId = shared->ID;
+                return;
+            }
+
+            if (DockNodeFor(context.UI.BottomDockId) != nullptr) {
+                return;
+            }
+
+            if (ImGuiDockNode *logNode = DockNodeFor(context.UI.OutputLogDockId)) {
+                context.UI.BottomDockId = logNode->ID;
+                return;
+            }
+            if (ImGuiDockNode *explorerNode = DockNodeFor(context.UI.DeviceExplorerDockId)) {
+                context.UI.BottomDockId = explorerNode->ID;
+            }
+        }
+
         float ResolveUiFontPixelSize(const Context &context, const float fontPixelScale) {
             const float scale = (fontPixelScale > 0.0F) ? fontPixelScale : 1.0F;
             return NormalizeUiFontSize(context.Prefs.UiFontSize) * scale;
@@ -141,6 +192,7 @@ namespace CoreDeck {
         }
 
         void ApplyBottomDockLayout(Context &context, const ImGuiID dockSpaceId, const bool force = false) {
+            ResolveBottomDockIdFromExistingLayout(context, dockSpaceId);
             if (context.UI.BottomDockId == 0) {
                 return;
             }
@@ -748,6 +800,7 @@ namespace CoreDeck {
                     m_Context.UI.ShowDeviceExplorerPanel = !m_Context.UI.ShowDeviceExplorerPanel;
                     m_Context.DeviceExplorer.Open = m_Context.UI.ShowDeviceExplorerPanel;
                     if (m_Context.UI.ShowDeviceExplorerPanel) {
+                        m_Context.DeviceExplorer.ActiveTabKey.clear();
                         m_Context.DeviceExplorer.DockRequested = true;
                     }
                     PersistAppSettings(m_Context);

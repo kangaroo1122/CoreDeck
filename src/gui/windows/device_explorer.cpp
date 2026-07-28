@@ -19,6 +19,7 @@ namespace CoreDeck {
     namespace {
         constexpr ImGuiWindowFlags WINDOW_FLAGS =
             ImGuiWindowFlags_NoCollapse;
+        constexpr auto DEVICE_READY_RETRY_INTERVAL = std::chrono::seconds(1);
 
         struct RunningAvdTarget {
             std::string Name;
@@ -66,6 +67,27 @@ namespace CoreDeck {
                    !work.FileList.Loading.load() &&
                    !work.OperationBusy.load();
         }
+
+        bool HasSelectedOnlineDevice(const Context::DeviceExplorerTabState &work) {
+            return work.SelectedDevice >= 0 &&
+                   work.SelectedDevice < static_cast<int>(work.Devices.size()) &&
+                   work.Devices[work.SelectedDevice].IsOnline();
+        }
+
+        bool IsPreferredAvdStillRunning(const Context &context, const Context::DeviceExplorerTabState &work) {
+            return !work.PreferredAvdName.empty() &&
+                   context.Host.Manager.IsRunning(work.PreferredAvdName);
+        }
+
+        bool IsDeviceReadyRefreshDue(
+            const Context::DeviceExplorerTabState &work,
+            const std::chrono::steady_clock::time_point now
+        ) {
+            return work.LastDeviceRefreshAttempt == std::chrono::steady_clock::time_point{} ||
+                   now - work.LastDeviceRefreshAttempt >= DEVICE_READY_RETRY_INTERVAL;
+        }
+
+        void MaybeStartDeviceRefresh(Context &context, Context::DeviceExplorerTabState &work);
 
         std::shared_ptr<std::atomic<bool>> ResetCancelToken(Context::DeviceExplorerTabState &work) {
             work.CancelRequested = std::make_shared<std::atomic<bool>>(false);
@@ -156,6 +178,7 @@ namespace CoreDeck {
                         return i;
                     }
                 }
+                return -1;
             }
 
             if (!work.PreferredAvdName.empty()) {
@@ -164,6 +187,7 @@ namespace CoreDeck {
                         return i;
                     }
                 }
+                return -1;
             }
 
             for (int i = 0; i < static_cast<int>(work.Devices.size()); i++) {
@@ -228,6 +252,7 @@ namespace CoreDeck {
                 return;
             }
 
+            work.LastDeviceRefreshAttempt = std::chrono::steady_clock::now();
             work.Error.clear();
             if (!HasAdb(context.Host.Sdk)) {
                 work.Devices.clear();
@@ -236,12 +261,22 @@ namespace CoreDeck {
                 work.SelectedEntry = -1;
                 work.DeviceListReady = true;
                 work.FileListReady = false;
+                work.WaitingForDeviceReady = false;
                 work.Status.clear();
                 work.Error = "ADB was not found. Install Android SDK Platform-Tools.";
                 return;
             }
 
-            work.Status = "Refreshing devices...";
+            work.WaitingForDeviceReady =
+                work.WaitingForDeviceReady ||
+                (HasPreferredDeviceTarget(work) && !HasSelectedOnlineDevice(work));
+            if (work.WaitingForDeviceReady) {
+                work.SelectedDevice = -1;
+                work.SelectedEntry = -1;
+                work.Entries.clear();
+                work.FileListReady = false;
+            }
+            work.Status = work.WaitingForDeviceReady ? "Waiting for emulator..." : "Refreshing devices...";
             work.DeviceListReady = false;
             work.DeviceList.Loading = true;
             const SdkInfo sdk = context.Host.Sdk;
@@ -320,12 +355,23 @@ namespace CoreDeck {
                 work.DeviceListReady = true;
                 work.Status.clear();
                 work.SelectedDevice = FindPreferredDeviceIndex(work);
-                if (work.SelectedDevice >= 0 && work.Devices[work.SelectedDevice].IsOnline()) {
+                if (HasSelectedOnlineDevice(work)) {
                     StartFileRefresh(context, work, work.CurrentPath.empty() ? "/sdcard" : work.CurrentPath);
+                } else if (HasPreferredDeviceTarget(work) && IsPreferredAvdStillRunning(context, work)) {
+                    work.DeviceListReady = false;
+                    work.FileListReady = false;
+                    work.WaitingForDeviceReady = true;
+                    work.RefreshDevicesRequested = true;
+                    work.Status = "Waiting for emulator...";
+                    work.Error.clear();
+                    work.Entries.clear();
+                    work.SelectedEntry = -1;
                 } else if (work.Devices.empty()) {
+                    work.WaitingForDeviceReady = false;
                     work.Error = "No connected devices found.";
                     work.Entries.clear();
                 } else {
+                    work.WaitingForDeviceReady = false;
                     work.Error = "Current device is offline.";
                     work.Entries.clear();
                 }
@@ -338,10 +384,20 @@ namespace CoreDeck {
                 work.FileListReady = result.Success;
                 work.Status.clear();
                 if (result.Success) {
+                    work.WaitingForDeviceReady = false;
                     work.CurrentPath = result.Path;
                     CopyPathToBuffer(work);
                     work.Entries = result.Entries;
                     work.Error.clear();
+                } else if (work.WaitingForDeviceReady &&
+                           HasPreferredDeviceTarget(work) &&
+                           IsPreferredAvdStillRunning(context, work)) {
+                    work.RefreshDevicesRequested = true;
+                    work.Status = "Waiting for emulator...";
+                    work.Error.clear();
+                    work.Entries.clear();
+                    work.FileListReady = false;
+                    work.SelectedEntry = -1;
                 } else {
                     work.Error = result.Error.empty() ? "Could not list device files." : result.Error;
                     work.Entries.clear();
@@ -364,6 +420,19 @@ namespace CoreDeck {
                 }
                 work.RefreshFilesAfterOperation = false;
             }
+        }
+
+        void MaybeStartDeviceRefresh(Context &context, Context::DeviceExplorerTabState &work) {
+            if (!work.RefreshDevicesRequested || !CanRefreshDevices(work)) {
+                return;
+            }
+            if (work.WaitingForDeviceReady &&
+                !IsDeviceReadyRefreshDue(work, std::chrono::steady_clock::now())) {
+                return;
+            }
+
+            work.RefreshDevicesRequested = false;
+            StartDeviceRefresh(context, work);
         }
 
         void PollSharedFolderOpen(Context &context) {
@@ -704,10 +773,7 @@ namespace CoreDeck {
                     continue;
                 }
                 PollDeviceExplorerWork(context, *tab);
-                if (tab->RefreshDevicesRequested && CanRefreshDevices(*tab)) {
-                    tab->RefreshDevicesRequested = false;
-                    StartDeviceRefresh(context, *tab);
-                }
+                MaybeStartDeviceRefresh(context, *tab);
             }
         }
 
@@ -726,6 +792,9 @@ namespace CoreDeck {
             context.DeviceExplorer.ActiveTabKey = tab->Key;
             if (targetChanged) {
                 tab->RefreshDevicesRequested = true;
+                tab->WaitingForDeviceReady = true;
+                tab->Status.clear();
+                tab->Error.clear();
             }
             return tab;
         }
@@ -746,13 +815,16 @@ namespace CoreDeck {
                 return;
             }
 
-            if (work->RefreshDevicesRequested && CanRefreshDevices(*work)) {
-                work->RefreshDevicesRequested = false;
-                StartDeviceRefresh(context, *work);
-            }
+            MaybeStartDeviceRefresh(context, *work);
 
             DrawDeviceHeader(context, *work);
             ImGui::Spacing();
+            if (work->WaitingForDeviceReady) {
+                const char *status = work->Status.empty() ? "Waiting for emulator..." : work->Status.c_str();
+                ImGui::TextDisabled("%s", Tr(status));
+                return;
+            }
+
             DrawPathToolbar(context, *work);
             ImGui::Spacing();
             DrawOperationToolbar(context, *work);
@@ -815,6 +887,7 @@ namespace CoreDeck {
             tab->CurrentPath = NormalizeDevicePath(preferredPath);
             CopyPathToBuffer(*tab);
         }
+        tab->WaitingForDeviceReady = true;
         tab->RefreshDevicesRequested = true;
     }
 
@@ -884,9 +957,8 @@ namespace CoreDeck {
         const ImGuiID dockId = context.UI.DeviceExplorerDockId != 0
                                   ? context.UI.DeviceExplorerDockId
                                   : context.UI.BottomDockId;
-        if (dockId != 0 && context.DeviceExplorer.DockRequested) {
+        if (dockId != 0) {
             ImGui::SetNextWindowDockID(dockId, ImGuiCond_Always);
-            context.DeviceExplorer.DockRequested = false;
         }
         if (context.DeviceExplorer.FocusRequested) {
             ImGui::SetNextWindowFocus();

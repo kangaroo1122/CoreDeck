@@ -227,6 +227,7 @@ namespace CoreDeck {
             {"No device path selected.", "未选择设备路径。"},
             {"No connected devices found.", "未找到已连接设备。"},
             {"Select a running AVD first.", "请先选择一个已启动的 AVD。"},
+            {"Waiting for emulator...", "等待模拟器就绪..."},
             {"Current device is offline.", "当前设备离线。"},
             {"Home", "主页"},
             {"Up", "上一级"},

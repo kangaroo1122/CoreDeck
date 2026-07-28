@@ -425,7 +425,7 @@ namespace CoreDeck {
         const std::string title = TrLabel("Output Log###Output Log");
         const ImGuiID dockId = context.UI.OutputLogDockId != 0 ? context.UI.OutputLogDockId : context.UI.BottomDockId;
         if (dockId != 0) {
-            ImGui::SetNextWindowDockID(dockId, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowDockID(dockId, ImGuiCond_Always);
         }
         ImGui::Begin(title.c_str());
         if (ImGui::GetWindowDockID() != 0) {

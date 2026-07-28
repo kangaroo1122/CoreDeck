@@ -290,9 +290,11 @@ namespace CoreDeck {
             bool RefreshDevicesRequested = true;
             bool RefreshFilesAfterOperation = false;
             bool EnsureCurrentDirectoryBeforeRefresh = false;
+            bool WaitingForDeviceReady = false;
             bool ConfirmDelete = false;
             DeviceFileEntry PendingDelete;
             std::shared_ptr<std::atomic<bool>> CancelRequested = std::make_shared<std::atomic<bool>>(false);
+            std::chrono::steady_clock::time_point LastDeviceRefreshAttempt{};
 
             struct {
                 std::atomic<bool> Loading{false};

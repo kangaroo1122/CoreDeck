@@ -6,7 +6,6 @@
 
 #include "avd_list.h"
 #include "delete_avd.h"
-#include "device_explorer.h"
 #include "rename_avd.h"
 #include "../application.h"
 #include "../localization.h"
@@ -159,10 +158,6 @@ namespace CoreDeck {
                 ImGui::Spacing();
                 ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(context.SharedFolderSync.Error.c_str()));
                 return;
-            }
-            if (context.DeviceExplorer.OpenInEmulatorBusy.load() && !context.DeviceExplorer.Status.empty()) {
-                ImGui::Spacing();
-                ImGui::TextDisabled("%s", Tr(context.DeviceExplorer.Status.c_str()));
             }
         }
 
@@ -382,7 +377,6 @@ namespace CoreDeck {
             const std::string avdRightText = StrConcat(Tr(AvdTypeLabel(avd)), " - ", Tr(avdStatusText));
             const auto [Icon, Color] = DeviceIconStyleFor(avd.Device);
             bool renameClicked = false;
-            bool deviceExplorerClicked = false;
             if (SelectableItem(
                 avd.DisplayName.c_str(),
                 isSelected,
@@ -392,17 +386,9 @@ namespace CoreDeck {
                 HexColor(Color),
                 Icons::PENCIL,
                 "Rename display name",
-                &renameClicked,
-                isRunning && !isStopping ? Icons::FOLDER : nullptr,
-                "Open Device Explorer",
-                &deviceExplorerClicked
+                &renameClicked
             )) {
                 context.Catalog.SelectedAvd = i;
-            }
-            if (deviceExplorerClicked && !isStopping) {
-                context.Catalog.SelectedAvd = i;
-                const int consolePort = context.Host.Manager.GetConsolePort(avd.Name);
-                OpenDeviceExplorer(context, EmulatorSerialForConsolePort(consolePort), avd.Name);
             }
             if (renameClicked) {
                 context.Catalog.SelectedAvd = i;

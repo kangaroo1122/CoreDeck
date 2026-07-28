@@ -151,10 +151,14 @@ namespace CoreDeck {
             bool ShowDetailsPanel = true;
             bool ShowLogPanel = true;
             bool ShowDeviceExplorerPanel = false;
+            float DockBottomGroupRatio = 1.0F / 3.0F;
+            float DockTopOptionsRatio = 0.25F;
+            float DockTopDetailsRatio = 0.2625F;
+            float DockTopSideOnlyOptionsRatio = 0.50F;
+            float DockBottomExplorerRatio = 1.0F / 3.0F;
             std::uint32_t BottomDockId = 0;
             std::uint32_t OutputLogDockId = 0;
             std::uint32_t DeviceExplorerDockId = 0;
-            std::uint8_t BottomDockLayoutMask = 0xFF;
             GLFWwindow *MainWindow = nullptr;
             bool HideInvalidSdkPathBanner = false;
             bool FontReloadRequested = false;
@@ -313,9 +317,7 @@ namespace CoreDeck {
         struct DeviceExplorerState {
             std::vector<std::shared_ptr<DeviceExplorerTabState>> Tabs;
             std::string ActiveTabKey;
-            bool Open = false;
             bool FocusRequested = false;
-            bool DockRequested = true;
             std::string Error;
             std::string Status;
             std::atomic<bool> OpenInEmulatorBusy{false};

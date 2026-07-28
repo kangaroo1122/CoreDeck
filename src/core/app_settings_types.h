@@ -23,6 +23,11 @@ namespace CoreDeck {
         bool ShowDetailsPanel = true;
         bool ShowLogPanel = true;
         bool ShowDeviceExplorerPanel = false;
+        float DockBottomGroupRatio = 1.0F / 3.0F;
+        float DockTopOptionsRatio = 0.25F;
+        float DockTopDetailsRatio = 0.2625F;
+        float DockTopSideOnlyOptionsRatio = 0.50F;
+        float DockBottomExplorerRatio = 1.0F / 3.0F;
         int AvdSortMode = 0;
         bool AvdSortAscending = true;
         std::string JavaHomePath;

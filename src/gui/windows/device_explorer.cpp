@@ -875,12 +875,7 @@ namespace CoreDeck {
         context.DeviceExplorer.ActiveTabKey = tab->Key;
         context.DeviceExplorer.Status.clear();
         context.DeviceExplorer.Error.clear();
-        const bool wasVisible = context.UI.ShowDeviceExplorerPanel;
         context.UI.ShowDeviceExplorerPanel = true;
-        if (!context.DeviceExplorer.Open || !wasVisible) {
-            context.DeviceExplorer.DockRequested = true;
-        }
-        context.DeviceExplorer.Open = true;
         context.DeviceExplorer.FocusRequested = true;
         UpdateTabTarget(*tab, serial, avdName);
         if (!preferredPath.empty()) {
@@ -970,7 +965,6 @@ namespace CoreDeck {
             ImGui::End();
             return;
         }
-        context.DeviceExplorer.Open = true;
 
         if (ImGui::GetWindowDockID() != 0) {
             context.UI.DeviceExplorerDockId = ImGui::GetWindowDockID();

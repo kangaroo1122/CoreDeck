@@ -1,3 +1,10 @@
+## [v0.9.0-beta.9](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.9) — 2026-07-28
+
+- Rework the main dock into a fixed five-panel layout driven by current visibility so hidden panels no longer leave stale dock nodes behind
+- Keep Device Explorer pinned to its bottom slot while updating its contents from the selected running AVD, matching the Output Log lifecycle
+- Preserve user-adjusted dock split ratios when panels are hidden, shown again, or restored after restarting CoreDeck
+- Preserve the intended layout rules: top and bottom groups default to 2:1 when both exist, bottom panels default to 2:1 when both are visible, single visible panels fill their group, and all panels may be hidden
+
 ## [v0.9.0-beta.8](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.8) — 2026-07-28
 
 - Avoid a crash when reopening Output Log after Device Explorer is the only visible bottom panel

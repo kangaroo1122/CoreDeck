@@ -82,7 +82,7 @@ namespace CoreDeck {
 
     void ApplyAppSettingsToContext(Context &context, const AppSettings &settings);
 
-    void PersistAppSettings(const Context &context);
+    void PersistAppSettings(Context &context);
 
     void RefreshAvds(Context &context);
 

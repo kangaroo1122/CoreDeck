@@ -13,6 +13,7 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #endif
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -61,8 +62,42 @@
 
 namespace CoreDeck {
     namespace {
-        constexpr std::uint8_t BOTTOM_DOCK_OUTPUT_LOG = 1U << 0U;
-        constexpr std::uint8_t BOTTOM_DOCK_DEVICE_EXPLORER = 1U << 1U;
+        constexpr std::uint8_t DOCK_PANEL_AVD_LIST = 1U << 0U;
+        constexpr std::uint8_t DOCK_PANEL_OPTIONS = 1U << 1U;
+        constexpr std::uint8_t DOCK_PANEL_DETAILS = 1U << 2U;
+        constexpr std::uint8_t DOCK_PANEL_OUTPUT_LOG = 1U << 3U;
+        constexpr std::uint8_t DOCK_PANEL_DEVICE_EXPLORER = 1U << 4U;
+        constexpr float DOCK_MIN_RATIO = 0.10F;
+
+        struct DockLayoutRatios {
+            float BottomGroup = 1.0F / 3.0F;
+            float TopOptions = 0.25F;
+            float TopDetails = 0.2625F;
+            float TopSideOnlyOptions = 0.50F;
+            float BottomExplorer = 1.0F / 3.0F;
+        };
+
+        struct DockLayoutNodeIds {
+            ImGuiID TopGroup = 0;
+            ImGuiID BottomGroup = 0;
+            ImGuiID Options = 0;
+            ImGuiID Avds = 0;
+            ImGuiID Details = 0;
+            ImGuiID OutputLog = 0;
+            ImGuiID DeviceExplorer = 0;
+        };
+
+        struct DockLayoutState {
+            DockLayoutRatios Ratios;
+            DockLayoutNodeIds Nodes;
+            std::uint8_t LastLayoutMask = 0xFF;
+            bool BuiltOnce = false;
+        };
+
+        DockLayoutState &GetDockLayoutState() {
+            static DockLayoutState layoutState;
+            return layoutState;
+        }
 
         void ShowFatalError(const char *title, const char *message) {
 #if defined(_WIN32)
@@ -79,150 +114,418 @@ namespace CoreDeck {
             }
         }
 
-        std::uint8_t ResolveBottomDockLayoutMask(const Context &context) {
+        float ClampDockRatio(const float value, const float fallback) {
+            if (!std::isfinite(value)) {
+                return fallback;
+            }
+            return std::clamp(value, DOCK_MIN_RATIO, 1.0F - DOCK_MIN_RATIO);
+        }
+
+        float DockNodeSizeOnAxis(const ImGuiDockNode *node, const ImGuiAxis axis) {
+            if (node == nullptr) {
+                return 0.0F;
+            }
+            const float size = axis == ImGuiAxis_X ? node->Size.x : node->Size.y;
+            if (size > 0.0F) {
+                return size;
+            }
+            return axis == ImGuiAxis_X ? node->SizeRef.x : node->SizeRef.y;
+        }
+
+        float DockNodeSize(const ImGuiID id, const ImGuiAxis axis) {
+            return DockNodeSizeOnAxis(ImGui::DockBuilderGetNode(id), axis);
+        }
+
+        bool CaptureDockRatio(
+            const ImGuiID firstId,
+            const ImGuiID secondId,
+            const ImGuiAxis axis,
+            float &ratio,
+            const bool captureSecond = false
+        ) {
+            const ImGuiDockNode *first = ImGui::DockBuilderGetNode(firstId);
+            const ImGuiDockNode *second = ImGui::DockBuilderGetNode(secondId);
+            const float firstSize = DockNodeSizeOnAxis(first, axis);
+            const float secondSize = DockNodeSizeOnAxis(second, axis);
+            const float total = firstSize + secondSize;
+            if (total <= 0.0F) {
+                return false;
+            }
+
+            ratio = ClampDockRatio((captureSecond ? secondSize : firstSize) / total, ratio);
+            return true;
+        }
+
+        void NormalizeTopOuterRatios(DockLayoutRatios &ratios) {
+            ratios.TopOptions = ClampDockRatio(ratios.TopOptions, 0.25F);
+            ratios.TopDetails = ClampDockRatio(ratios.TopDetails, 0.2625F);
+            ratios.TopSideOnlyOptions = ClampDockRatio(ratios.TopSideOnlyOptions, 0.50F);
+        }
+
+        void NormalizeDockRatios(DockLayoutRatios &ratios) {
+            ratios.BottomGroup = ClampDockRatio(ratios.BottomGroup, 1.0F / 3.0F);
+            ratios.BottomExplorer = ClampDockRatio(ratios.BottomExplorer, 1.0F / 3.0F);
+            NormalizeTopOuterRatios(ratios);
+        }
+
+        void SeedDockLayoutStateFromContext(const Context &context) {
+            DockLayoutState &state = GetDockLayoutState();
+            state.Ratios.BottomGroup = context.UI.DockBottomGroupRatio;
+            state.Ratios.TopOptions = context.UI.DockTopOptionsRatio;
+            state.Ratios.TopDetails = context.UI.DockTopDetailsRatio;
+            state.Ratios.TopSideOnlyOptions = context.UI.DockTopSideOnlyOptionsRatio;
+            state.Ratios.BottomExplorer = context.UI.DockBottomExplorerRatio;
+            NormalizeDockRatios(state.Ratios);
+        }
+
+        void SyncDockLayoutRatiosToContext(Context &context) {
+            const DockLayoutState &state = GetDockLayoutState();
+            if (!state.BuiltOnce) {
+                return;
+            }
+            context.UI.DockBottomGroupRatio = state.Ratios.BottomGroup;
+            context.UI.DockTopOptionsRatio = state.Ratios.TopOptions;
+            context.UI.DockTopDetailsRatio = state.Ratios.TopDetails;
+            context.UI.DockTopSideOnlyOptionsRatio = state.Ratios.TopSideOnlyOptions;
+            context.UI.DockBottomExplorerRatio = state.Ratios.BottomExplorer;
+        }
+
+        std::uint8_t ResolveDockLayoutMask(const Context &context) {
             std::uint8_t mask = 0U;
+            if (context.UI.ShowAvdListPanel) {
+                mask |= DOCK_PANEL_AVD_LIST;
+            }
+            if (context.UI.ShowOptionsPanel) {
+                mask |= DOCK_PANEL_OPTIONS;
+            }
+            if (context.UI.ShowDetailsPanel) {
+                mask |= DOCK_PANEL_DETAILS;
+            }
             if (context.UI.ShowLogPanel) {
-                mask |= BOTTOM_DOCK_OUTPUT_LOG;
+                mask |= DOCK_PANEL_OUTPUT_LOG;
             }
             if (context.UI.ShowDeviceExplorerPanel) {
-                mask |= BOTTOM_DOCK_DEVICE_EXPLORER;
+                mask |= DOCK_PANEL_DEVICE_EXPLORER;
             }
             return mask;
         }
 
-        void EnsureVisibleBottomDockSeed(Context &context) {
-            if (context.UI.BottomDockId != 0 ||
-                context.UI.OutputLogDockId != 0 ||
-                context.UI.DeviceExplorerDockId != 0) {
+        void DockWindowIfVisible(const char *windowName, const ImGuiID dockId) {
+            if (dockId != 0) {
+                ImGui::DockBuilderDockWindow(windowName, dockId);
+            }
+        }
+
+        void CaptureTopDockRatios(DockLayoutState &state) {
+            const std::uint8_t layoutMask = state.LastLayoutMask;
+            const bool showLeft = (layoutMask & DOCK_PANEL_OPTIONS) != 0U;
+            const bool showMiddle = (layoutMask & DOCK_PANEL_AVD_LIST) != 0U;
+            const bool showRight = (layoutMask & DOCK_PANEL_DETAILS) != 0U;
+
+            if (showLeft && showMiddle && showRight) {
+                const float leftSize = DockNodeSize(state.Nodes.Options, ImGuiAxis_X);
+                const float middleSize = DockNodeSize(state.Nodes.Avds, ImGuiAxis_X);
+                const float rightSize = DockNodeSize(state.Nodes.Details, ImGuiAxis_X);
+                const float total = leftSize + middleSize + rightSize;
+                if (total > 0.0F) {
+                    state.Ratios.TopOptions = ClampDockRatio(leftSize / total, state.Ratios.TopOptions);
+                    state.Ratios.TopDetails = ClampDockRatio(rightSize / total, state.Ratios.TopDetails);
+                }
+                if (leftSize + rightSize > 0.0F) {
+                    state.Ratios.TopSideOnlyOptions =
+                        ClampDockRatio(leftSize / (leftSize + rightSize), state.Ratios.TopSideOnlyOptions);
+                }
+                NormalizeTopOuterRatios(state.Ratios);
                 return;
             }
-            if (context.UI.ShowLogPanel || context.UI.ShowDeviceExplorerPanel) {
+
+            if (showLeft && showMiddle) {
+                CaptureDockRatio(state.Nodes.Options, state.Nodes.Avds, ImGuiAxis_X, state.Ratios.TopOptions);
+                NormalizeTopOuterRatios(state.Ratios);
                 return;
             }
 
-            context.UI.ShowLogPanel = true;
+            if (showMiddle && showRight) {
+                CaptureDockRatio(
+                    state.Nodes.Avds,
+                    state.Nodes.Details,
+                    ImGuiAxis_X,
+                    state.Ratios.TopDetails,
+                    true
+                );
+                NormalizeTopOuterRatios(state.Ratios);
+                return;
+            }
+
+            if (showLeft && showRight) {
+                CaptureDockRatio(
+                    state.Nodes.Options,
+                    state.Nodes.Details,
+                    ImGuiAxis_X,
+                    state.Ratios.TopSideOnlyOptions
+                );
+                NormalizeTopOuterRatios(state.Ratios);
+            }
         }
 
-        ImGuiDockNode *DockNodeFor(const ImGuiID id) {
-            return id == 0 ? nullptr : ImGui::DockBuilderGetNode(id);
+        void CaptureBottomDockRatios(DockLayoutState &state) {
+            const std::uint8_t layoutMask = state.LastLayoutMask;
+            const bool showLog = (layoutMask & DOCK_PANEL_OUTPUT_LOG) != 0U;
+            const bool showExplorer = (layoutMask & DOCK_PANEL_DEVICE_EXPLORER) != 0U;
+
+            if (!showLog || !showExplorer) {
+                return;
+            }
+
+            CaptureDockRatio(
+                state.Nodes.OutputLog,
+                state.Nodes.DeviceExplorer,
+                ImGuiAxis_X,
+                state.Ratios.BottomExplorer,
+                true
+            );
+            NormalizeDockRatios(state.Ratios);
         }
 
-        bool IsUsableBottomDockNode(const ImGuiDockNode *node, const ImGuiID dockSpaceId) {
-            return node != nullptr && node->ID != dockSpaceId && !node->IsDockSpace();
+        void CaptureDockLayoutRatios(DockLayoutState &state) {
+            const std::uint8_t layoutMask = state.LastLayoutMask;
+            const bool showTop = (layoutMask & (DOCK_PANEL_AVD_LIST | DOCK_PANEL_OPTIONS | DOCK_PANEL_DETAILS)) != 0U;
+            const bool showBottom = (layoutMask & (DOCK_PANEL_OUTPUT_LOG | DOCK_PANEL_DEVICE_EXPLORER)) != 0U;
+
+            if (showTop && showBottom) {
+                CaptureDockRatio(
+                    state.Nodes.TopGroup,
+                    state.Nodes.BottomGroup,
+                    ImGuiAxis_Y,
+                    state.Ratios.BottomGroup,
+                    true
+                );
+            }
+            if (showTop) {
+                CaptureTopDockRatios(state);
+            }
+            if (showBottom) {
+                CaptureBottomDockRatios(state);
+            }
+            NormalizeDockRatios(state.Ratios);
         }
 
-        bool HasUsableBottomDockNode(const ImGuiID dockId, const ImGuiID dockSpaceId) {
-            return IsUsableBottomDockNode(DockNodeFor(dockId), dockSpaceId);
+        float TopDetailsSplitRatio(const DockLayoutRatios &ratios) {
+            return ClampDockRatio(ratios.TopDetails / (1.0F - ratios.TopOptions), 0.35F);
         }
 
-        void ClearBottomDockIds(Context &context) {
+        void BuildTopDockLayout(
+            Context &context,
+            const ImGuiID dockId,
+            const DockLayoutRatios &ratios,
+            DockLayoutNodeIds &nodes
+        ) {
+            // Top row order: Options | AVDs | Details.
+            const bool showLeft = context.UI.ShowOptionsPanel;
+            const bool showMiddle = context.UI.ShowAvdListPanel;
+            const bool showRight = context.UI.ShowDetailsPanel;
+            const float leftRatio = ClampDockRatio(ratios.TopOptions, 0.25F);
+            const float rightFullRatio = ClampDockRatio(ratios.TopDetails, 0.2625F);
+            const float rightAfterLeftRatio = TopDetailsSplitRatio(ratios);
+            const float sideOnlyRatio = ClampDockRatio(ratios.TopSideOnlyOptions, 0.50F);
+
+            if (!showLeft && !showMiddle && !showRight) {
+                return;
+            }
+
+            nodes.TopGroup = dockId;
+
+            if (showLeft && showMiddle && showRight) {
+                ImGuiID leftId = 0;
+                ImGuiID centerId = 0;
+                ImGuiID rightId = 0;
+                ImGuiID middleId = 0;
+                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, leftRatio, &leftId, &centerId);
+                ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Right, rightAfterLeftRatio, &rightId, &middleId);
+                nodes.Options = leftId;
+                nodes.Avds = middleId;
+                nodes.Details = rightId;
+                DockWindowIfVisible("Options", leftId);
+                DockWindowIfVisible("AVDs", middleId);
+                DockWindowIfVisible("Details", rightId);
+                ConfigureDockNode(leftId);
+                ConfigureDockNode(middleId);
+                ConfigureDockNode(rightId);
+                return;
+            }
+
+            if (showLeft && showMiddle && !showRight) {
+                ImGuiID leftId = 0;
+                ImGuiID middleId = 0;
+                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, leftRatio, &leftId, &middleId);
+                nodes.Options = leftId;
+                nodes.Avds = middleId;
+                DockWindowIfVisible("Options", leftId);
+                DockWindowIfVisible("AVDs", middleId);
+                ConfigureDockNode(leftId);
+                ConfigureDockNode(middleId);
+                return;
+            }
+
+            if (showLeft && !showMiddle && showRight) {
+                ImGuiID leftId = 0;
+                ImGuiID rightId = 0;
+                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, sideOnlyRatio, &leftId, &rightId);
+                nodes.Options = leftId;
+                nodes.Details = rightId;
+                DockWindowIfVisible("Options", leftId);
+                DockWindowIfVisible("Details", rightId);
+                ConfigureDockNode(leftId);
+                ConfigureDockNode(rightId);
+                return;
+            }
+
+            if (!showLeft && showMiddle && showRight) {
+                ImGuiID rightId = 0;
+                ImGuiID middleId = 0;
+                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Right, rightFullRatio, &rightId, &middleId);
+                nodes.Avds = middleId;
+                nodes.Details = rightId;
+                DockWindowIfVisible("AVDs", middleId);
+                DockWindowIfVisible("Details", rightId);
+                ConfigureDockNode(middleId);
+                ConfigureDockNode(rightId);
+                return;
+            }
+
+            if (showLeft && !showMiddle && !showRight) {
+                nodes.Options = dockId;
+                DockWindowIfVisible("Options", dockId);
+            } else if (!showLeft && showMiddle && !showRight) {
+                nodes.Avds = dockId;
+                DockWindowIfVisible("AVDs", dockId);
+            } else if (!showLeft && !showMiddle && showRight) {
+                nodes.Details = dockId;
+                DockWindowIfVisible("Details", dockId);
+            }
+            ConfigureDockNode(dockId);
+        }
+
+        void BuildBottomDockLayout(
+            Context &context,
+            const ImGuiID dockId,
+            const DockLayoutRatios &ratios,
+            DockLayoutNodeIds &nodes
+        ) {
+            const bool showLog = context.UI.ShowLogPanel;
+            const bool showExplorer = context.UI.ShowDeviceExplorerPanel;
+
+            if (!showLog && !showExplorer) {
+                context.UI.OutputLogDockId = 0;
+                context.UI.DeviceExplorerDockId = 0;
+                return;
+            }
+
+            if (showLog && showExplorer) {
+                ImGuiID explorerId = 0;
+                ImGuiID logId = 0;
+                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Right, ratios.BottomExplorer, &explorerId, &logId);
+                nodes.BottomGroup = dockId;
+                nodes.OutputLog = logId;
+                nodes.DeviceExplorer = explorerId;
+                context.UI.OutputLogDockId = logId;
+                context.UI.DeviceExplorerDockId = explorerId;
+                DockWindowIfVisible("Output Log", logId);
+                DockWindowIfVisible("Device Explorer###DeviceExplorer", explorerId);
+                ConfigureDockNode(logId);
+                ConfigureDockNode(explorerId);
+                return;
+            }
+
+            if (showLog) {
+                nodes.BottomGroup = dockId;
+                nodes.OutputLog = dockId;
+                context.UI.OutputLogDockId = dockId;
+                context.UI.DeviceExplorerDockId = 0;
+                DockWindowIfVisible("Output Log", dockId);
+                ConfigureDockNode(dockId);
+                return;
+            }
+
+            nodes.BottomGroup = dockId;
+            nodes.DeviceExplorer = dockId;
+            context.UI.OutputLogDockId = 0;
+            context.UI.DeviceExplorerDockId = dockId;
+            DockWindowIfVisible("Device Explorer###DeviceExplorer", dockId);
+            ConfigureDockNode(dockId);
+        }
+
+        void BuildDockLayout(Context &context, const ImGuiID dockSpaceId, const bool force = false) {
+            DockLayoutState &layoutState = GetDockLayoutState();
+
+            const std::uint8_t layoutMask = ResolveDockLayoutMask(context);
+            if (!force && layoutState.BuiltOnce && layoutState.LastLayoutMask == layoutMask) {
+                CaptureDockLayoutRatios(layoutState);
+                SyncDockLayoutRatiosToContext(context);
+                return;
+            }
+
+            if (!layoutState.BuiltOnce) {
+                SeedDockLayoutStateFromContext(context);
+            }
+            if (layoutState.BuiltOnce) {
+                CaptureDockLayoutRatios(layoutState);
+            }
+            layoutState.BuiltOnce = true;
+            layoutState.LastLayoutMask = layoutMask;
+            NormalizeDockRatios(layoutState.Ratios);
+
+            ImGui::DockBuilderRemoveNode(dockSpaceId);
+            ImGui::DockBuilderAddNode(dockSpaceId, ImGuiDockNodeFlags_DockSpace);
+            ImGui::DockBuilderSetNodeSize(dockSpaceId, ImGui::GetMainViewport()->Size);
+
             context.UI.BottomDockId = 0;
             context.UI.OutputLogDockId = 0;
             context.UI.DeviceExplorerDockId = 0;
-            context.UI.BottomDockLayoutMask = 0xFF;
-        }
 
-        ImGuiID ResolveSafeBottomWindowDockId(
-            const ImGuiID requestedDockId,
-            const ImGuiID fallbackDockId,
-            const ImGuiID dockSpaceId
-        ) {
-            if (HasUsableBottomDockNode(requestedDockId, dockSpaceId)) {
-                return requestedDockId;
+            const bool showTop = (layoutMask & (DOCK_PANEL_AVD_LIST | DOCK_PANEL_OPTIONS | DOCK_PANEL_DETAILS)) != 0U;
+            const bool showBottom = (layoutMask & (DOCK_PANEL_OUTPUT_LOG | DOCK_PANEL_DEVICE_EXPLORER)) != 0U;
+
+            ImGuiID topDockId = dockSpaceId;
+            ImGuiID bottomDockId = dockSpaceId;
+            DockLayoutNodeIds nodes;
+
+            if (showTop && showBottom) {
+                ImGuiID bottomId = 0;
+                ImGuiID topId = 0;
+                ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Down, layoutState.Ratios.BottomGroup, &bottomId, &topId);
+                topDockId = topId;
+                bottomDockId = bottomId;
+                context.UI.BottomDockId = bottomDockId;
+                nodes.TopGroup = topDockId;
+                nodes.BottomGroup = bottomDockId;
+                ConfigureDockNode(topDockId);
+                ConfigureDockNode(bottomDockId);
+            } else if (showTop) {
+                topDockId = dockSpaceId;
+                nodes.TopGroup = topDockId;
+                ConfigureDockNode(topDockId);
+            } else if (showBottom) {
+                bottomDockId = dockSpaceId;
+                context.UI.BottomDockId = bottomDockId;
+                nodes.BottomGroup = bottomDockId;
+                ConfigureDockNode(bottomDockId);
             }
-            return HasUsableBottomDockNode(fallbackDockId, dockSpaceId) ? fallbackDockId : 0;
-        }
 
-        ImGuiDockNode *TopmostUsableBottomDockNode(ImGuiDockNode *node, const ImGuiID dockSpaceId) {
-            ImGuiDockNode *best = nullptr;
-            for (; node != nullptr; node = node->ParentNode) {
-                if (IsUsableBottomDockNode(node, dockSpaceId)) {
-                    best = node;
+            if (showTop) {
+                BuildTopDockLayout(context, topDockId, layoutState.Ratios, nodes);
+            }
+            if (showBottom) {
+                if (context.UI.BottomDockId == 0) {
+                    context.UI.BottomDockId = bottomDockId;
                 }
-            }
-            return best;
-        }
-
-        ImGuiDockNode *FindSharedBottomDockNode(
-            const ImGuiID firstDockId,
-            const ImGuiID secondDockId,
-            const ImGuiID dockSpaceId
-        ) {
-            ImGuiDockNode *first = DockNodeFor(firstDockId);
-            ImGuiDockNode *second = DockNodeFor(secondDockId);
-            if (first == nullptr || second == nullptr) {
-                return nullptr;
+                BuildBottomDockLayout(context, bottomDockId, layoutState.Ratios, nodes);
             }
 
-            ImGuiDockNode *shared = nullptr;
-            for (ImGuiDockNode *candidate = first; candidate != nullptr; candidate = candidate->ParentNode) {
-                if (!IsUsableBottomDockNode(candidate, dockSpaceId)) {
-                    continue;
-                }
-                for (ImGuiDockNode *other = second; other != nullptr; other = other->ParentNode) {
-                    if (candidate == other) {
-                        shared = candidate;
-                        break;
-                    }
-                }
-            }
-            return shared;
-        }
-
-        void ResolveBottomDockIdFromExistingLayout(Context &context, const ImGuiID dockSpaceId) {
-            if (ImGuiDockNode *shared = FindSharedBottomDockNode(
-                    context.UI.OutputLogDockId,
-                    context.UI.DeviceExplorerDockId,
-                    dockSpaceId
-                )) {
-                if (ImGuiDockNode *canonical = TopmostUsableBottomDockNode(shared, dockSpaceId)) {
-                    context.UI.BottomDockId = canonical->ID;
-                }
-                return;
-            }
-
-            if (ImGuiDockNode *bottomNode = TopmostUsableBottomDockNode(DockNodeFor(context.UI.BottomDockId), dockSpaceId)) {
-                context.UI.BottomDockId = bottomNode->ID;
-                return;
-            }
-
-            if (ImGuiDockNode *logNode = TopmostUsableBottomDockNode(DockNodeFor(context.UI.OutputLogDockId), dockSpaceId)) {
-                context.UI.BottomDockId = logNode->ID;
-                return;
-            }
-            if (ImGuiDockNode *explorerNode = TopmostUsableBottomDockNode(DockNodeFor(context.UI.DeviceExplorerDockId), dockSpaceId)) {
-                context.UI.BottomDockId = explorerNode->ID;
-            }
-        }
-
-        bool HasValidDockNodeSize(const ImVec2 &size) {
-            return size.x > 0.0F && size.y > 0.0F;
-        }
-
-        bool EnsureDockNodeSizeForSplit(const ImGuiID dockId) {
-            ImGuiDockNode *node = DockNodeFor(dockId);
-            if (node == nullptr) {
-                return false;
-            }
-            if (HasValidDockNodeSize(node->Size)) {
-                return true;
-            }
-
-            ImVec2 fallbackSize = node->SizeRef;
-            for (ImGuiDockNode *parent = node->ParentNode;
-                 !HasValidDockNodeSize(fallbackSize) && parent != nullptr;
-                 parent = parent->ParentNode) {
-                fallbackSize = HasValidDockNodeSize(parent->Size) ? parent->Size : parent->SizeRef;
-            }
-            if (!HasValidDockNodeSize(fallbackSize)) {
-                fallbackSize = ImGui::GetMainViewport()->Size;
-            }
-            if (!HasValidDockNodeSize(fallbackSize)) {
-                return false;
-            }
-
-            ImGui::DockBuilderSetNodeSize(dockId, fallbackSize);
-            return true;
+            layoutState.Nodes = nodes;
+            SyncDockLayoutRatiosToContext(context);
+            ConfigureDockNode(dockSpaceId);
+            ImGui::DockBuilderFinish(dockSpaceId);
         }
 
         float ResolveUiFontPixelSize(const Context &context, const float fontPixelScale) {
@@ -262,67 +565,6 @@ namespace CoreDeck {
             style._NextFrameFontSizeBase = fontSize;
         }
 
-        void ApplyBottomDockLayout(Context &context, const ImGuiID dockSpaceId, const bool force = false) {
-            ResolveBottomDockIdFromExistingLayout(context, dockSpaceId);
-            if (context.UI.BottomDockId == 0) {
-                return;
-            }
-            if (!HasUsableBottomDockNode(context.UI.BottomDockId, dockSpaceId)) {
-                ClearBottomDockIds(context);
-                return;
-            }
-
-            const std::uint8_t mask = ResolveBottomDockLayoutMask(context);
-            if (!force && context.UI.BottomDockLayoutMask == mask) {
-                return;
-            }
-
-            context.UI.BottomDockLayoutMask = mask;
-            context.UI.OutputLogDockId = context.UI.BottomDockId;
-            context.UI.DeviceExplorerDockId = context.UI.BottomDockId;
-
-            ImGui::DockBuilderRemoveNodeChildNodes(context.UI.BottomDockId);
-
-            if (mask == (BOTTOM_DOCK_OUTPUT_LOG | BOTTOM_DOCK_DEVICE_EXPLORER)) {
-                ImGuiID explorerId = 0;
-                ImGuiID logId = 0;
-                if (EnsureDockNodeSizeForSplit(context.UI.BottomDockId)) {
-                    ImGui::DockBuilderSplitNode(context.UI.BottomDockId, ImGuiDir_Right, 1.0F / 3.0F, &explorerId, &logId);
-                }
-                if (explorerId != 0 && logId != 0) {
-                    context.UI.OutputLogDockId = logId;
-                    context.UI.DeviceExplorerDockId = explorerId;
-                    ConfigureDockNode(logId);
-                    ConfigureDockNode(explorerId);
-                } else {
-                    context.UI.BottomDockLayoutMask = 0xFF;
-                }
-            }
-
-            if ((mask & BOTTOM_DOCK_OUTPUT_LOG) != 0U) {
-                context.UI.OutputLogDockId = ResolveSafeBottomWindowDockId(
-                    context.UI.OutputLogDockId,
-                    context.UI.BottomDockId,
-                    dockSpaceId
-                );
-                if (context.UI.OutputLogDockId != 0) {
-                    ImGui::DockBuilderDockWindow("Output Log", context.UI.OutputLogDockId);
-                }
-            }
-            if ((mask & BOTTOM_DOCK_DEVICE_EXPLORER) != 0U) {
-                context.UI.DeviceExplorerDockId = ResolveSafeBottomWindowDockId(
-                    context.UI.DeviceExplorerDockId,
-                    context.UI.BottomDockId,
-                    dockSpaceId
-                );
-                if (context.UI.DeviceExplorerDockId != 0) {
-                    ImGui::DockBuilderDockWindow("Device Explorer###DeviceExplorer", context.UI.DeviceExplorerDockId);
-                }
-            }
-
-            ConfigureDockNode(context.UI.BottomDockId);
-            ImGui::DockBuilderFinish(dockSpaceId);
-        }
     }
 
     Application::Application() : m_Context(DetectAndroidSdk()) {
@@ -398,53 +640,12 @@ namespace CoreDeck {
             ImGuiDockNodeFlags_NoUndocking
         );
 
-        static bool firstLaunch = true;
-        if (firstLaunch) {
-            firstLaunch = false;
-
-            // Only build the default layout if ImGui has no saved layout
-            if (ImGui::DockBuilderGetNode(dockSpaceId) == nullptr ||
-                ImGui::DockBuilderGetNode(dockSpaceId)->ChildNodes[0] == nullptr) {
-                ImGui::DockBuilderRemoveNode(dockSpaceId);
-                ImGui::DockBuilderAddNode(dockSpaceId, ImGuiDockNodeFlags_DockSpace);
-                ImGui::DockBuilderSetNodeSize(dockSpaceId, ImGui::GetMainViewport()->Size);
-
-                ImGuiID topId = 0;
-                ImGuiID bottomId = 0;
-                ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Down, 0.40F, &bottomId, &topId);
-                m_Context.UI.BottomDockId = bottomId;
-
-                ImGuiID leftId = 0;
-                ImGuiID centerId = 0;
-                ImGui::DockBuilderSplitNode(topId, ImGuiDir_Left, 0.25, &leftId, &centerId);
-
-                ImGuiID middleId = 0;
-                ImGuiID rightId = 0;
-                ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Right, 0.35F, &rightId, &middleId);
-
-                ImGui::DockBuilderDockWindow("Options", leftId);
-                ImGui::DockBuilderDockWindow("AVDs", middleId);
-                ImGui::DockBuilderDockWindow("Details", rightId);
-                ApplyBottomDockLayout(m_Context, dockSpaceId, true);
-
-                ConfigureDockNode(leftId);
-                ConfigureDockNode(middleId);
-                ConfigureDockNode(rightId);
-                ConfigureDockNode(bottomId);
-            }
-        }
-
-        static bool bottomDockSeedChecked = false;
-        if (!bottomDockSeedChecked) {
-            bottomDockSeedChecked = true;
-            EnsureVisibleBottomDockSeed(m_Context);
-        }
-
-        ApplyBottomDockLayout(m_Context, dockSpaceId);
-
 #if !defined(__APPLE__)
         BuildMainMenuBar(m_Context);
 #endif
+
+        BuildDockLayout(m_Context, dockSpaceId);
+
         BuildSdkMissingBanner(m_Context);
         BuildDeleteAvdWindow(m_Context);
         BuildAvdOptionsWindow(m_Context);
@@ -794,6 +995,7 @@ namespace CoreDeck {
 
         m_DrainAsyncWork();
         PullRunningSharedFoldersBeforeShutdown(m_Context);
+        PersistAppSettings(m_Context);
 
         if (m_ImGuiBackendsInitialized) {
             ImGui_ImplOpenGL3_Shutdown();
@@ -893,10 +1095,8 @@ namespace CoreDeck {
                     break;
                 case NativeMenuAction::ToggleDeviceExplorer:
                     m_Context.UI.ShowDeviceExplorerPanel = !m_Context.UI.ShowDeviceExplorerPanel;
-                    m_Context.DeviceExplorer.Open = m_Context.UI.ShowDeviceExplorerPanel;
                     if (m_Context.UI.ShowDeviceExplorerPanel) {
                         m_Context.DeviceExplorer.ActiveTabKey.clear();
-                        m_Context.DeviceExplorer.DockRequested = true;
                     }
                     PersistAppSettings(m_Context);
                     break;
@@ -954,6 +1154,11 @@ namespace CoreDeck {
         s.ShowDetailsPanel = context.UI.ShowDetailsPanel;
         s.ShowLogPanel = context.UI.ShowLogPanel;
         s.ShowDeviceExplorerPanel = context.UI.ShowDeviceExplorerPanel;
+        s.DockBottomGroupRatio = context.UI.DockBottomGroupRatio;
+        s.DockTopOptionsRatio = context.UI.DockTopOptionsRatio;
+        s.DockTopDetailsRatio = context.UI.DockTopDetailsRatio;
+        s.DockTopSideOnlyOptionsRatio = context.UI.DockTopSideOnlyOptionsRatio;
+        s.DockBottomExplorerRatio = context.UI.DockBottomExplorerRatio;
         s.AvdSortMode = static_cast<int>(context.Catalog.SortMode);
         s.AvdSortAscending = context.Catalog.SortAscending;
         return s;
@@ -979,7 +1184,18 @@ namespace CoreDeck {
         context.UI.ShowDetailsPanel = settings.ShowDetailsPanel;
         context.UI.ShowLogPanel = settings.ShowLogPanel;
         context.UI.ShowDeviceExplorerPanel = settings.ShowDeviceExplorerPanel;
-        context.DeviceExplorer.Open = settings.ShowDeviceExplorerPanel;
+        DockLayoutRatios dockRatios;
+        dockRatios.BottomGroup = settings.DockBottomGroupRatio;
+        dockRatios.TopOptions = settings.DockTopOptionsRatio;
+        dockRatios.TopDetails = settings.DockTopDetailsRatio;
+        dockRatios.TopSideOnlyOptions = settings.DockTopSideOnlyOptionsRatio;
+        dockRatios.BottomExplorer = settings.DockBottomExplorerRatio;
+        NormalizeDockRatios(dockRatios);
+        context.UI.DockBottomGroupRatio = dockRatios.BottomGroup;
+        context.UI.DockTopOptionsRatio = dockRatios.TopOptions;
+        context.UI.DockTopDetailsRatio = dockRatios.TopDetails;
+        context.UI.DockTopSideOnlyOptionsRatio = dockRatios.TopSideOnlyOptions;
+        context.UI.DockBottomExplorerRatio = dockRatios.BottomExplorer;
 
         if (const int sortMode = settings.AvdSortMode; sortMode >= 0 && sortMode <= 2) {
             context.Catalog.SortMode = static_cast<AvdSortMode>(sortMode);
@@ -987,7 +1203,8 @@ namespace CoreDeck {
         context.Catalog.SortAscending = settings.AvdSortAscending;
     }
 
-    void PersistAppSettings(const Context &context) {
+    void PersistAppSettings(Context &context) {
+        SyncDockLayoutRatiosToContext(context);
         SaveAppSettings(CaptureAppSettingsFromContext(context));
     }
 

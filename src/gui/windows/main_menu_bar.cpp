@@ -47,10 +47,8 @@ namespace CoreDeck {
                 }
                 if (RoundedMenuItem(context.UI.ShowDeviceExplorerPanel ? "Hide Device Explorer" : "Show Device Explorer")) {
                     context.UI.ShowDeviceExplorerPanel = !context.UI.ShowDeviceExplorerPanel;
-                    context.DeviceExplorer.Open = context.UI.ShowDeviceExplorerPanel;
                     if (context.UI.ShowDeviceExplorerPanel) {
                         context.DeviceExplorer.ActiveTabKey.clear();
-                        context.DeviceExplorer.DockRequested = true;
                     }
                     PersistAppSettings(context);
                 }

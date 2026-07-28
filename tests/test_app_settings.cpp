@@ -14,6 +14,9 @@ TEST_CASE("AppSettings enables wipe-and-run confirmation by default", "[app_sett
     REQUIRE(settings.JavaHomePath.empty());
     REQUIRE(settings.UiFontSize == 16.0F);
     REQUIRE_FALSE(settings.ShowDeviceExplorerPanel);
+    REQUIRE(settings.WindowWidth == 1200);
+    REQUIRE(settings.WindowHeight == 900);
+    REQUIRE_FALSE(settings.WindowMaximized);
 }
 
 TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[app_settings][migration]") {
@@ -45,6 +48,9 @@ TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[ap
     REQUIRE_FALSE(settings.AvdSortAscending);
     REQUIRE(settings.JavaHomePath.empty());
     REQUIRE(settings.UiFontSize == 16.0F);
+    REQUIRE(settings.WindowWidth == 1200);
+    REQUIRE(settings.WindowHeight == 900);
+    REQUIRE_FALSE(settings.WindowMaximized);
 }
 
 TEST_CASE("AppSettings preserves a saved UI font size", "[app_settings][font]") {

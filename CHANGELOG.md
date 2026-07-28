@@ -1,3 +1,7 @@
+## [v0.9.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.1) — 2026-07-28
+
+- Restore the main window size and maximized state after restarting CoreDeck
+
 ## [v0.9.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0) — 2026-07-28
 
 - Add Device Explorer as a bottom panel that follows the selected running AVD, waits for the emulator to become ready, and returns to `Select a running AVD first.` when no usable device is selected

@@ -151,6 +151,9 @@ namespace CoreDeck {
             bool ShowDetailsPanel = true;
             bool ShowLogPanel = true;
             bool ShowDeviceExplorerPanel = false;
+            int WindowWidth = 1200;
+            int WindowHeight = 900;
+            bool WindowMaximized = false;
             float DockBottomGroupRatio = 1.0F / 3.0F;
             float DockTopOptionsRatio = 0.25F;
             float DockTopDetailsRatio = 0.2625F;

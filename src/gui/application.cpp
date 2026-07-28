@@ -68,6 +68,10 @@ namespace CoreDeck {
         constexpr std::uint8_t DOCK_PANEL_OUTPUT_LOG = 1U << 3U;
         constexpr std::uint8_t DOCK_PANEL_DEVICE_EXPLORER = 1U << 4U;
         constexpr float DOCK_MIN_RATIO = 0.10F;
+        constexpr int DEFAULT_WINDOW_WIDTH = 1200;
+        constexpr int DEFAULT_WINDOW_HEIGHT = 900;
+        constexpr int MIN_WINDOW_WIDTH = 800;
+        constexpr int MIN_WINDOW_HEIGHT = 600;
 
         struct DockLayoutRatios {
             float BottomGroup = 1.0F / 3.0F;
@@ -112,6 +116,31 @@ namespace CoreDeck {
             if (ImGuiDockNode *node = ImGui::DockBuilderGetNode(id)) {
                 node->LocalFlags |= ImGuiDockNodeFlags_NoWindowMenuButton;
             }
+        }
+
+        int NormalizeWindowDimension(const int value, const int fallback, const int minimum) {
+            if (value <= 0) {
+                return fallback;
+            }
+            return std::max(value, minimum);
+        }
+
+        void CaptureWindowState(Context &context) {
+            GLFWwindow *window = context.UI.MainWindow;
+            if (window == nullptr) {
+                return;
+            }
+
+            context.UI.WindowMaximized = glfwGetWindowAttrib(window, GLFW_MAXIMIZED) == GLFW_TRUE;
+            if (context.UI.WindowMaximized) {
+                return;
+            }
+
+            int width = 0;
+            int height = 0;
+            glfwGetWindowSize(window, &width, &height);
+            context.UI.WindowWidth = NormalizeWindowDimension(width, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_WIDTH);
+            context.UI.WindowHeight = NormalizeWindowDimension(height, DEFAULT_WINDOW_HEIGHT, MIN_WINDOW_HEIGHT);
         }
 
         float ClampDockRatio(const float value, const float fallback) {
@@ -692,10 +721,25 @@ namespace CoreDeck {
     }
 
     bool Application::m_CreateMainWindow() {
-        m_Window = glfwCreateWindow(1200, 900, COREDECK_TITLE, nullptr, nullptr);
+        const int windowWidth = NormalizeWindowDimension(
+            m_Context.UI.WindowWidth,
+            DEFAULT_WINDOW_WIDTH,
+            MIN_WINDOW_WIDTH
+        );
+        const int windowHeight = NormalizeWindowDimension(
+            m_Context.UI.WindowHeight,
+            DEFAULT_WINDOW_HEIGHT,
+            MIN_WINDOW_HEIGHT
+        );
+        glfwWindowHint(GLFW_MAXIMIZED, m_Context.UI.WindowMaximized ? GLFW_TRUE : GLFW_FALSE);
+        m_Window = glfwCreateWindow(windowWidth, windowHeight, COREDECK_TITLE, nullptr, nullptr);
         if (!m_Window) {
             ShowFatalError(COREDECK_TITLE, "Failed to create window.\nYour system may not support OpenGL 3.3.");
             return false;
+        }
+
+        if (m_Context.UI.WindowMaximized) {
+            glfwMaximizeWindow(m_Window);
         }
 
         glfwMakeContextCurrent(m_Window);
@@ -886,6 +930,33 @@ namespace CoreDeck {
             glfwSetWindowShouldClose(w, GLFW_FALSE);
         });
 
+        glfwSetWindowSizeCallback(m_Window, [](GLFWwindow *w, const int width, const int height) {
+            auto *self = static_cast<Application *>(glfwGetWindowUserPointer(w));
+            if (self == nullptr || width <= 0 || height <= 0) {
+                return;
+            }
+
+            self->m_Context.UI.WindowMaximized = glfwGetWindowAttrib(w, GLFW_MAXIMIZED) == GLFW_TRUE;
+            if (self->m_Context.UI.WindowMaximized) {
+                return;
+            }
+
+            self->m_Context.UI.WindowWidth = NormalizeWindowDimension(width, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_WIDTH);
+            self->m_Context.UI.WindowHeight = NormalizeWindowDimension(height, DEFAULT_WINDOW_HEIGHT, MIN_WINDOW_HEIGHT);
+        });
+
+        glfwSetWindowMaximizeCallback(m_Window, [](GLFWwindow *w, const int maximized) {
+            auto *self = static_cast<Application *>(glfwGetWindowUserPointer(w));
+            if (self == nullptr) {
+                return;
+            }
+
+            self->m_Context.UI.WindowMaximized = maximized == GLFW_TRUE;
+            if (!self->m_Context.UI.WindowMaximized) {
+                CaptureWindowState(self->m_Context);
+            }
+        });
+
 #if !defined(__APPLE__)
         glfwSetWindowContentScaleCallback(m_Window, [](GLFWwindow *w, const float xscale, const float /*yscale*/) {
             auto *self = static_cast<Application *>(glfwGetWindowUserPointer(w));
@@ -993,6 +1064,7 @@ namespace CoreDeck {
         }
         m_ShutdownCompleted = true;
 
+        CaptureWindowState(m_Context);
         m_DrainAsyncWork();
         PullRunningSharedFoldersBeforeShutdown(m_Context);
         PersistAppSettings(m_Context);
@@ -1149,6 +1221,9 @@ namespace CoreDeck {
         s.CustomCjkFontPath = context.Prefs.CustomCjkFontPath;
         s.UiFontSize = NormalizeUiFontSize(context.Prefs.UiFontSize);
         s.JavaHomePath = context.Prefs.JavaHomePath;
+        s.WindowWidth = context.UI.WindowWidth;
+        s.WindowHeight = context.UI.WindowHeight;
+        s.WindowMaximized = context.UI.WindowMaximized;
         s.ShowAvdListPanel = context.UI.ShowAvdListPanel;
         s.ShowOptionsPanel = context.UI.ShowOptionsPanel;
         s.ShowDetailsPanel = context.UI.ShowDetailsPanel;
@@ -1179,6 +1254,9 @@ namespace CoreDeck {
         context.Prefs.JavaHomePath = settings.JavaHomePath;
         context.Host.Sdk.JavaHomePath = settings.JavaHomePath;
         context.Host.Manager.SetSdk(context.Host.Sdk);
+        context.UI.WindowWidth = NormalizeWindowDimension(settings.WindowWidth, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_WIDTH);
+        context.UI.WindowHeight = NormalizeWindowDimension(settings.WindowHeight, DEFAULT_WINDOW_HEIGHT, MIN_WINDOW_HEIGHT);
+        context.UI.WindowMaximized = settings.WindowMaximized;
         context.UI.ShowAvdListPanel = settings.ShowAvdListPanel;
         context.UI.ShowOptionsPanel = settings.ShowOptionsPanel;
         context.UI.ShowDetailsPanel = settings.ShowDetailsPanel;

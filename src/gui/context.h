@@ -308,7 +308,9 @@ namespace CoreDeck {
 
         struct DeviceExplorerState {
             std::vector<std::shared_ptr<DeviceExplorerTabState>> Tabs;
+            std::string ActiveTabKey;
             bool Open = false;
+            bool Activated = false;
             bool FocusRequested = false;
             bool DockRequested = true;
             std::string Error;

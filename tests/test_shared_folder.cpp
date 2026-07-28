@@ -132,12 +132,13 @@ TEST_CASE("shared folder sync pushes host contents into the device folder", "[sh
         "/sdcard/CoreDeckShared"
     );
 
-    REQUIRE(args.size() == 5);
+    REQUIRE(args.size() == 6);
     CHECK(args[0] == "-s");
     CHECK(args[1] == "emulator-5554");
     CHECK(args[2] == "push");
-    CHECK(args[3] == BuildSharedFolderContentPath("/tmp/CoreDeck Shared"));
-    CHECK(args[4] == "/sdcard/CoreDeckShared");
+    CHECK(args[3] == "-a");
+    CHECK(args[4] == BuildSharedFolderContentPath("/tmp/CoreDeck Shared"));
+    CHECK(args[5] == "/sdcard/CoreDeckShared");
 }
 
 TEST_CASE("shared folder sync pulls device contents into the host folder", "[shared_folder][sync]") {

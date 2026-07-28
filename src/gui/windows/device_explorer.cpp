@@ -695,11 +695,15 @@ namespace CoreDeck {
         }
 
         std::shared_ptr<Context::DeviceExplorerTabState> ResolveSelectedExplorerTab(Context &context) {
-            const auto target = SelectedRunningAvd(context);
-            if (!target) {
+            if (!context.DeviceExplorer.Activated || context.DeviceExplorer.ActiveTabKey.empty()) {
                 return nullptr;
             }
-            return FindOrCreateTab(context, target->Serial, target->Name);
+            for (auto &tab: context.DeviceExplorer.Tabs) {
+                if (tab != nullptr && tab->Key == context.DeviceExplorer.ActiveTabKey) {
+                    return tab;
+                }
+            }
+            return nullptr;
         }
 
         void CancelAllTabs(Context &context) {
@@ -709,6 +713,8 @@ namespace CoreDeck {
                 }
             }
             context.DeviceExplorer.Tabs.clear();
+            context.DeviceExplorer.ActiveTabKey.clear();
+            context.DeviceExplorer.Activated = false;
         }
 
         void DrawDeviceExplorerPanel(Context &context, Context::DeviceExplorerTabState *work) {
@@ -774,6 +780,8 @@ namespace CoreDeck {
         }
 
         auto tab = FindOrCreateTab(context, serial, avdName);
+        context.DeviceExplorer.Activated = true;
+        context.DeviceExplorer.ActiveTabKey = tab->Key;
         context.DeviceExplorer.Status.clear();
         context.DeviceExplorer.Error.clear();
         const bool wasVisible = context.UI.ShowDeviceExplorerPanel;

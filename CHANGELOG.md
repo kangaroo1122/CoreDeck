@@ -1,3 +1,12 @@
+## [v0.9.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.5) — 2026-07-28
+
+- Fix UI font size changes by updating ImGui's active base font size after startup, theme resets, and font rebuilds
+- Keep Device Explorer idle until a running AVD is explicitly opened from its file-manager action
+- Hide transient shared-folder adb not-found errors while an emulator is still starting
+- Upgrade shared folder sync to metadata-first incremental change detection with snapshot-based three-way reconcile, propagating one-sided changes and deletes
+- Preserve conflicting shared-folder edits as conflict-named copies while keeping sync scoped to regular files inside the share
+- Remove the extra macOS View menu full screen item
+
 ## [v0.9.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.4) — 2026-07-27
 
 - Fix UI font size changes by updating ImGui's active base font size after startup, theme resets, and font rebuilds

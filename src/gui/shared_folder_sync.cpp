@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <future>
+#include <string>
 
 #include "../core/adb.h"
 
@@ -78,6 +79,11 @@ namespace CoreDeck {
                    now - job.LastAttempt >= SYNC_INTERVAL;
         }
 
+        bool IsTransientAdbStartupError(const std::string &output) {
+            return output.find("device 'emulator-") != std::string::npos &&
+                   output.find("' not found") != std::string::npos;
+        }
+
         void StopAvdAfterFinalSync(Context &context, Context::SharedFolderSyncJob &job) {
             context.Host.Manager.Stop(job.AvdName);
             job.PendingStop = false;
@@ -102,7 +108,14 @@ namespace CoreDeck {
                     context.SharedFolderSync.Error.clear();
                 } else {
                     context.SharedFolderSync.Status.clear();
-                    context.SharedFolderSync.Error = result.Output.empty() ? "Could not sync shared folder." : result.Output;
+                    if (job.Mode == SharedFolderSyncMode::Bidirectional &&
+                        !job.InitialSynced &&
+                        IsTransientAdbStartupError(result.Output)) {
+                        context.SharedFolderSync.Status = "Waiting for emulator...";
+                        context.SharedFolderSync.Error.clear();
+                    } else {
+                        context.SharedFolderSync.Error = result.Output.empty() ? "Could not sync shared folder." : result.Output;
+                    }
                 }
 
                 if (job.PendingStop) {

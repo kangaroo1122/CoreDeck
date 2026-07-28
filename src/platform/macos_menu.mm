@@ -144,6 +144,23 @@ namespace {
         [[item submenu] setTitle:title];
     }
 
+    void RemoveMenuItemsWithAction(NSMenu *menu, SEL action) {
+        if (menu == nil || action == nil) {
+            return;
+        }
+
+        for (NSInteger index = menu.numberOfItems - 1; index >= 0; index--) {
+            NSMenuItem *item = [menu itemAtIndex:index];
+            if ([item action] == action) {
+                [menu removeItemAtIndex:index];
+            }
+        }
+    }
+
+    void RemoveStandardFullScreenItem() {
+        RemoveMenuItemsWithAction([NSApp windowsMenu], @selector(toggleFullScreen:));
+    }
+
     void SyncItemTitles(const CoreDeck::NativeMenuState &state) {
         g_Interactive = state.Interactive;
         g_UpdateCheckInFlight = state.UpdateCheckInFlight;
@@ -270,6 +287,7 @@ namespace CoreDeck::MacosMenu {
             [helpMenu addItem:g_CheckForUpdatesItem];
 
             [NSApp setMainMenu:mainMenu];
+            RemoveStandardFullScreenItem();
             g_Installed = true;
         }
     }

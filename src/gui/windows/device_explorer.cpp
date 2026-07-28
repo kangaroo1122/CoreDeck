@@ -634,7 +634,7 @@ namespace CoreDeck {
             }
             HoverTooltip(Tr("Delete"));
 
-            ImGui::Spacing();
+            ImGui::SameLine();
             const ImGuiStyle &style = ImGui::GetStyle();
             const float createButtonWidth = iconButtonSize.x;
             const float folderInputWidth = std::max(Em(8.0F), ImGui::GetContentRegionAvail().x - createButtonWidth - style.ItemSpacing.x);

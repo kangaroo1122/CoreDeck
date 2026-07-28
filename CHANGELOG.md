@@ -1,3 +1,14 @@
+## [v0.9.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0) — 2026-07-28
+
+- Add Device Explorer as a bottom panel that follows the selected running AVD, waits for the emulator to become ready, and returns to `Select a running AVD first.` when no usable device is selected
+- Support device file browsing, upload, download, folder upload, folder creation, and guarded deletion from a compact single-row action toolbar
+- Add per-AVD shared folders with host/emulator open actions and metadata-first incremental sync that propagates one-sided changes and deletes
+- Preserve conflicting shared-folder edits as conflict-named copies while keeping sync scoped to regular files inside the shared folder
+- Rework the main dock into a fixed five-panel layout with independent View toggles, 2:1 default splits, single-panel fill behavior, and persisted user-adjusted split ratios across hide/show and app restarts
+- Add horizontal scrolling for long Output Log lines while keeping log text selectable
+- Add UI font size controls with reliable active font resizing, bundled PingFang SC Heavy as the default UI font, and clearer font selector behavior
+- Split Android SDK and Java preferences into separate menu entries, hide transient shared-folder status from the AVD list, and ask for confirmation before quitting CoreDeck
+
 ## [v0.9.0-beta.9](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.9) — 2026-07-28
 
 - Rework the main dock into a fixed five-panel layout driven by current visibility so hidden panels no longer leave stale dock nodes behind

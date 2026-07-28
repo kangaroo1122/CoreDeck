@@ -6,18 +6,18 @@
 
 <br />
 
-[![Build](https://github.com/devmuaz/CoreDeck/actions/workflows/build.yml/badge.svg)](https://github.com/devmuaz/CoreDeck/actions/workflows/build.yml)
-[![Release](https://github.com/devmuaz/CoreDeck/actions/workflows/release.yml/badge.svg)](https://github.com/devmuaz/CoreDeck/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/devmuaz/CoreDeck?label=release)](https://github.com/devmuaz/CoreDeck/releases)
-[![Latest pre-release](https://img.shields.io/github/v/release/devmuaz/CoreDeck?include_prereleases&label=pre-release)](https://github.com/devmuaz/CoreDeck/releases)
-[![Downloads](https://img.shields.io/github/downloads/devmuaz/CoreDeck/total)](https://github.com/devmuaz/CoreDeck/releases)
-[![Stars](https://img.shields.io/github/stars/devmuaz/CoreDeck)](https://github.com/devmuaz/CoreDeck/stargazers)
-[![Issues](https://img.shields.io/github/issues/devmuaz/CoreDeck)](https://github.com/devmuaz/CoreDeck/issues)
+[![Build](https://github.com/kangaroo1122/CoreDeck/actions/workflows/build.yml/badge.svg)](https://github.com/kangaroo1122/CoreDeck/actions/workflows/build.yml)
+[![Release](https://github.com/kangaroo1122/CoreDeck/actions/workflows/release.yml/badge.svg)](https://github.com/kangaroo1122/CoreDeck/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/kangaroo1122/CoreDeck?label=release)](https://github.com/kangaroo1122/CoreDeck/releases)
+[![Latest pre-release](https://img.shields.io/github/v/release/kangaroo1122/CoreDeck?include_prereleases&label=pre-release)](https://github.com/kangaroo1122/CoreDeck/releases)
+[![Downloads](https://img.shields.io/github/downloads/kangaroo1122/CoreDeck/total)](https://github.com/kangaroo1122/CoreDeck/releases)
+[![Stars](https://img.shields.io/github/stars/kangaroo1122/CoreDeck)](https://github.com/kangaroo1122/CoreDeck/stargazers)
+[![Issues](https://img.shields.io/github/issues/kangaroo1122/CoreDeck)](https://github.com/kangaroo1122/CoreDeck/issues)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
-[![License](https://img.shields.io/github/license/devmuaz/CoreDeck)](LICENSE)
+[![License](https://img.shields.io/github/license/kangaroo1122/CoreDeck)](LICENSE)
 
-[CoreDeck](https://coredeck.dev) is an open source native desktop application around your Android SDK’s official
+[CoreDeck](https://github.com/kangaroo1122/CoreDeck) is an open source native desktop application around your Android SDK’s official
 emulator, avdmanager, and sdkmanager binaries — running them for you in one place, through a friendly GUI, so you get
 the same results without hand-writing commands. Use it for everyday work without opening Android Studio. Built with
 C++20 and Dear ImGui.
@@ -61,7 +61,7 @@ C++20 and Dear ImGui.
 
 ## Downloads
 
-Grab the latest prebuilt binaries from the official [CoreDeck](https://coredeck.dev) website or the [Releases](https://github.com/devmuaz/CoreDeck/releases) page:
+Grab the latest prebuilt binaries from the [Releases](https://github.com/kangaroo1122/CoreDeck/releases) page:
 
 | Platform | Architecture          | File            |
 | -------- | --------------------- | --------------- |
@@ -93,7 +93,7 @@ All platforms need **CMake 3.23+**, **Ninja**, and **Git** (with submodule suppo
 ### Clone and build
 
 ```bash
-git clone --recursive https://github.com/devmuaz/CoreDeck.git
+git clone --recursive https://github.com/kangaroo1122/CoreDeck.git
 cd CoreDeck
 cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release --parallel

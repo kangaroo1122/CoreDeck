@@ -1,3 +1,7 @@
+## [v0.9.0-beta.8](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.8) — 2026-07-28
+
+- Avoid a crash when reopening Output Log after Device Explorer is the only visible bottom panel
+
 ## [v0.9.0-beta.7](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.7) — 2026-07-28
 
 - Remove the per-row Device Explorer shortcut from the AVD list and keep Device Explorer controlled by the View state

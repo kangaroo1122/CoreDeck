@@ -107,6 +107,42 @@ namespace CoreDeck {
             return id == 0 ? nullptr : ImGui::DockBuilderGetNode(id);
         }
 
+        bool IsUsableBottomDockNode(const ImGuiDockNode *node, const ImGuiID dockSpaceId) {
+            return node != nullptr && node->ID != dockSpaceId && !node->IsDockSpace();
+        }
+
+        bool HasUsableBottomDockNode(const ImGuiID dockId, const ImGuiID dockSpaceId) {
+            return IsUsableBottomDockNode(DockNodeFor(dockId), dockSpaceId);
+        }
+
+        void ClearBottomDockIds(Context &context) {
+            context.UI.BottomDockId = 0;
+            context.UI.OutputLogDockId = 0;
+            context.UI.DeviceExplorerDockId = 0;
+            context.UI.BottomDockLayoutMask = 0xFF;
+        }
+
+        ImGuiID ResolveSafeBottomWindowDockId(
+            const ImGuiID requestedDockId,
+            const ImGuiID fallbackDockId,
+            const ImGuiID dockSpaceId
+        ) {
+            if (HasUsableBottomDockNode(requestedDockId, dockSpaceId)) {
+                return requestedDockId;
+            }
+            return HasUsableBottomDockNode(fallbackDockId, dockSpaceId) ? fallbackDockId : 0;
+        }
+
+        ImGuiDockNode *TopmostUsableBottomDockNode(ImGuiDockNode *node, const ImGuiID dockSpaceId) {
+            ImGuiDockNode *best = nullptr;
+            for (; node != nullptr; node = node->ParentNode) {
+                if (IsUsableBottomDockNode(node, dockSpaceId)) {
+                    best = node;
+                }
+            }
+            return best;
+        }
+
         ImGuiDockNode *FindSharedBottomDockNode(
             const ImGuiID firstDockId,
             const ImGuiID secondDockId,
@@ -118,17 +154,19 @@ namespace CoreDeck {
                 return nullptr;
             }
 
+            ImGuiDockNode *shared = nullptr;
             for (ImGuiDockNode *candidate = first; candidate != nullptr; candidate = candidate->ParentNode) {
-                if (candidate->ID == dockSpaceId || candidate->IsDockSpace()) {
+                if (!IsUsableBottomDockNode(candidate, dockSpaceId)) {
                     continue;
                 }
                 for (ImGuiDockNode *other = second; other != nullptr; other = other->ParentNode) {
                     if (candidate == other) {
-                        return candidate;
+                        shared = candidate;
+                        break;
                     }
                 }
             }
-            return nullptr;
+            return shared;
         }
 
         void ResolveBottomDockIdFromExistingLayout(Context &context, const ImGuiID dockSpaceId) {
@@ -137,21 +175,54 @@ namespace CoreDeck {
                     context.UI.DeviceExplorerDockId,
                     dockSpaceId
                 )) {
-                context.UI.BottomDockId = shared->ID;
+                if (ImGuiDockNode *canonical = TopmostUsableBottomDockNode(shared, dockSpaceId)) {
+                    context.UI.BottomDockId = canonical->ID;
+                }
                 return;
             }
 
-            if (DockNodeFor(context.UI.BottomDockId) != nullptr) {
+            if (ImGuiDockNode *bottomNode = TopmostUsableBottomDockNode(DockNodeFor(context.UI.BottomDockId), dockSpaceId)) {
+                context.UI.BottomDockId = bottomNode->ID;
                 return;
             }
 
-            if (ImGuiDockNode *logNode = DockNodeFor(context.UI.OutputLogDockId)) {
+            if (ImGuiDockNode *logNode = TopmostUsableBottomDockNode(DockNodeFor(context.UI.OutputLogDockId), dockSpaceId)) {
                 context.UI.BottomDockId = logNode->ID;
                 return;
             }
-            if (ImGuiDockNode *explorerNode = DockNodeFor(context.UI.DeviceExplorerDockId)) {
+            if (ImGuiDockNode *explorerNode = TopmostUsableBottomDockNode(DockNodeFor(context.UI.DeviceExplorerDockId), dockSpaceId)) {
                 context.UI.BottomDockId = explorerNode->ID;
             }
+        }
+
+        bool HasValidDockNodeSize(const ImVec2 &size) {
+            return size.x > 0.0F && size.y > 0.0F;
+        }
+
+        bool EnsureDockNodeSizeForSplit(const ImGuiID dockId) {
+            ImGuiDockNode *node = DockNodeFor(dockId);
+            if (node == nullptr) {
+                return false;
+            }
+            if (HasValidDockNodeSize(node->Size)) {
+                return true;
+            }
+
+            ImVec2 fallbackSize = node->SizeRef;
+            for (ImGuiDockNode *parent = node->ParentNode;
+                 !HasValidDockNodeSize(fallbackSize) && parent != nullptr;
+                 parent = parent->ParentNode) {
+                fallbackSize = HasValidDockNodeSize(parent->Size) ? parent->Size : parent->SizeRef;
+            }
+            if (!HasValidDockNodeSize(fallbackSize)) {
+                fallbackSize = ImGui::GetMainViewport()->Size;
+            }
+            if (!HasValidDockNodeSize(fallbackSize)) {
+                return false;
+            }
+
+            ImGui::DockBuilderSetNodeSize(dockId, fallbackSize);
+            return true;
         }
 
         float ResolveUiFontPixelSize(const Context &context, const float fontPixelScale) {
@@ -196,6 +267,10 @@ namespace CoreDeck {
             if (context.UI.BottomDockId == 0) {
                 return;
             }
+            if (!HasUsableBottomDockNode(context.UI.BottomDockId, dockSpaceId)) {
+                ClearBottomDockIds(context);
+                return;
+            }
 
             const std::uint8_t mask = ResolveBottomDockLayoutMask(context);
             if (!force && context.UI.BottomDockLayoutMask == mask) {
@@ -211,18 +286,38 @@ namespace CoreDeck {
             if (mask == (BOTTOM_DOCK_OUTPUT_LOG | BOTTOM_DOCK_DEVICE_EXPLORER)) {
                 ImGuiID explorerId = 0;
                 ImGuiID logId = 0;
-                ImGui::DockBuilderSplitNode(context.UI.BottomDockId, ImGuiDir_Right, 1.0F / 3.0F, &explorerId, &logId);
-                context.UI.OutputLogDockId = logId;
-                context.UI.DeviceExplorerDockId = explorerId;
-                ConfigureDockNode(logId);
-                ConfigureDockNode(explorerId);
+                if (EnsureDockNodeSizeForSplit(context.UI.BottomDockId)) {
+                    ImGui::DockBuilderSplitNode(context.UI.BottomDockId, ImGuiDir_Right, 1.0F / 3.0F, &explorerId, &logId);
+                }
+                if (explorerId != 0 && logId != 0) {
+                    context.UI.OutputLogDockId = logId;
+                    context.UI.DeviceExplorerDockId = explorerId;
+                    ConfigureDockNode(logId);
+                    ConfigureDockNode(explorerId);
+                } else {
+                    context.UI.BottomDockLayoutMask = 0xFF;
+                }
             }
 
             if ((mask & BOTTOM_DOCK_OUTPUT_LOG) != 0U) {
-                ImGui::DockBuilderDockWindow("Output Log", context.UI.OutputLogDockId);
+                context.UI.OutputLogDockId = ResolveSafeBottomWindowDockId(
+                    context.UI.OutputLogDockId,
+                    context.UI.BottomDockId,
+                    dockSpaceId
+                );
+                if (context.UI.OutputLogDockId != 0) {
+                    ImGui::DockBuilderDockWindow("Output Log", context.UI.OutputLogDockId);
+                }
             }
             if ((mask & BOTTOM_DOCK_DEVICE_EXPLORER) != 0U) {
-                ImGui::DockBuilderDockWindow("Device Explorer###DeviceExplorer", context.UI.DeviceExplorerDockId);
+                context.UI.DeviceExplorerDockId = ResolveSafeBottomWindowDockId(
+                    context.UI.DeviceExplorerDockId,
+                    context.UI.BottomDockId,
+                    dockSpaceId
+                );
+                if (context.UI.DeviceExplorerDockId != 0) {
+                    ImGui::DockBuilderDockWindow("Device Explorer###DeviceExplorer", context.UI.DeviceExplorerDockId);
+                }
             }
 
             ConfigureDockNode(context.UI.BottomDockId);

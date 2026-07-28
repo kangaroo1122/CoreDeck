@@ -31,7 +31,6 @@ namespace {
     NSMenuItem *g_ToggleDeviceExplorerItem = nil;
     NSMenuItem *g_StorageOverviewItem = nil;
     NSMenuItem *g_ToolsMenuItem = nil;
-    NSMenuItem *g_DeviceExplorerItem = nil;
     NSMenuItem *g_SharedFolderMenuItem = nil;
     NSMenuItem *g_OpenSharedFolderHostItem = nil;
     NSMenuItem *g_OpenSharedFolderEmulatorItem = nil;
@@ -144,23 +143,6 @@ namespace {
         [[item submenu] setTitle:title];
     }
 
-    void RemoveMenuItemsWithAction(NSMenu *menu, SEL action) {
-        if (menu == nil || action == nil) {
-            return;
-        }
-
-        for (NSInteger index = menu.numberOfItems - 1; index >= 0; index--) {
-            NSMenuItem *item = [menu itemAtIndex:index];
-            if ([item action] == action) {
-                [menu removeItemAtIndex:index];
-            }
-        }
-    }
-
-    void RemoveStandardFullScreenItem() {
-        RemoveMenuItemsWithAction([NSApp windowsMenu], @selector(toggleFullScreen:));
-    }
-
     void SyncItemTitles(const CoreDeck::NativeMenuState &state) {
         g_Interactive = state.Interactive;
         g_UpdateCheckInFlight = state.UpdateCheckInFlight;
@@ -178,7 +160,6 @@ namespace {
         [g_StorageOverviewItem setTitle:Translated("Storage Overview")];
 
         SetMenuTitle(g_ToolsMenuItem, Translated("Tools"));
-        [g_DeviceExplorerItem setTitle:Translated("Device Explorer")];
         SetMenuTitle(g_SharedFolderMenuItem, Translated("Shared Folder"));
         [g_OpenSharedFolderHostItem setTitle:Translated(CoreDeck::GetOpenSharedFolderHostLabel())];
         [g_OpenSharedFolderEmulatorItem setTitle:Translated("Open Shared Folder in Emulator")];
@@ -197,7 +178,6 @@ namespace {
         [g_ToggleDeviceExplorerItem setEnabled:state.Interactive];
         [g_StorageOverviewItem setEnabled:state.Interactive];
         [g_ToolsMenuItem setEnabled:state.Interactive && state.ShowToolsMenu];
-        [g_DeviceExplorerItem setEnabled:state.Interactive && state.ShowToolsMenu];
         [g_SharedFolderMenuItem setEnabled:state.Interactive && state.ShowToolsMenu];
         [g_OpenSharedFolderHostItem setEnabled:state.Interactive && state.ShowToolsMenu];
         [g_OpenSharedFolderEmulatorItem setEnabled:state.Interactive && state.ShowToolsMenu];
@@ -262,8 +242,6 @@ namespace CoreDeck::MacosMenu {
             [mainMenu addItem:g_ToolsMenuItem];
             NSMenu *toolsMenu = [[NSMenu alloc] initWithTitle:Translated("Tools")];
             [g_ToolsMenuItem setSubmenu:toolsMenu];
-            g_DeviceExplorerItem = ActionItem(Translated("Device Explorer"), NativeMenuAction::DeviceExplorer);
-            [toolsMenu addItem:g_DeviceExplorerItem];
             g_SharedFolderMenuItem = [[NSMenuItem alloc] initWithTitle:Translated("Shared Folder") action:nil keyEquivalent:@""];
             NSMenu *sharedFolderMenu = [[NSMenu alloc] initWithTitle:Translated("Shared Folder")];
             [g_SharedFolderMenuItem setSubmenu:sharedFolderMenu];
@@ -287,7 +265,6 @@ namespace CoreDeck::MacosMenu {
             [helpMenu addItem:g_CheckForUpdatesItem];
 
             [NSApp setMainMenu:mainMenu];
-            RemoveStandardFullScreenItem();
             g_Installed = true;
         }
     }
@@ -307,7 +284,6 @@ namespace CoreDeck::MacosMenu {
             g_ToggleDeviceExplorerItem = nil;
             g_StorageOverviewItem = nil;
             g_ToolsMenuItem = nil;
-            g_DeviceExplorerItem = nil;
             g_SharedFolderMenuItem = nil;
             g_OpenSharedFolderHostItem = nil;
             g_OpenSharedFolderEmulatorItem = nil;

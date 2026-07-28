@@ -3,10 +3,10 @@
 //
 
 #include "imgui.h"
-#include <GLFW/glfw3.h>
 
 #include "main_menu_bar.h"
 #include "device_explorer.h"
+#include "quit_confirm.h"
 #include "../../core/shared_folder.h"
 #include "../widgets.h"
 #include "../theme.h"
@@ -23,7 +23,7 @@ namespace CoreDeck {
                 }
                 ImGui::Separator();
                 if (RoundedMenuItem("Quit", nullptr, false, context.UI.MainWindow != nullptr)) {
-                    glfwSetWindowShouldClose(context.UI.MainWindow, GLFW_TRUE);
+                    RequestQuitConfirmation(context);
                 }
                 ImGui::EndMenu();
             }
@@ -61,9 +61,6 @@ namespace CoreDeck {
             }
 
             if (HasSelectedRunningAvd(context) && RoundedBeginMenu("Tools")) {
-                if (RoundedMenuItem("Device Explorer")) {
-                    OpenDeviceExplorer(context);
-                }
                 if (RoundedBeginMenu("Shared Folder")) {
                     if (RoundedMenuItem(GetOpenSharedFolderHostLabel())) {
                         OpenSharedFolderOnHost(context);

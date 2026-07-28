@@ -47,6 +47,22 @@ namespace CoreDeck {
             std::string Error;
         };
 
+        template <typename T>
+        void ConsumeFuture(std::future<T> &future) {
+            if (!future.valid()) {
+                return;
+            }
+            try {
+                (void)future.get();
+            } catch (...) {
+            }
+        }
+
+        OnboardingSdkBootstrapWork &OnboardingBootstrapWork() {
+            static OnboardingSdkBootstrapWork bootstrap;
+            return bootstrap;
+        }
+
         void CenteredText(const char *text, const ImVec4 &color) {
             const char *translatedText = Tr(text);
             const float width = ImGui::CalcTextSize(translatedText).x;
@@ -767,8 +783,8 @@ namespace CoreDeck {
         static char pathBuffer[1024] = {};
         static char javaHomeBuffer[2048] = {};
         static bool initialized = false;
-        static OnboardingSdkBootstrapWork bootstrap;
         static JavaHomeStatus javaVersionState;
+        auto &bootstrap = OnboardingBootstrapWork();
 
         if (!initialized) {
             if (!context.Host.Sdk.SdkPath.empty()) {
@@ -825,5 +841,23 @@ namespace CoreDeck {
         }
 
         ImGui::End();
+    }
+
+    void ShutdownOnboardingSdkBootstrapWork() {
+        auto &bootstrap = OnboardingBootstrapWork();
+        if (bootstrap.Progress) {
+            CancelOnboardingSdkBootstrap(bootstrap);
+        }
+
+        ConsumeFuture(bootstrap.ToolsFuture);
+        ConsumeFuture(bootstrap.LicenseCheckFuture);
+        ConsumeFuture(bootstrap.LicenseAcceptFuture);
+        ConsumeFuture(bootstrap.PackagesFuture);
+
+        bootstrap.Busy = false;
+        bootstrap.AwaitingLicenseConsent = false;
+        bootstrap.Error.clear();
+        bootstrap.SdkRoot.clear();
+        bootstrap.Progress.reset();
     }
 }

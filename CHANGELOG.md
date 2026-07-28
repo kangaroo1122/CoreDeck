@@ -1,3 +1,9 @@
+## [v0.9.0-beta.6](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.6) — 2026-07-28
+
+- Make Device Explorer follow the selected running AVD automatically and return to `Select a running AVD first.` when the selected AVD is stopped or unavailable
+- Remove the redundant Device Explorer entry from the Tools menu while keeping Shared Folder actions there
+- Ask for confirmation before quitting CoreDeck from the window close button or Quit menu
+
 ## [v0.9.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.0-beta.5) — 2026-07-28
 
 - Fix UI font size changes by updating ImGui's active base font size after startup, theme resets, and font rebuilds

@@ -9,6 +9,8 @@
 
 namespace CoreDeck {
     void BuildOnboardingWindow(Context &context);
+
+    void ShutdownOnboardingSdkBootstrapWork();
 }
 
 #endif // COREDECK_ONBOARDING_WINDOW_H

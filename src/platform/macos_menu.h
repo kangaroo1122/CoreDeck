@@ -18,7 +18,6 @@ namespace CoreDeck {
         ToggleOutputLog,
         ToggleDeviceExplorer,
         StorageOverview,
-        DeviceExplorer,
         OpenSharedFolderHost,
         OpenSharedFolderEmulator,
         About,

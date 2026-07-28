@@ -20,6 +20,17 @@ namespace CoreDeck {
             }
         }
 
+        template <typename T>
+        void ConsumeFuture(std::future<T> &future) {
+            if (!future.valid()) {
+                return;
+            }
+            try {
+                (void)future.get();
+            } catch (...) {
+            }
+        }
+
         Context::SharedFolderSyncJob &EnsureJob(
             Context &context,
             const std::string &avdName,
@@ -189,11 +200,8 @@ namespace CoreDeck {
     void PullRunningSharedFoldersBeforeShutdown(Context &context) {
         for (auto &[avdName, job]: context.SharedFolderSync.PerAvd) {
             if (job.Future.valid()) {
-                job.Future.wait();
-                if (job.Busy) {
-                    (void)job.Future.get();
-                    job.Busy = false;
-                }
+                ConsumeFuture(job.Future);
+                job.Busy = false;
             }
         }
 
@@ -202,7 +210,10 @@ namespace CoreDeck {
             if (!ResolveRunningSerial(context, avd.Name, &serial)) {
                 continue;
             }
-            (void)SyncSharedFolder(context.Host.Sdk, serial, avd.Name, SharedFolderSyncMode::DeviceToHost);
+            try {
+                (void)SyncSharedFolder(context.Host.Sdk, serial, avd.Name, SharedFolderSyncMode::DeviceToHost);
+            } catch (...) {
+            }
         }
     }
 }

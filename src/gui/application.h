@@ -50,6 +50,8 @@ namespace CoreDeck {
 
         void m_RunLoop();
 
+        void m_DrainAsyncWork();
+
         void m_Shutdown();
 
         void m_PollUpdateCheckIfNeeded();
@@ -63,6 +65,7 @@ namespace CoreDeck {
         bool m_GlfwInitialized = false;
         bool m_ImGuiContextCreated = false;
         bool m_ImGuiBackendsInitialized = false;
+        bool m_ShutdownCompleted = false;
 
         // Scale applied to ImGui style/sizes (1.0 on macOS, native on Win/Linux).
         float m_DpiScale = 1.0F;

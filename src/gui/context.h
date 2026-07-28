@@ -144,6 +144,8 @@ namespace CoreDeck {
             bool ShowPreferences = false;
             bool ShowStorageDialog = false;
             bool ShowWipeDataDialog = false;
+            bool ShowQuitDialog = false;
+            bool QuitConfirmed = false;
             bool ShowAvdListPanel = true;
             bool ShowOptionsPanel = true;
             bool ShowDetailsPanel = true;
@@ -310,7 +312,6 @@ namespace CoreDeck {
             std::vector<std::shared_ptr<DeviceExplorerTabState>> Tabs;
             std::string ActiveTabKey;
             bool Open = false;
-            bool Activated = false;
             bool FocusRequested = false;
             bool DockRequested = true;
             std::string Error;

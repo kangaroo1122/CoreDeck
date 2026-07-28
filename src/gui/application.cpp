@@ -18,6 +18,8 @@
 #include <cstdio>
 #include <cstdint>
 #include <filesystem>
+#include <future>
+#include <mutex>
 #include <vector>
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -47,6 +49,7 @@
 #include "windows/main_menu_bar.h"
 #include "windows/onboarding.h"
 #include "windows/preferences.h"
+#include "windows/quit_confirm.h"
 #include "windows/rename_avd.h"
 #include "windows/sdk_banner.h"
 #include "windows/storage.h"
@@ -103,6 +106,30 @@ namespace CoreDeck {
         float ResolveUiFontPixelSize(const Context &context, const float fontPixelScale) {
             const float scale = (fontPixelScale > 0.0F) ? fontPixelScale : 1.0F;
             return NormalizeUiFontSize(context.Prefs.UiFontSize) * scale;
+        }
+
+        template <typename T>
+        void ConsumeFuture(std::future<T> &future) {
+            if (!future.valid()) {
+                return;
+            }
+            try {
+                (void)future.get();
+            } catch (...) {
+            }
+        }
+
+        void RequestProgressCancel(const std::shared_ptr<SdkOperationProgress> &progress) {
+            if (!progress) {
+                return;
+            }
+
+            progress->CancelRequested.store(true);
+            std::lock_guard lock(progress->Mutex);
+            if (!progress->Finished) {
+                progress->StatusText = "Cancelling...";
+            }
+            progress->DetailText.clear();
         }
 
         void ApplyImGuiFontSizeBase(const Context &context, const float fontPixelScale) {
@@ -200,6 +227,7 @@ namespace CoreDeck {
 
         if (m_Context.Flow.CurrentScreen == Screen::Onboarding) {
             BuildOnboardingWindow(m_Context);
+            BuildQuitConfirmWindow(m_Context);
             return;
         }
 
@@ -286,6 +314,7 @@ namespace CoreDeck {
             BuildInstallImageWindow(m_Context);
         }
         BuildStorageWindow(m_Context);
+        BuildQuitConfirmWindow(m_Context);
 
         m_Context.Host.Manager.Update();
         DriveSharedFolderSync(m_Context);
@@ -496,6 +525,19 @@ namespace CoreDeck {
             imGuiIO.AddMouseWheelEvent(static_cast<float>(x) * 0.3F, static_cast<float>(y) * 0.3F);
         });
 
+        glfwSetWindowCloseCallback(m_Window, [](GLFWwindow *w) {
+            auto *self = static_cast<Application *>(glfwGetWindowUserPointer(w));
+            if (self == nullptr) {
+                return;
+            }
+            if (self->m_Context.UI.QuitConfirmed) {
+                return;
+            }
+
+            RequestQuitConfirmation(self->m_Context);
+            glfwSetWindowShouldClose(w, GLFW_FALSE);
+        });
+
 #if !defined(__APPLE__)
         glfwSetWindowContentScaleCallback(m_Window, [](GLFWwindow *w, const float xscale, const float /*yscale*/) {
             auto *self = static_cast<Application *>(glfwGetWindowUserPointer(w));
@@ -570,9 +612,41 @@ namespace CoreDeck {
         }
     }
 
-    void Application::m_Shutdown() {
-        PullRunningSharedFoldersBeforeShutdown(m_Context);
+    void Application::m_DrainAsyncWork() {
+        RequestProgressCancel(m_Context.SdkManagerWork.Progress);
+        RequestProgressCancel(m_Context.JdkDownloadWork.Progress);
+
+        ShutdownOnboardingSdkBootstrapWork();
         CancelDeviceExplorerWork(m_Context);
+
+        ConsumeFuture(m_UpdateCheckFuture);
+        ConsumeFuture(m_Context.AvdCreationWork.Prefetch.Future);
+        ConsumeFuture(m_Context.AvdCreationWork.SystemImageRemoval.Future);
+        ConsumeFuture(m_Context.ImageInstallationWork.Prefetch.Future);
+        ConsumeFuture(m_Context.ImageInstallationWork.InstallFuture);
+        ConsumeFuture(m_Context.ImageInstallationWork.LicenseCheckFuture);
+        ConsumeFuture(m_Context.ImageInstallationWork.LicenseAcceptFuture);
+        ConsumeFuture(m_Context.SdkManagerWork.List.Future);
+        ConsumeFuture(m_Context.SdkManagerWork.OperationFuture);
+        ConsumeFuture(m_Context.SdkManagerWork.LicenseCheckFuture);
+        ConsumeFuture(m_Context.SdkManagerWork.LicenseAcceptFuture);
+        ConsumeFuture(m_Context.SdkManagerWork.BootstrapFuture);
+        ConsumeFuture(m_Context.JdkDownloadWork.List.Future);
+        ConsumeFuture(m_Context.JdkDownloadWork.InstallFuture);
+        ConsumeFuture(m_Context.Jobs.AvdCreation.Future);
+        ConsumeFuture(m_Context.Jobs.AvdDeletion.Future);
+        ConsumeFuture(m_Context.Jobs.AvdWipe.Future);
+        ConsumeFuture(m_Context.DiskUsage.Future);
+    }
+
+    void Application::m_Shutdown() {
+        if (m_ShutdownCompleted) {
+            return;
+        }
+        m_ShutdownCompleted = true;
+
+        m_DrainAsyncWork();
+        PullRunningSharedFoldersBeforeShutdown(m_Context);
 
         if (m_ImGuiBackendsInitialized) {
             ImGui_ImplOpenGL3_Shutdown();
@@ -652,9 +726,7 @@ namespace CoreDeck {
                     m_Context.UI.ShowPreferences = true;
                     break;
                 case NativeMenuAction::Quit:
-                    if (m_Window != nullptr) {
-                        glfwSetWindowShouldClose(m_Window, GLFW_TRUE);
-                    }
+                    RequestQuitConfirmation(m_Context);
                     break;
                 case NativeMenuAction::ToggleAvdList:
                     m_Context.UI.ShowAvdListPanel = !m_Context.UI.ShowAvdListPanel;
@@ -682,9 +754,6 @@ namespace CoreDeck {
                     break;
                 case NativeMenuAction::StorageOverview:
                     m_Context.UI.ShowStorageDialog = true;
-                    break;
-                case NativeMenuAction::DeviceExplorer:
-                    OpenDeviceExplorer(m_Context);
                     break;
                 case NativeMenuAction::OpenSharedFolderHost:
                     OpenSharedFolderOnHost(m_Context);

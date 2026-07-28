@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <ctime>
+#include <future>
 #include <optional>
 
 #include "imgui.h"
@@ -73,6 +74,17 @@ namespace CoreDeck {
 
         bool IsCancelRequested(const std::shared_ptr<std::atomic<bool>> &cancel) {
             return cancel != nullptr && cancel->load();
+        }
+
+        template <typename T>
+        void ConsumeFuture(std::future<T> &future) {
+            if (!future.valid()) {
+                return;
+            }
+            try {
+                (void)future.get();
+            } catch (...) {
+            }
         }
 
         std::string DeviceDisplayLabel(const AdbDevice &device) {
@@ -632,18 +644,21 @@ namespace CoreDeck {
             if (work.CancelRequested != nullptr) {
                 work.CancelRequested->store(true);
             }
-            if (work.DeviceList.Future.valid()) {
-                work.DeviceList.Future.wait();
-            }
-            if (work.FileList.Future.valid()) {
-                work.FileList.Future.wait();
-            }
-            if (work.OperationFuture.valid()) {
-                work.OperationFuture.wait();
-            }
+            ConsumeFuture(work.DeviceList.Future);
+            ConsumeFuture(work.FileList.Future);
+            ConsumeFuture(work.OperationFuture);
             work.DeviceList.Loading = false;
             work.FileList.Loading = false;
             work.OperationBusy = false;
+        }
+
+        void CompleteDeviceExplorerTarget(Context &context, std::string &serial, std::string &avdName) {
+            if (avdName.empty()) {
+                avdName = SelectedAvdName(context);
+            }
+            if (serial.empty() && !avdName.empty()) {
+                serial = EmulatorSerialForConsolePort(context.Host.Manager.GetConsolePort(avdName));
+            }
         }
 
         std::shared_ptr<Context::DeviceExplorerTabState> FindOrCreateTab(
@@ -651,23 +666,11 @@ namespace CoreDeck {
             std::string serial,
             std::string avdName
         ) {
-            if (avdName.empty()) {
-                avdName = SelectedAvdName(context);
-            }
-            if (serial.empty() && !avdName.empty()) {
-                serial = EmulatorSerialForConsolePort(context.Host.Manager.GetConsolePort(avdName));
-            }
+            CompleteDeviceExplorerTarget(context, serial, avdName);
 
             const std::string key = DeviceExplorerTabKey(serial, avdName);
             for (auto &tab: context.DeviceExplorer.Tabs) {
                 if (tab != nullptr && tab->Key == key) {
-                    if (!serial.empty()) {
-                        tab->PreferredSerial = serial;
-                    }
-                    if (!avdName.empty()) {
-                        tab->PreferredAvdName = avdName;
-                        tab->Title = avdName;
-                    }
                     return tab;
                 }
             }
@@ -679,6 +682,20 @@ namespace CoreDeck {
             tab->PreferredAvdName = avdName;
             context.DeviceExplorer.Tabs.push_back(tab);
             return tab;
+        }
+
+        void UpdateTabTarget(
+            Context::DeviceExplorerTabState &tab,
+            const std::string &serial,
+            const std::string &avdName
+        ) {
+            if (!serial.empty()) {
+                tab.PreferredSerial = serial;
+            }
+            if (!avdName.empty()) {
+                tab.PreferredAvdName = avdName;
+            }
+            tab.Title = DeviceExplorerTabTitle(serial, avdName);
         }
 
         void PollAllDeviceExplorerWork(Context &context) {
@@ -695,15 +712,22 @@ namespace CoreDeck {
         }
 
         std::shared_ptr<Context::DeviceExplorerTabState> ResolveSelectedExplorerTab(Context &context) {
-            if (!context.DeviceExplorer.Activated || context.DeviceExplorer.ActiveTabKey.empty()) {
+            const auto target = SelectedRunningAvd(context);
+            if (!target) {
+                context.DeviceExplorer.ActiveTabKey.clear();
                 return nullptr;
             }
-            for (auto &tab: context.DeviceExplorer.Tabs) {
-                if (tab != nullptr && tab->Key == context.DeviceExplorer.ActiveTabKey) {
-                    return tab;
-                }
+
+            auto tab = FindOrCreateTab(context, target->Serial, target->Name);
+            const bool targetChanged = context.DeviceExplorer.ActiveTabKey != tab->Key ||
+                                       tab->PreferredSerial != target->Serial ||
+                                       tab->PreferredAvdName != target->Name;
+            UpdateTabTarget(*tab, target->Serial, target->Name);
+            context.DeviceExplorer.ActiveTabKey = tab->Key;
+            if (targetChanged) {
+                tab->RefreshDevicesRequested = true;
             }
-            return nullptr;
+            return tab;
         }
 
         void CancelAllTabs(Context &context) {
@@ -714,16 +738,11 @@ namespace CoreDeck {
             }
             context.DeviceExplorer.Tabs.clear();
             context.DeviceExplorer.ActiveTabKey.clear();
-            context.DeviceExplorer.Activated = false;
         }
 
         void DrawDeviceExplorerPanel(Context &context, Context::DeviceExplorerTabState *work) {
             if (work == nullptr) {
-                if (!context.DeviceExplorer.Error.empty()) {
-                    ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(context.DeviceExplorer.Error.c_str()));
-                } else {
-                    ImGui::TextDisabled("%s", Tr("Select a running AVD first."));
-                }
+                ImGui::TextDisabled("%s", Tr("Select a running AVD first."));
                 return;
             }
 
@@ -779,8 +798,8 @@ namespace CoreDeck {
             avdName = target->Name;
         }
 
+        CompleteDeviceExplorerTarget(context, serial, avdName);
         auto tab = FindOrCreateTab(context, serial, avdName);
-        context.DeviceExplorer.Activated = true;
         context.DeviceExplorer.ActiveTabKey = tab->Key;
         context.DeviceExplorer.Status.clear();
         context.DeviceExplorer.Error.clear();
@@ -791,13 +810,7 @@ namespace CoreDeck {
         }
         context.DeviceExplorer.Open = true;
         context.DeviceExplorer.FocusRequested = true;
-        if (!serial.empty()) {
-            tab->PreferredSerial = serial;
-        }
-        if (!avdName.empty()) {
-            tab->PreferredAvdName = avdName;
-            tab->Title = avdName;
-        }
+        UpdateTabTarget(*tab, serial, avdName);
         if (!preferredPath.empty()) {
             tab->CurrentPath = NormalizeDevicePath(preferredPath);
             CopyPathToBuffer(*tab);
@@ -850,15 +863,15 @@ namespace CoreDeck {
 
     void CancelDeviceExplorerWork(Context &context) {
         CancelAllTabs(context);
-        if (context.DeviceExplorer.OpenInEmulatorFuture.valid()) {
-            context.DeviceExplorer.OpenInEmulatorFuture.wait();
-        }
+        ConsumeFuture(context.DeviceExplorer.OpenInEmulatorFuture);
         context.DeviceExplorer.OpenInEmulatorBusy = false;
     }
 
     void PollDeviceExplorer(Context &context) {
         PollSharedFolderOpen(context);
-        PollAllDeviceExplorerWork(context);
+        if (context.UI.ShowDeviceExplorerPanel) {
+            PollAllDeviceExplorerWork(context);
+        }
     }
 
     void BuildDeviceExplorerWindow(Context &context) {
@@ -866,6 +879,7 @@ namespace CoreDeck {
         if (!context.UI.ShowDeviceExplorerPanel) {
             return;
         }
+        auto tab = ResolveSelectedExplorerTab(context);
 
         const ImGuiID dockId = context.UI.DeviceExplorerDockId != 0
                                   ? context.UI.DeviceExplorerDockId
@@ -893,7 +907,6 @@ namespace CoreDeck {
             }
         }
 
-        auto tab = ResolveSelectedExplorerTab(context);
         DrawDeviceExplorerPanel(context, tab.get());
 
         ImGui::End();

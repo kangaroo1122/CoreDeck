@@ -209,6 +209,7 @@ add_executable(${PROJECT_NAME}
     src/gui/windows/main_menu_bar.cpp
     src/gui/windows/onboarding.cpp
     src/gui/windows/preferences.cpp
+    src/gui/windows/quit_confirm.cpp
     src/gui/windows/rename_avd.cpp
     src/gui/windows/sdk_banner.cpp
     src/gui/windows/skin.cpp

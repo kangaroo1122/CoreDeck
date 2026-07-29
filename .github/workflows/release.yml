@@ -272,8 +272,9 @@ jobs:
             - `coredeck-windows-x86-64.zip` - Portable version
 
             **Windows (ARM64):**
-            - `coredeck-windows-arm64.msi` - Professional installer (recommended)
+            - `coredeck-windows-arm64.msi` - Professional installer
             - `coredeck-windows-arm64.zip` - Portable version
+            - Note: Google's Android SDK and Emulator do not currently provide official Windows ARM64 support, so this build is provided for compatibility testing only.
 
             **macOS (Apple Silicon):** `coredeck-darwin-arm64-unsigned.dmg`
 

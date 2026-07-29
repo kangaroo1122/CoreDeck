@@ -17,14 +17,14 @@
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
 [![License](https://img.shields.io/github/license/kangaroo1122/CoreDeck)](LICENSE)
 
-[CoreDeck](https://github.com/kangaroo1122/CoreDeck) is an open source native desktop application around your Android SDK’s official
-emulator, avdmanager, and sdkmanager binaries — running them for you in one place, through a friendly GUI, so you get
-the same results without hand-writing commands. Use it for everyday work without opening Android Studio. Built with
-C++20 and Dear ImGui.
+[CoreDeck](https://github.com/kangaroo1122/CoreDeck) is an open source native desktop application around your Android SDK's official
+emulator, adb, avdmanager, and sdkmanager tools. It gives you one focused GUI for AVD management, SDK packages,
+emulator launch options, live logs, device file browsing, storage inspection, and per-AVD shared folders without opening
+Android Studio for everyday emulator work. Built with C++20 and Dear ImGui.
 
 > [!IMPORTANT]
-> You still need the Android SDK and its tooling on your machine. Installing Android Studio is the usual way to get
-> them.
+> You still need an Android SDK. CoreDeck can guide first-run SDK setup and install the base command-line tools, or use
+> an SDK already installed by Android Studio.
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/cade70a8-c7b4-47ac-98c1-6b8986893dcc" controls width="720"></video>
@@ -32,22 +32,23 @@ C++20 and Dear ImGui.
 
 ## Features
 
-- **AVD Management** — Create, delete, and browse your Android Virtual Devices
-- **System Image Management** — List, install, and uninstall Android system images with ease
-- **Emulator Control** — Launch, stop, or wipe & run AVDs with one click
-- **Per-AVD Options** — Configure GPU, RAM, CPU cores, camera, network, boot mode, and more
-- **Live Log Viewer** — Stream emulator output in real time with search and auto-scroll
-- **Storage Overview** — Inspect per-AVD disk usage and clear heavy or unused data
-- **SDK Auto-Detection** — Picks up your Android SDK from environment variables or standard paths
-- **Guided Setup** — Onboarding wizard to configure the SDK on first run
-- **Cross-Platform** — Runs natively on Windows, macOS, and Linux
+- **AVD Management** — Create, rename, delete, sort, search, and inspect Android Virtual Devices.
+- **Emulator Control** — Launch, stop, cold boot, wipe & run, and tune per-AVD emulator options such as GPU, RAM, CPU, camera, network, boot, and timezone.
+- **SDK Package Management** — Install and remove Android SDK platforms, system images, platform-tools, emulator, and command-line tools from Preferences.
+- **Guided SDK/JDK Setup** — Configure an existing SDK, install base SDK tools during onboarding, and use a managed JDK 17+ without changing system Java.
+- **Device Explorer** — Browse files on the selected running AVD, upload/download files or folders, create folders, and delete safely.
+- **Per-AVD Shared Folders** — Open host or emulator shared folders and sync regular files incrementally with conflict-preserving copies.
+- **Output Log Viewer** — Stream emulator output with search, navigation, selectable text, auto-scroll, and horizontal scrolling for long lines.
+- **Five-Panel Workspace** — Toggle AVDs, Options, Details, Output Log, and Device Explorer independently with persisted split ratios.
+- **Storage Overview** — Inspect per-AVD disk usage and clear heavy or unused data.
+- **Preferences & Localization** — Switch theme/language, choose CJK UI fonts, adjust font size, and restore window size/maximized state across restarts.
 
 ## Preview
 
 |                                AVD List & Options                                 |                                    Running Emulator & Logs                                    |
 | :-------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------: |
 | <img src="media/screenshots/list-avds.png" alt="AVD List & Options" width="400"/> | <img src="media/screenshots/run-selected-avd.png" alt="Running Emulator & Logs" width="400"/> |
-|                 _Browse AVDs with per-device options and details_                 |                      _Live emulator output with search and auto-scroll_                       |
+|                 _Browse AVDs with per-device options and details_                 |                 _Launch emulators and inspect logs, status, and running output_               |
 
 |                                 Create New AVD                                 |                                  Device Profile Selection                                   |
 | :----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------: |
@@ -73,7 +74,8 @@ Each release artifact ships with a matching `.sha256` checksum for download veri
 
 ## Requirements
 
-- **Android SDK** with `emulator`, `avdmanager`, and `sdkmanager` available (typically installed via Android Studio).
+- **Android SDK** with `cmdline-tools`, `platform-tools`, and `emulator` installed, or an empty directory where CoreDeck can install the base SDK tools.
+- **Java/JDK 17+** is recommended for modern Android SDK tools. CoreDeck can use a configured JDK home or download a managed user-local JDK.
 - **OS:** Windows 10/11, macOS 12+ (Apple Silicon), or a recent Linux distribution.
 
 ## Build from source
@@ -148,16 +150,18 @@ The first build is a full from-scratch compile of all bundled dependencies (sent
 ## FAQ
 
 **The app starts but says my Android SDK isn't detected.**
-CoreDeck looks at `ANDROID_HOME` / `ANDROID_SDK_ROOT` and standard install paths. If your SDK lives elsewhere, point it
-at the right location through the onboarding wizard or set the environment variable before launching.
+CoreDeck looks at `ANDROID_HOME` / `ANDROID_SDK_ROOT`, standard install paths, and any SDK path saved through onboarding
+or Preferences. The selected SDK should contain `cmdline-tools`, `platform-tools`, and `emulator`; if the tools are
+missing, CoreDeck can install the base packages from the Android SDK preferences.
 
 **An emulator won't launch / boots forever.**
-Make sure the matching system image is installed and that hardware acceleration is enabled (HAXM/Hyper-V on Windows,
-Hypervisor.framework on macOS, KVM on Linux). The live log viewer usually shows the underlying error from `emulator`.
+Make sure the matching system image is installed and that hardware acceleration is enabled (Windows Hypervisor Platform
+or Hyper-V on Windows, Hypervisor.framework on macOS, KVM on Linux). The live log viewer usually shows the underlying error from `emulator`.
+If Quick Boot restores stale device state, enable the per-AVD Cold Boot option.
 
 **Does CoreDeck replace Android Studio?**
 No — it wraps the same official command-line tools that Android Studio uses, so you still need the Android SDK
-installed. CoreDeck just gives you a focused GUI for AVD and emulator workflows.
+installed. CoreDeck just gives you a focused GUI for SDK, AVD, emulator, logs, device files, and shared-folder workflows.
 
 ## Contributing
 

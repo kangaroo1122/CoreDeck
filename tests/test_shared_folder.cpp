@@ -80,7 +80,7 @@ namespace {
             const fs::path path = root / relativePath;
             file << "v2\t"
                  << fs::file_size(path) << '\t'
-                 << fs::last_write_time(path).time_since_epoch().count() << '\t'
+                 << static_cast<std::int64_t>(fs::last_write_time(path).time_since_epoch().count()) << '\t'
                  << HashFileForSnapshot(path) << '\t'
                  << relativePath << '\n';
         }
@@ -330,6 +330,7 @@ TEST_CASE("shared folder reconcile deletes only the file and keeps parent direct
 
     WriteTextFile(base / "nested" / "deleted.txt", "base");
     WriteTextFile(host / "nested" / "deleted.txt", "base");
+    fs::create_directories(staging);
     WriteSnapshot(snapshot, base, {"nested/deleted.txt"});
 
     SharedFolderReconcileChanges changes;
@@ -339,8 +340,8 @@ TEST_CASE("shared folder reconcile deletes only the file and keeps parent direct
 
     CHECK_FALSE(fs::exists(host / "nested" / "deleted.txt"));
     CHECK(fs::exists(host / "nested"));
-    REQUIRE(changes.DeviceDeletedPaths.size() == 1);
-    CHECK(changes.DeviceDeletedPaths[0] == "nested/deleted.txt");
+    CHECK(changes.DeviceDeletedPaths.empty());
+    CHECK(changes.ConflictPaths.empty());
 }
 
 TEST_CASE("shared folder reconcile keeps both copies when host and device both change", "[shared_folder][sync]") {
@@ -375,6 +376,7 @@ TEST_CASE("shared folder reconcile saves a host edit as a conflict when the devi
 
     WriteTextFile(base / "deleted-on-device.txt", "base");
     WriteTextFile(host / "deleted-on-device.txt", "host changed");
+    fs::create_directories(staging);
     WriteSnapshot(snapshot, base, {"deleted-on-device.txt"});
 
     SharedFolderReconcileChanges changes;

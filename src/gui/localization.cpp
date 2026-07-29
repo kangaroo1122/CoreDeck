@@ -59,6 +59,7 @@ namespace CoreDeck {
             {"SDK Manager was not found.", "未找到 SDK Manager。"},
             {"Could not fetch SDK package lists. Check your network connection.", "无法获取 SDK 软件包列表。请检查网络连接。"},
             {"Command-line tools are installed. Install emulator and platform-tools below.", "命令行工具已安装。请在下方安装 emulator 和 platform-tools。"},
+            {"Downloaded command-line tools failed the official checksum or size check.", "下载的命令行工具未通过官方校验和大小检查。"},
             {"Command-line tools are missing. Install them to manage SDK packages.", "缺少命令行工具。安装后才能管理 SDK 软件包。"},
             {"Install command-line tools and required SDK packages before applying as a working SDK.", "请先安装命令行工具和必要的 SDK 软件包，再作为可用 SDK 应用。"},
             {"Install Command-line Tools", "安装命令行工具"},

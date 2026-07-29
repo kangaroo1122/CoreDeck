@@ -5,11 +5,13 @@
 #include "sdk_bootstrap.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -261,6 +263,203 @@ namespace CoreDeck {
                 result += packages[i];
             }
             return result;
+        }
+
+        constexpr const char *COMMAND_LINE_TOOLS_REPOSITORY_URL =
+            "https://dl.google.com/android/repository/repository2-3.xml";
+        constexpr const char *COMMAND_LINE_TOOLS_DOWNLOAD_ROOT =
+            "https://dl.google.com/android/repository/";
+
+        std::string XmlTagValue(const std::string &body, const std::string_view tag, const std::size_t start) {
+            const std::string open = StrConcat("<", std::string(tag), ">");
+            const std::string close = StrConcat("</", std::string(tag), ">");
+            const std::size_t valueStart = body.find(open, start);
+            if (valueStart == std::string::npos) {
+                return "";
+            }
+            const std::size_t contentStart = valueStart + open.size();
+            const std::size_t contentEnd = body.find(close, contentStart);
+            if (contentEnd == std::string::npos) {
+                return "";
+            }
+            return body.substr(contentStart, contentEnd - contentStart);
+        }
+
+        std::string XmlTagValueWithAttributes(
+            const std::string &body,
+            const std::string_view tag,
+            const std::size_t start
+        ) {
+            const std::string prefix = StrConcat("<", std::string(tag));
+            const std::size_t tagStart = body.find(prefix, start);
+            if (tagStart == std::string::npos) {
+                return "";
+            }
+            const std::size_t openEnd = body.find('>', tagStart);
+            if (openEnd == std::string::npos) {
+                return "";
+            }
+            const std::string close = StrConcat("</", std::string(tag), ">");
+            const std::size_t contentStart = openEnd + 1;
+            const std::size_t contentEnd = body.find(close, contentStart);
+            if (contentEnd == std::string::npos) {
+                return "";
+            }
+            return body.substr(contentStart, contentEnd - contentStart);
+        }
+
+        int XmlTagInt(const std::string &body, const std::string_view tag, const std::size_t start) {
+            const std::string value = XmlTagValue(body, tag, start);
+            if (value.empty()) {
+                return 0;
+            }
+            return static_cast<int>(std::strtol(value.c_str(), nullptr, 10));
+        }
+
+        std::string CurrentCommandLineToolsHostOs() {
+#if defined(_WIN32)
+            return "windows";
+#elif defined(__APPLE__)
+            return "macosx";
+#else
+            return "linux";
+#endif
+        }
+
+        std::string CurrentCommandLineToolsHostArch() {
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(_M_ARM64))
+            return "aarch64";
+#elif defined(__APPLE__)
+            return "x64";
+#else
+            return "";
+#endif
+        }
+
+        class Sha1 {
+        public:
+            void Update(const std::uint8_t *data, const std::size_t size) {
+                m_TotalBytes += size;
+                std::size_t offset = 0;
+                while (offset < size) {
+                    const std::size_t copySize = std::min(size - offset, m_Buffer.size() - m_BufferSize);
+                    std::copy_n(data + offset, copySize, m_Buffer.data() + m_BufferSize);
+                    m_BufferSize += copySize;
+                    offset += copySize;
+                    if (m_BufferSize == m_Buffer.size()) {
+                        ProcessBlock(m_Buffer.data());
+                        m_BufferSize = 0;
+                    }
+                }
+            }
+
+            std::string Finalize() {
+                const std::uint64_t bitLength = m_TotalBytes * 8;
+                m_Buffer[m_BufferSize++] = 0x80;
+                if (m_BufferSize > 56) {
+                    std::fill(m_Buffer.begin() + static_cast<std::ptrdiff_t>(m_BufferSize), m_Buffer.end(), 0);
+                    ProcessBlock(m_Buffer.data());
+                    m_BufferSize = 0;
+                }
+                std::fill(m_Buffer.begin() + static_cast<std::ptrdiff_t>(m_BufferSize), m_Buffer.begin() + 56, 0);
+                for (int i = 0; i < 8; i++) {
+                    m_Buffer[56 + i] = static_cast<std::uint8_t>(bitLength >> (56 - (i * 8)));
+                }
+                ProcessBlock(m_Buffer.data());
+
+                std::string result;
+                result.reserve(40);
+                constexpr char HEX[] = "0123456789abcdef";
+                for (const std::uint32_t value: m_State) {
+                    for (int shift = 28; shift >= 0; shift -= 4) {
+                        result.push_back(HEX[(value >> shift) & 0x0F]);
+                    }
+                }
+                return result;
+            }
+
+        private:
+            static std::uint32_t RotateLeft(const std::uint32_t value, const int count) {
+                return (value << count) | (value >> (32 - count));
+            }
+
+            void ProcessBlock(const std::uint8_t *block) {
+                std::array<std::uint32_t, 80> words{};
+                for (int i = 0; i < 16; i++) {
+                    words[i] = (static_cast<std::uint32_t>(block[i * 4]) << 24) |
+                               (static_cast<std::uint32_t>(block[i * 4 + 1]) << 16) |
+                               (static_cast<std::uint32_t>(block[i * 4 + 2]) << 8) |
+                               static_cast<std::uint32_t>(block[i * 4 + 3]);
+                }
+                for (int i = 16; i < 80; i++) {
+                    words[i] = RotateLeft(words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16], 1);
+                }
+
+                std::uint32_t a = m_State[0];
+                std::uint32_t b = m_State[1];
+                std::uint32_t c = m_State[2];
+                std::uint32_t d = m_State[3];
+                std::uint32_t e = m_State[4];
+                for (int i = 0; i < 80; i++) {
+                    std::uint32_t function = 0;
+                    std::uint32_t constant = 0;
+                    if (i < 20) {
+                        function = (b & c) | ((~b) & d);
+                        constant = 0x5A827999;
+                    } else if (i < 40) {
+                        function = b ^ c ^ d;
+                        constant = 0x6ED9EBA1;
+                    } else if (i < 60) {
+                        function = (b & c) | (b & d) | (c & d);
+                        constant = 0x8F1BBCDC;
+                    } else {
+                        function = b ^ c ^ d;
+                        constant = 0xCA62C1D6;
+                    }
+                    const std::uint32_t next = RotateLeft(a, 5) + function + e + constant + words[i];
+                    e = d;
+                    d = c;
+                    c = RotateLeft(b, 30);
+                    b = a;
+                    a = next;
+                }
+                m_State[0] += a;
+                m_State[1] += b;
+                m_State[2] += c;
+                m_State[3] += d;
+                m_State[4] += e;
+            }
+
+            std::array<std::uint32_t, 5> m_State = {
+                0x67452301,
+                0xEFCDAB89,
+                0x98BADCFE,
+                0x10325476,
+                0xC3D2E1F0,
+            };
+            std::array<std::uint8_t, 64> m_Buffer{};
+            std::size_t m_BufferSize = 0;
+            std::uint64_t m_TotalBytes = 0;
+        };
+
+        std::string Sha1ForFile(const std::string &path) {
+            std::ifstream input(path, std::ios::binary);
+            if (!input.is_open()) {
+                return "";
+            }
+            Sha1 sha1;
+            std::array<char, 64 * 1024> buffer{};
+            while (input) {
+                input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+                const std::streamsize count = input.gcount();
+                if (count > 0) {
+                    sha1.Update(
+                        reinterpret_cast<const std::uint8_t *>(buffer.data()),
+                        static_cast<std::size_t>(count)
+                    );
+                }
+            }
+            return sha1.Finalize();
         }
 
 #if defined(_WIN32)
@@ -568,6 +767,89 @@ namespace CoreDeck {
 #endif
     }
 
+    namespace detail { // NOLINT(readability-identifier-naming)
+        std::optional<CommandLineToolsPackage> ParseCommandLineToolsPackage(
+            const std::string &body,
+            const std::string &hostOs,
+            const std::string &hostArch
+        ) {
+            std::optional<CommandLineToolsPackage> result;
+            int selectedMajor = -1;
+            int selectedMinor = -1;
+            std::size_t packageStart = 0;
+
+            while ((packageStart = body.find("<remotePackage", packageStart)) != std::string::npos) {
+                const std::size_t packageTagEnd = body.find('>', packageStart);
+                const std::size_t packageEnd = body.find("</remotePackage>", packageTagEnd);
+                if (packageTagEnd == std::string::npos || packageEnd == std::string::npos) {
+                    break;
+                }
+
+                const std::string packageTag = body.substr(packageStart, packageTagEnd - packageStart + 1);
+                const bool isLatest = packageTag.find("path=\"cmdline-tools;latest\"") != std::string::npos;
+                const bool isObsolete = packageTag.find("obsolete=\"true\"") != std::string::npos;
+                if (isLatest && !isObsolete) {
+                    const int major = XmlTagInt(body, "major", packageStart);
+                    const int minor = XmlTagInt(body, "minor", packageStart);
+                    if (major > selectedMajor || (major == selectedMajor && minor > selectedMinor)) {
+                        const std::string packageBody = body.substr(packageTagEnd + 1, packageEnd - packageTagEnd - 1);
+                        std::size_t archiveStart = 0;
+                        while ((archiveStart = packageBody.find("<archive>", archiveStart)) != std::string::npos) {
+                            const std::size_t archiveTagEnd = packageBody.find('>', archiveStart);
+                            const std::size_t archiveEnd = packageBody.find("</archive>", archiveTagEnd);
+                            if (archiveTagEnd == std::string::npos || archiveEnd == std::string::npos) {
+                                break;
+                            }
+
+                            const std::string archiveBody = packageBody.substr(archiveTagEnd + 1, archiveEnd - archiveTagEnd - 1);
+                            if (XmlTagValue(archiveBody, "host-os", 0) == hostOs &&
+                                (hostArch.empty() || XmlTagValue(archiveBody, "host-arch", 0) == hostArch)) {
+                                const std::string url = XmlTagValue(archiveBody, "url", 0);
+                                if (!url.empty()) {
+                                    CommandLineToolsPackage package;
+                                    package.DownloadUrl = url.starts_with("https://")
+                                                               ? url
+                                                               : StrConcat(COMMAND_LINE_TOOLS_DOWNLOAD_ROOT, url);
+                                    package.Sha1 = XmlTagValueWithAttributes(archiveBody, "checksum", 0);
+                                    package.SizeBytes = static_cast<std::uintmax_t>(std::strtoull(
+                                        XmlTagValue(archiveBody, "size", 0).c_str(),
+                                        nullptr,
+                                        10
+                                    ));
+                                    result = std::move(package);
+                                    selectedMajor = major;
+                                    selectedMinor = minor;
+                                    break;
+                                }
+                            }
+                            archiveStart = archiveEnd + std::string("</archive>").size();
+                        }
+                    }
+                }
+                packageStart = packageEnd + std::string("</remotePackage>").size();
+            }
+
+            return result;
+        }
+
+        bool FileMatchesCommandLineToolsPackage(
+            const std::string &path,
+            const CommandLineToolsPackage &package
+        ) {
+            std::error_code ec;
+            if (!std::filesystem::exists(path, ec) || ec) {
+                return false;
+            }
+            if (package.SizeBytes > 0 && std::filesystem::file_size(path, ec) != package.SizeBytes) {
+                return false;
+            }
+            if (ec) {
+                return false;
+            }
+            return package.Sha1.empty() || Sha1ForFile(path) == LowerCopy(package.Sha1);
+        }
+    }
+
     bool CanInstallAndroidSdkIntoDirectory(const std::string &sdkRoot) {
         const std::string normalized = Paths::NormalizePath(sdkRoot);
         if (normalized.empty()) {
@@ -682,7 +964,25 @@ namespace CoreDeck {
             }
 
             std::string error;
-            const std::string url = CommandLineToolsDownloadUrl();
+            std::string url = CommandLineToolsDownloadUrl();
+            std::optional<CommandLineToolsPackage> metadataPackage;
+            const std::filesystem::path metadataPath = tempDir / "repository.xml";
+            if (DownloadFile(COMMAND_LINE_TOOLS_REPOSITORY_URL, metadataPath, progress, error)) {
+                std::ifstream metadata(metadataPath);
+                std::string body(
+                    (std::istreambuf_iterator<char>(metadata)),
+                    std::istreambuf_iterator<char>()
+                );
+                metadataPackage = detail::ParseCommandLineToolsPackage(
+                    body,
+                    CurrentCommandLineToolsHostOs(),
+                    CurrentCommandLineToolsHostArch()
+                );
+                if (metadataPackage.has_value()) {
+                    url = metadataPackage->DownloadUrl;
+                }
+            }
+            error.clear();
             SetProgress(progress, 0.05F, "Downloading command-line tools...", url);
             if (!DownloadFile(url, zipPath, progress, error)) {
                 std::filesystem::remove_all(tempDir, ec);
@@ -690,6 +990,11 @@ namespace CoreDeck {
                     return Cancelled(progress);
                 }
                 return Fail(progress, error.empty() ? "Command-line tools download failed." : error);
+            }
+            if (metadataPackage.has_value() &&
+                !detail::FileMatchesCommandLineToolsPackage(zipPath.string(), *metadataPackage)) {
+                std::filesystem::remove_all(tempDir, ec);
+                return Fail(progress, "Downloaded command-line tools failed the official checksum or size check.");
             }
             if (IsCancelRequested(progress)) {
                 std::filesystem::remove_all(tempDir, ec);

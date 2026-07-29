@@ -252,7 +252,7 @@ namespace CoreDeck {
         }
 
         const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5F, 0.5F));
         ImGui::SetNextWindowSize(ImVec2(Em(74.0F), 0), ImGuiCond_Appearing);
 
         if (RoundedBeginPopupModal(TITLE, &context.UI.ShowAvdSnapshotsDialog, WINDOW_AUTO_RESIZE_FLAGS)) {

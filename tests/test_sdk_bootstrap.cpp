@@ -17,6 +17,64 @@ namespace {
     }
 }
 
+TEST_CASE("Command-line tools metadata selects the newest matching archive", "[sdk_bootstrap][parse]") {
+    const std::string xml = R"xml(
+        <remotePackage path="cmdline-tools;latest">
+            <revision><major>21</major><minor>0</minor></revision>
+            <archives>
+                <archive><complete><size>10</size><checksum type="sha1">old</checksum><url>old.zip</url></complete><host-os>macosx</host-os><host-arch>aarch64</host-arch></archive>
+            </archives>
+        </remotePackage>
+        <remotePackage path="cmdline-tools;latest">
+            <revision><major>22</major><minor>0</minor></revision>
+            <archives>
+                <archive><complete><size>20</size><checksum type="sha1">new</checksum><url>new.zip</url></complete><host-os>macosx</host-os><host-arch>aarch64</host-arch></archive>
+                <archive><complete><size>30</size><checksum type="sha1">wrong-arch</checksum><url>wrong.zip</url></complete><host-os>macosx</host-os><host-arch>x64</host-arch></archive>
+            </archives>
+        </remotePackage>
+    )xml";
+
+    const auto package = detail::ParseCommandLineToolsPackage(xml, "macosx", "aarch64");
+
+    REQUIRE(package.has_value());
+    REQUIRE(package->DownloadUrl == "https://dl.google.com/android/repository/new.zip");
+    REQUIRE(package->Sha1 == "new");
+    REQUIRE(package->SizeBytes == 20);
+}
+
+TEST_CASE("Command-line tools metadata returns no package for an unsupported host", "[sdk_bootstrap][parse]") {
+    const std::string xml = R"xml(
+        <remotePackage path="cmdline-tools;latest">
+            <revision><major>22</major><minor>0</minor></revision>
+            <archives>
+                <archive><complete><size>20</size><checksum type="sha1">sha</checksum><url>linux.zip</url></complete><host-os>linux</host-os></archive>
+            </archives>
+        </remotePackage>
+    )xml";
+
+    REQUIRE_FALSE(detail::ParseCommandLineToolsPackage(xml, "windows").has_value());
+}
+
+TEST_CASE("Command-line tools package verification checks size and SHA-1", "[sdk_bootstrap][verify]") {
+    const std::filesystem::path tempDir = MakeTempDir("coredeck_cmdline_tools_verify");
+    const std::filesystem::path archive = tempDir / "package.zip";
+    std::ofstream(archive, std::ios::binary) << "abc";
+
+    CommandLineToolsPackage package;
+    package.SizeBytes = 3;
+    package.Sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d";
+    REQUIRE(detail::FileMatchesCommandLineToolsPackage(archive.string(), package));
+
+    package.SizeBytes = 4;
+    REQUIRE_FALSE(detail::FileMatchesCommandLineToolsPackage(archive.string(), package));
+    package.SizeBytes = 3;
+    package.Sha1 = "0000000000000000000000000000000000000000";
+    REQUIRE_FALSE(detail::FileMatchesCommandLineToolsPackage(archive.string(), package));
+
+    std::error_code ec;
+    std::filesystem::remove_all(tempDir, ec);
+}
+
 TEST_CASE("Android SDK bootstrap directory must be empty missing or contain sdkmanager", "[sdk_bootstrap][install]") {
     const std::filesystem::path nonEmptyDir = MakeTempDir("coredeck_non_empty_sdk_target");
     std::ofstream((nonEmptyDir / "note.txt").string()) << "keep me";

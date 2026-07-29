@@ -1,3 +1,8 @@
+## [v0.10.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.10.0-beta.2) — 2026-07-29
+
+- Keep the snapshot dialog centered while asynchronous results change its height
+- Discover the latest Android SDK Command-line Tools from Google's official repository metadata with a fixed-version fallback and archive verification
+
 ## [v0.10.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.10.0-beta.1) — 2026-07-29
 
 - Add AVD snapshot management with snapshot size and modified-time details, refresh support, guarded deletion, and running-emulator protection

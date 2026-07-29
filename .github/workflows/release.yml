@@ -34,9 +34,14 @@ jobs:
             artifact_name: coredeck-windows-arm64
             asset_name: coredeck-windows-arm64
             target_arch: arm64
+          - os: macos-15-intel
+            artifact_name: coredeck-darwin-x86-64
+            asset_name: coredeck-darwin-x86-64-unsigned.dmg
+            target_arch: x86-64
           - os: macos-latest
             artifact_name: coredeck-darwin-arm64
             asset_name: coredeck-darwin-arm64-unsigned.dmg
+            target_arch: arm64
 
     steps:
       - name: Checkout code
@@ -275,6 +280,8 @@ jobs:
             - `coredeck-windows-arm64.msi` - Professional installer
             - `coredeck-windows-arm64.zip` - Portable version
             - Note: Google's Android SDK and Emulator do not currently provide official Windows ARM64 support, so this build is provided for compatibility testing only.
+
+            **macOS (Intel x86-64):** `coredeck-darwin-x86-64-unsigned.dmg`
 
             **macOS (Apple Silicon):** `coredeck-darwin-arm64-unsigned.dmg`
 

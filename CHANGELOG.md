@@ -1,3 +1,7 @@
+## [v0.9.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.2) — 2026-07-29
+
+- Add macOS Intel x86-64 build and unsigned DMG release artifact alongside the Apple Silicon build
+
 ## [v0.9.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.1) — 2026-07-28
 
 - Restore the main window size and maximized state after restarting CoreDeck

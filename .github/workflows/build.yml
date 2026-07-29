@@ -22,9 +22,14 @@ jobs:
             build_type: Release
             artifact_name: coredeck-windows-arm64
             target_arch: arm64
+          - os: macos-15-intel
+            build_type: Release
+            artifact_name: coredeck-darwin-x86-64
+            target_arch: x86-64
           - os: macos-latest
             build_type: Release
             artifact_name: coredeck-darwin-arm64
+            target_arch: arm64
           - os: ubuntu-latest
             build_type: Release
             artifact_name: coredeck-linux-x86-64

@@ -67,7 +67,7 @@ Grab the latest prebuilt binaries from the [Releases](https://github.com/kangaro
 | Platform | Architecture          | File            |
 | -------- | --------------------- | --------------- |
 | Windows  | x86-64                | `.msi` / `.zip` |
-| macOS    | arm64 (Apple Silicon) | `.dmg`          |
+| macOS    | x86-64 (Intel) / arm64 (Apple Silicon) | `.dmg`          |
 | Linux    | x86-64, arm64         | `.tar.gz`       |
 
 Each release artifact ships with a matching `.sha256` checksum for download verification.
@@ -76,7 +76,7 @@ Each release artifact ships with a matching `.sha256` checksum for download veri
 
 - **Android SDK** with `cmdline-tools`, `platform-tools`, and `emulator` installed, or an empty directory where CoreDeck can install the base SDK tools.
 - **Java/JDK 17+** is recommended for modern Android SDK tools. CoreDeck can use a configured JDK home or download a managed user-local JDK.
-- **OS:** Windows 10/11, macOS 12+ (Apple Silicon), or a recent Linux distribution.
+- **OS:** Windows 10/11, macOS 12+ (Intel or Apple Silicon), or a recent Linux distribution.
 
 ## Build from source
 

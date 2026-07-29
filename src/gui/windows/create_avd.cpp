@@ -3,6 +3,8 @@
 //
 
 #include <algorithm>
+#include <chrono>
+#include <exception>
 #include "imgui.h"
 
 #include "create_avd.h"
@@ -16,6 +18,29 @@
 
 namespace CoreDeck {
     namespace {
+        void PollAvdCreationPrefetch(Context &context) {
+            auto &work = context.AvdCreationWork;
+            auto &prefetch = work.Prefetch;
+            if (!prefetch.Future.valid() ||
+                prefetch.Future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+                return;
+            }
+
+            try {
+                AvdCreationPrefetchResult result = prefetch.Future.get();
+                work.SystemImages = std::move(result.SystemImages);
+                work.DeviceProfiles = std::move(result.DeviceProfiles);
+                work.Skins = std::move(result.Skins);
+                work.Error = std::move(result.Error);
+            } catch (const std::exception &e) {
+                work.Error = e.what();
+            } catch (...) {
+                work.Error = "Could not load AVD creation data.";
+            }
+            prefetch.Loading = false;
+            prefetch.Ready = true;
+        }
+
         void OpenSystemImagePicker(Context &context) {
             std::string selectedPackagePath;
             const auto &creation = context.AvdCreationWork;
@@ -30,26 +55,30 @@ namespace CoreDeck {
             context.ImageInstallationWork.InstallFilter = ImageInstallFilter::Installed;
             context.ImageInstallationWork.SearchFilter[0] = '\0';
             context.ImageInstallationWork.Progress.reset();
+            context.ImageInstallationWork.RemoteImages.clear();
+            context.ImageInstallationWork.Error.clear();
             context.ImageInstallationWork.Prefetch.Ready = false;
             context.ImageInstallationWork.Prefetch.Loading = true;
             context.UI.ShowInstallImageDialog = true;
 
-            context.ImageInstallationWork.Prefetch.Future = std::async(std::launch::async, [&context, selectedPackagePath] {
-                const auto localImages = ListSystemImages(context.Host.Sdk);
-                auto remoteImages = ListRemoteSystemImages(context.Host.Sdk, localImages);
-                int selectedImage = -1;
-                for (int i = 0; i < static_cast<int>(remoteImages.size()); i++) {
-                    if (remoteImages[i].PackagePath == selectedPackagePath) {
-                        selectedImage = i;
-                        break;
+            const SdkInfo sdk = context.Host.Sdk;
+            context.ImageInstallationWork.Prefetch.Future = std::async(std::launch::async, [sdk, selectedPackagePath] {
+                SystemImagePrefetchResult result;
+                try {
+                    result.LocalImages = ListSystemImages(sdk);
+                    result.RemoteImages = ListRemoteSystemImages(sdk, result.LocalImages);
+                    for (int i = 0; i < static_cast<int>(result.RemoteImages.size()); i++) {
+                        if (result.RemoteImages[i].PackagePath == selectedPackagePath) {
+                            result.SelectedImage = i;
+                            break;
+                        }
                     }
+                } catch (const std::exception &e) {
+                    result.Error = e.what();
+                } catch (...) {
+                    result.Error = "Could not load system images.";
                 }
-
-                context.AvdCreationWork.SystemImages = localImages;
-                context.ImageInstallationWork.SelectedImage = selectedImage;
-                context.ImageInstallationWork.RemoteImages = std::move(remoteImages);
-                context.ImageInstallationWork.Prefetch.Loading = false;
-                context.ImageInstallationWork.Prefetch.Ready = true;
+                return result;
             });
         }
 
@@ -77,6 +106,8 @@ namespace CoreDeck {
 
     // NOLINTNEXTLINE(readability-function-size)
     void BuildCreateAvdWindow(Context &context) {
+        PollAvdCreationPrefetch(context);
+
         if (context.UI.ShowCreateAvdDialog && !ImGui::IsPopupOpen("Create New AVD###CreateAvdDialog")) {
             ImGui::OpenPopup("Create New AVD###CreateAvdDialog");
         }
@@ -85,10 +116,28 @@ namespace CoreDeck {
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
         ImGui::SetNextWindowSize(ImVec2(Em(70.0F), 0), ImGuiCond_Appearing);
 
-        if (RoundedBeginPopupModal("Create New AVD###CreateAvdDialog", &context.UI.ShowCreateAvdDialog, WINDOW_AUTO_RESIZE_FLAGS)) {
-            const bool isLoading = context.AvdCreationWork.Prefetch.Loading.load();
-            const bool isCreating = context.Jobs.AvdCreation.Busy.load();
+        const bool isLoading = context.AvdCreationWork.Prefetch.Loading.load();
+        const bool isCreating = context.Jobs.AvdCreation.Busy.load();
+        bool *pOpen = (isLoading || isCreating) ? nullptr : &context.UI.ShowCreateAvdDialog;
+        if (RoundedBeginPopupModal("Create New AVD###CreateAvdDialog", pOpen, WINDOW_AUTO_RESIZE_FLAGS)) {
             const bool formDisabled = isLoading || isCreating;
+
+            if (!context.AvdCreationWork.Error.empty()) {
+                ImGui::TextColored(
+                    HexColor(Colors::NEGATIVE),
+                    "%s",
+                    Tr(context.AvdCreationWork.Error.c_str())
+                );
+                ImGui::Spacing();
+            }
+            if (!context.Jobs.AvdCreation.Error.empty()) {
+                ImGui::TextColored(
+                    HexColor(Colors::NEGATIVE),
+                    "%s",
+                    Tr(context.Jobs.AvdCreation.Error.c_str())
+                );
+                ImGui::Spacing();
+            }
 
             if (formDisabled) {
                 ImGui::BeginDisabled();
@@ -318,14 +367,16 @@ namespace CoreDeck {
                         context.AvdCreationWork.CreationData.SkinName.clear();
                         context.AvdCreationWork.CreationData.SkinPath.clear();
                     }
-                    if (!context.AvdCreationWork.CreationData.SdCardSize.empty()) {
-                        context.AvdCreationWork.CreationData.SdCardSize += "M";
+                    AvdCreationData creationData = context.AvdCreationWork.CreationData;
+                    if (!creationData.SdCardSize.empty()) {
+                        creationData.SdCardSize += "M";
                     }
 
+                    context.Jobs.AvdCreation.Error.clear();
                     context.Jobs.AvdCreation.Busy = true;
-                    context.Jobs.AvdCreation.Future = std::async(std::launch::async, [&context] {
-                        CreateAvd(context.Host.Sdk, context.AvdCreationWork.CreationData);
-                        context.Jobs.AvdCreation.Busy = false;
+                    const SdkInfo sdk = context.Host.Sdk;
+                    context.Jobs.AvdCreation.Future = std::async(std::launch::async, [sdk, creationData] {
+                        return CreateAvd(sdk, creationData);
                     });
                 }
             }
@@ -335,11 +386,22 @@ namespace CoreDeck {
                 ImGui::CloseCurrentPopup();
             }
 
-            if (!context.Jobs.AvdCreation.Busy && context.Jobs.AvdCreation.Future.valid()) {
-                context.Jobs.AvdCreation.Future.get();
-                context.UI.ShowCreateAvdDialog = false;
-                ImGui::CloseCurrentPopup();
-                RefreshAvds(context);
+            if (context.Jobs.AvdCreation.Future.valid() &&
+                context.Jobs.AvdCreation.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                bool created = false;
+                try {
+                    created = context.Jobs.AvdCreation.Future.get();
+                } catch (...) {
+                    created = false;
+                }
+                context.Jobs.AvdCreation.Busy = false;
+                if (created) {
+                    context.UI.ShowCreateAvdDialog = false;
+                    ImGui::CloseCurrentPopup();
+                    RefreshAvds(context);
+                } else {
+                    context.Jobs.AvdCreation.Error = "Could not create AVD.";
+                }
             }
 
             BuildDeviceProfileWindow(context);

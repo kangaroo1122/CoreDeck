@@ -96,6 +96,7 @@ namespace CoreDeck {
         const char *ConfirmButtonTitle{};
         const char *CancelButtonTitle{};
         const char *BusyButtonTitle{};
+        const char *ErrorMessage{};
         DialogType Type = DialogType::Default;
         bool IsBusy = false;
     };

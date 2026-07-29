@@ -41,6 +41,7 @@ namespace CoreDeck {
         constexpr const char *CHEVRON_LEFT = "\xef\x81\x93";
         constexpr const char *CHEVRON_RIGHT = "\xef\x81\x94";
         constexpr const char *PENCIL = "\xef\x8c\x83";
+        constexpr const char *CAMERA = "\xef\x80\xb0";
         constexpr const char *FOLDER = "\xef\x81\xbb";
         constexpr const char *FOLDER_PLUS = "\xef\x99\x9e";
         constexpr const char *FILE = "\xef\x85\x9b";

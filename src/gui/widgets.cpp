@@ -446,6 +446,10 @@ namespace CoreDeck {
             ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_MUTED));
             ImGui::TextWrapped("%s", Tr(data.Message));
             ImGui::PopStyleColor();
+            if (data.ErrorMessage && data.ErrorMessage[0] != '\0') {
+                ImGui::Spacing();
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", data.ErrorMessage);
+            }
             ImGui::Spacing();
             ImGui::Spacing();
 

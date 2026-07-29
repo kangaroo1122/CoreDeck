@@ -2,6 +2,8 @@
 // Created by AbdulMuaz Aqeel on 15/04/2026.
 //
 
+#include <chrono>
+
 #include "delete_avd.h"
 #include "../application.h"
 #include "../localization.h"
@@ -14,19 +16,39 @@ namespace CoreDeck {
             return;
         }
 
+        context.Jobs.AvdDeletion.Error.clear();
+        context.Jobs.AvdDeletion.TargetName = avdName;
         context.Jobs.AvdDeletion.Busy = true;
-        context.Jobs.AvdDeletion.Future = std::async(std::launch::async, [&context, avdName]() {
-            DeleteAvd(context.Host.Sdk, avdName);
-            context.Jobs.AvdDeletion.Busy = false;
+        const SdkInfo sdk = context.Host.Sdk;
+        context.Jobs.AvdDeletion.Future = std::async(std::launch::async, [sdk, avdName]() {
+            return DeleteAvd(sdk, avdName);
         });
     }
 
     void BuildDeleteAvdWindow(Context &context) {
-        if (!context.Jobs.AvdDeletion.Busy.load() && context.Jobs.AvdDeletion.Future.valid()) {
-            context.Jobs.AvdDeletion.Future.get();
-            RefreshAvds(context);
-            context.UI.ShowDeleteAvdDialog = false;
-            return;
+        if (context.Jobs.AvdDeletion.Future.valid() &&
+            context.Jobs.AvdDeletion.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            bool deleted = false;
+            try {
+                deleted = context.Jobs.AvdDeletion.Future.get();
+            } catch (...) {
+                deleted = false;
+            }
+            context.Jobs.AvdDeletion.Busy = false;
+            if (deleted) {
+                context.Jobs.AvdDeletion.TargetName.clear();
+                RefreshAvds(context);
+                context.UI.ShowDeleteAvdDialog = false;
+                return;
+            }
+            context.Jobs.AvdDeletion.Error = "Could not delete AVD.";
+            for (int i = 0; i < static_cast<int>(context.Catalog.Avds.size()); i++) {
+                if (context.Catalog.Avds[i].Name == context.Jobs.AvdDeletion.TargetName) {
+                    context.Catalog.SelectedAvd = i;
+                    break;
+                }
+            }
+            context.UI.ShowDeleteAvdDialog = true;
         }
 
         if (context.Catalog.SelectedAvd < 0 || context.Catalog.SelectedAvd >= static_cast<int>(context.Catalog.Avds.size())) {
@@ -47,6 +69,9 @@ namespace CoreDeck {
              .ConfirmButtonTitle = "Delete",
              .CancelButtonTitle = "Cancel",
              .BusyButtonTitle = "Deleting...",
+             .ErrorMessage = context.Jobs.AvdDeletion.Error.empty()
+                                 ? nullptr
+                                 : Tr(context.Jobs.AvdDeletion.Error.c_str()),
              .Type = DialogType::Negative,
              .IsBusy = isDeleting}
         );

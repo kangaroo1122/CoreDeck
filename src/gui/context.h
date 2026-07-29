@@ -80,6 +80,30 @@ namespace CoreDeck {
         std::uintmax_t SystemImagesSize = 0;
     };
 
+    struct AvdSnapshotListResult {
+        std::vector<AvdSnapshotInfo> Snapshots;
+        std::string Error;
+    };
+
+    struct AvdSnapshotDeleteResult {
+        bool Succeeded = false;
+        std::string Error;
+    };
+
+    struct AvdCreationPrefetchResult {
+        std::vector<SystemImage> SystemImages;
+        std::vector<DeviceProfile> DeviceProfiles;
+        std::vector<Skin> Skins;
+        std::string Error;
+    };
+
+    struct SystemImagePrefetchResult {
+        std::vector<SystemImage> LocalImages;
+        std::vector<RemoteSystemImage> RemoteImages;
+        int SelectedImage = -1;
+        std::string Error;
+    };
+
     struct Context {
         struct Host {
             SdkInfo Sdk;
@@ -136,6 +160,7 @@ namespace CoreDeck {
             bool ShowDeleteAvdDialog = false;
             bool ShowWipeAndRunDialog = false;
             bool ShowRenameAvdDialog = false;
+            bool ShowAvdSnapshotsDialog = false;
             bool ShowCreateAvdDialog = false;
             bool ShowDeviceProfileDialog = false;
             bool ShowSkinDialog = false;
@@ -174,6 +199,23 @@ namespace CoreDeck {
             std::string Error;
         } AvdRenameWork;
 
+        struct AvdSnapshotWork {
+            std::string TargetName;
+            std::string TargetDisplayName;
+            std::string TargetPath;
+            std::vector<AvdSnapshotInfo> Snapshots;
+            int SelectedSnapshot = -1;
+            std::string PendingDeleteName;
+            std::string Error;
+            std::string Status;
+            bool Ready = false;
+
+            std::atomic<bool> Loading{false};
+            std::future<AvdSnapshotListResult> ListFuture;
+            std::atomic<bool> Deleting{false};
+            std::future<AvdSnapshotDeleteResult> DeleteFuture;
+        } AvdSnapshotWork;
+
         struct AvdCreationWork {
             std::vector<SystemImage> SystemImages;
             std::vector<DeviceProfile> DeviceProfiles;
@@ -192,11 +234,12 @@ namespace CoreDeck {
             bool DisplayNameAutoFilled = true;
             bool SkinAutoFilled = true;
             int LastDeviceForSkinAuto = -1;
+            std::string Error;
 
             struct {
                 std::atomic<bool> Loading{false};
                 std::atomic<bool> Ready{false};
-                std::future<void> Future;
+                std::future<AvdCreationPrefetchResult> Future;
             } Prefetch;
 
             struct {
@@ -215,7 +258,7 @@ namespace CoreDeck {
             struct {
                 std::atomic<bool> Loading{false};
                 std::atomic<bool> Ready{false};
-                std::future<void> Future;
+                std::future<SystemImagePrefetchResult> Future;
             } Prefetch;
 
             std::atomic<bool> Installing{false};
@@ -227,6 +270,7 @@ namespace CoreDeck {
             std::future<bool> LicenseAcceptFuture;
             std::string PendingPackagePath;
             std::string LicenseError;
+            std::string Error;
         } ImageInstallationWork;
 
         struct SdkManagerWork {
@@ -347,7 +391,9 @@ namespace CoreDeck {
         struct Jobs {
             struct {
                 std::atomic<bool> Busy{false};
-                std::future<void> Future;
+                std::future<bool> Future;
+                std::string Error;
+                std::string TargetName;
             } AvdCreation, AvdDeletion, AvdWipe;
         } Jobs;
 

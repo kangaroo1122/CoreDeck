@@ -2,6 +2,7 @@
 // Created by AbdulMuaz Aqeel on 14/04/2026.
 //
 #include <filesystem>
+#include <chrono>
 #include <sstream>
 #include <vector>
 
@@ -152,6 +153,24 @@ namespace CoreDeck {
 
     // NOLINTNEXTLINE(readability-function-size)
     void BuildAvdInfoWindow(Context &context) {
+        auto &wipeJob = context.Jobs.AvdWipe;
+        if (wipeJob.Future.valid() &&
+            wipeJob.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            bool wiped = false;
+            try {
+                wiped = wipeJob.Future.get();
+            } catch (...) {
+                wiped = false;
+            }
+            wipeJob.Busy = false;
+            if (wiped) {
+                context.DiskUsage.PerAvdCache.erase(wipeJob.TargetName);
+                context.UI.ShowWipeDataDialog = false;
+                wipeJob.TargetName.clear();
+            } else {
+                wipeJob.Error = "Could not wipe AVD data.";
+            }
+        }
 
         if (!context.UI.ShowDetailsPanel) {
             return;
@@ -264,6 +283,7 @@ namespace CoreDeck {
                 ImGui::BeginDisabled();
             }
             if (WarningButton("Wipe User Data", !isRunning, ImVec2(halfWidth, 0))) {
+                wipeJob.Error.clear();
                 context.UI.ShowWipeDataDialog = true;
             }
             if (isRunning) {
@@ -279,13 +299,8 @@ namespace CoreDeck {
             }
         }
 
-        if (!context.Jobs.AvdWipe.Busy.load() && context.Jobs.AvdWipe.Future.valid()) {
-            context.Jobs.AvdWipe.Future.get();
-            context.UI.ShowWipeDataDialog = false;
-        }
-
         if (context.UI.ShowWipeDataDialog) {
-            const bool isWiping = context.Jobs.AvdWipe.Busy.load();
+            const bool isWiping = wipeJob.Busy.load();
             const DialogData wipeDialog{
                 .Id = "WipeUserData",
                 .IsOpen = context.UI.ShowWipeDataDialog,
@@ -294,17 +309,17 @@ namespace CoreDeck {
                 .ConfirmButtonTitle = "Wipe",
                 .CancelButtonTitle = "Cancel",
                 .BusyButtonTitle = "Wiping...",
+                .ErrorMessage = wipeJob.Error.empty() ? nullptr : Tr(wipeJob.Error.c_str()),
                 .Type = DialogType::Negative,
                 .IsBusy = isWiping,
             };
             if (const auto result = SimpleDialog(wipeDialog); result == DialogResult::Confirmed) {
-                context.Jobs.AvdWipe.Busy = true;
+                wipeJob.Error.clear();
+                wipeJob.Busy = true;
                 const std::string wipePath = path;
-                const std::string wipeName = name;
-                context.Jobs.AvdWipe.Future = std::async(std::launch::async, [&context, wipePath, wipeName] {
-                    WipeAvdUserData(wipePath);
-                    context.DiskUsage.PerAvdCache.erase(wipeName);
-                    context.Jobs.AvdWipe.Busy = false;
+                wipeJob.TargetName = name;
+                wipeJob.Future = std::async(std::launch::async, [wipePath] {
+                    return WipeAvdUserData(wipePath);
                 });
             }
         }

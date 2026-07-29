@@ -5,6 +5,7 @@
 #ifndef EMU_LAUNCHER_AVD_INFO_H
 #define EMU_LAUNCHER_AVD_INFO_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,12 @@ namespace CoreDeck {
         std::string SkinPath;
     };
 
+    struct AvdSnapshotInfo {
+        std::string Name;
+        std::uintmax_t SizeBytes = 0;
+        std::int64_t ModifiedEpochSeconds = 0;
+    };
+
     std::vector<AvdInfo> LoadAvds(const std::vector<std::string> &avdNames);
 
     std::vector<std::string> ListAvdNames(const SdkInfo &sdk);
@@ -54,6 +61,10 @@ namespace CoreDeck {
     bool CreateAvd(const SdkInfo &sdk, const AvdCreationData &data);
 
     bool DeleteAvd(const SdkInfo &sdk, const std::string &avdName);
+
+    std::vector<AvdSnapshotInfo> ListAvdSnapshots(const std::string &avdPath, std::string *error = nullptr);
+
+    bool DeleteAvdSnapshot(const std::string &avdPath, const std::string &snapshotName, std::string *error = nullptr);
 
     bool SetAvdDisplayName(const std::string &avdPath, const std::string &displayName);
 }

@@ -1,3 +1,11 @@
+## [v0.10.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.10.0-beta.1) — 2026-07-29
+
+- Add AVD snapshot management with snapshot size and modified-time details, refresh support, guarded deletion, and running-emulator protection
+- Show each AVD's API level alongside its system image type and running status in the AVD list
+- Harden snapshot deletion against unsafe names, symbolic links, path traversal, and filesystem enumeration failures
+- Move AVD creation and system image preloading results back to the UI thread to avoid concurrent container access
+- Preserve create, delete, and wipe dialogs when an operation fails, display actionable errors, and update disk usage caches safely on the UI thread
+
 ## [v0.9.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.9.2) — 2026-07-29
 
 - Add macOS Intel x86-64 build and unsigned DMG release artifact alongside the Apple Silicon build

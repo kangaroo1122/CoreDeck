@@ -3,6 +3,8 @@
 //
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -15,6 +17,49 @@
 
 namespace CoreDeck {
     namespace {
+        bool IsSafeSnapshotName(const std::string &name) {
+            if (name.empty() || name == "." || name == "..") {
+                return false;
+            }
+
+            const std::filesystem::path path(name);
+            return !path.is_absolute() &&
+                   !path.has_root_name() &&
+                   path.parent_path().empty() &&
+                   path.filename().string() == name;
+        }
+
+        std::int64_t ToEpochSeconds(const std::filesystem::file_time_type time) {
+            const auto systemTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                time - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now()
+            );
+            return static_cast<std::int64_t>(std::chrono::system_clock::to_time_t(systemTime));
+        }
+
+        std::filesystem::file_time_type LatestWriteTime(const std::filesystem::path &path) {
+            std::error_code ec;
+            std::filesystem::file_time_type latest = std::filesystem::last_write_time(path, ec);
+            if (ec) {
+                latest = {};
+            }
+
+            std::filesystem::recursive_directory_iterator it(
+                path,
+                std::filesystem::directory_options::skip_permission_denied,
+                ec
+            );
+            const std::filesystem::recursive_directory_iterator end;
+            while (!ec && it != end) {
+                std::error_code entryEc;
+                const auto modified = it->last_write_time(entryEc);
+                if (!entryEc && modified > latest) {
+                    latest = modified;
+                }
+                it.increment(ec);
+            }
+            return latest;
+        }
+
         std::unordered_map<std::string, std::string> ParseConfigFile(const std::string &path) {
             std::unordered_map<std::string, std::string> config;
             std::ifstream file(path);
@@ -351,6 +396,181 @@ namespace CoreDeck {
         const std::string avdDir = Paths::GetAvdDirectory();
         const std::string avdFolder = Paths::JoinPaths({avdDir, avdName + ".avd"});
         return !std::filesystem::exists(avdFolder);
+    }
+
+    std::vector<AvdSnapshotInfo> ListAvdSnapshots(const std::string &avdPath, std::string *error) {
+        if (error != nullptr) {
+            error->clear();
+        }
+
+        std::vector<AvdSnapshotInfo> snapshots;
+        if (avdPath.empty()) {
+            if (error != nullptr) {
+                *error = "AVD path is empty.";
+            }
+            return snapshots;
+        }
+
+        const std::filesystem::path snapshotsRoot = std::filesystem::path(avdPath) / "snapshots";
+        std::error_code ec;
+        const auto snapshotsStatus = std::filesystem::symlink_status(snapshotsRoot, ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return snapshots;
+        }
+        if (snapshotsStatus.type() == std::filesystem::file_type::not_found) {
+            return snapshots;
+        }
+        if (std::filesystem::is_symlink(snapshotsStatus)) {
+            if (error != nullptr) {
+                *error = "AVD snapshots path must not be a symbolic link.";
+            }
+            return snapshots;
+        }
+        if (!std::filesystem::is_directory(snapshotsStatus)) {
+            if (error != nullptr) {
+                *error = "AVD snapshots path is not a directory.";
+            }
+            return snapshots;
+        }
+
+        std::filesystem::directory_iterator it(snapshotsRoot, ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return snapshots;
+        }
+
+        const std::filesystem::directory_iterator end;
+        while (it != end) {
+            const auto &entry = *it;
+            std::error_code statusEc;
+            if (entry.is_directory(statusEc) && !statusEc) {
+                AvdSnapshotInfo snapshot;
+                snapshot.Name = entry.path().filename().string();
+                snapshot.SizeBytes = GetDirectorySize(entry.path().string());
+                snapshot.ModifiedEpochSeconds = ToEpochSeconds(LatestWriteTime(entry.path()));
+                snapshots.push_back(std::move(snapshot));
+            }
+
+            it.increment(ec);
+            if (ec) {
+                if (error != nullptr) {
+                    *error = ec.message();
+                }
+                snapshots.clear();
+                return snapshots;
+            }
+        }
+
+        std::ranges::sort(snapshots, [](const AvdSnapshotInfo &a, const AvdSnapshotInfo &b) {
+            if (a.ModifiedEpochSeconds != b.ModifiedEpochSeconds) {
+                return a.ModifiedEpochSeconds > b.ModifiedEpochSeconds;
+            }
+            return a.Name < b.Name;
+        });
+        return snapshots;
+    }
+
+    bool DeleteAvdSnapshot(const std::string &avdPath, const std::string &snapshotName, std::string *error) {
+        if (error != nullptr) {
+            error->clear();
+        }
+        if (avdPath.empty()) {
+            if (error != nullptr) {
+                *error = "AVD path is empty.";
+            }
+            return false;
+        }
+        if (!IsSafeSnapshotName(snapshotName)) {
+            if (error != nullptr) {
+                *error = "Invalid snapshot name.";
+            }
+            return false;
+        }
+
+        const std::filesystem::path snapshotsRoot = std::filesystem::path(avdPath) / "snapshots";
+        const std::filesystem::path target = snapshotsRoot / snapshotName;
+        std::error_code ec;
+        const auto snapshotsStatus = std::filesystem::symlink_status(snapshotsRoot, ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return false;
+        }
+        if (snapshotsStatus.type() == std::filesystem::file_type::not_found) {
+            return true;
+        }
+        if (std::filesystem::is_symlink(snapshotsStatus)) {
+            if (error != nullptr) {
+                *error = "AVD snapshots path must not be a symbolic link.";
+            }
+            return false;
+        }
+        if (!std::filesystem::is_directory(snapshotsStatus)) {
+            if (error != nullptr) {
+                *error = "AVD snapshots path is not a directory.";
+            }
+            return false;
+        }
+
+        if (!std::filesystem::exists(target, ec)) {
+            return !ec;
+        }
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return false;
+        }
+
+        const auto status = std::filesystem::symlink_status(target, ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return false;
+        }
+        if (!std::filesystem::is_directory(status)) {
+            if (error != nullptr) {
+                *error = "Snapshot path is not a directory.";
+            }
+            return false;
+        }
+
+        const auto canonicalRoot = std::filesystem::canonical(snapshotsRoot, ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return false;
+        }
+        const auto canonicalTarget = std::filesystem::canonical(target, ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return false;
+        }
+        if (canonicalTarget.parent_path() != canonicalRoot) {
+            if (error != nullptr) {
+                *error = "Snapshot path escapes the snapshots directory.";
+            }
+            return false;
+        }
+
+        std::filesystem::remove_all(target, ec);
+        if (ec) {
+            if (error != nullptr) {
+                *error = ec.message();
+            }
+            return false;
+        }
+        return true;
     }
 
     bool SetAvdDisplayName(const std::string &avdPath, const std::string &displayName) {

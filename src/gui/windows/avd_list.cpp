@@ -2,9 +2,12 @@
 // Created by AbdulMuaz Aqeel on 15/04/2026.
 //
 #include <algorithm>
+#include <exception>
 #include "imgui.h"
 
 #include "avd_list.h"
+#include "avd_list_format.h"
+#include "avd_snapshots.h"
 #include "delete_avd.h"
 #include "rename_avd.h"
 #include "../application.h"
@@ -201,6 +204,7 @@ namespace CoreDeck {
         ImGui::Begin(windowTitle.c_str(), nullptr, FLAGS);
 
         auto openCreateAvdDialog = [&context] {
+            auto &work = context.AvdCreationWork;
             context.AvdCreationWork.CreationData = {};
             context.AvdCreationWork.SelectedSystemImage = 0;
             context.AvdCreationWork.SelectedDevice = 0;
@@ -212,19 +216,28 @@ namespace CoreDeck {
             context.AvdCreationWork.PendingSelectedSkin = 0;
             context.AvdCreationWork.LastDeviceForSkinAuto = -1;
             context.AvdCreationWork.SkinSearchFilter[0] = '\0';
+            work.SystemImages.clear();
+            work.DeviceProfiles.clear();
+            work.Skins.clear();
+            work.Error.clear();
+            context.Jobs.AvdCreation.Error.clear();
             context.AvdCreationWork.Prefetch.Ready = false;
             context.AvdCreationWork.Prefetch.Loading = true;
             context.UI.ShowCreateAvdDialog = true;
 
-            context.AvdCreationWork.Prefetch.Future = std::async(std::launch::async, [&context] {
-                auto images = ListSystemImages(context.Host.Sdk);
-                auto devices = ListDeviceProfiles(context.Host.Sdk);
-                auto skins = ListSkins(context.Host.Sdk);
-                context.AvdCreationWork.SystemImages = std::move(images);
-                context.AvdCreationWork.DeviceProfiles = std::move(devices);
-                context.AvdCreationWork.Skins = std::move(skins);
-                context.AvdCreationWork.Prefetch.Loading = false;
-                context.AvdCreationWork.Prefetch.Ready = true;
+            const SdkInfo sdk = context.Host.Sdk;
+            context.AvdCreationWork.Prefetch.Future = std::async(std::launch::async, [sdk] {
+                AvdCreationPrefetchResult result;
+                try {
+                    result.SystemImages = ListSystemImages(sdk);
+                    result.DeviceProfiles = ListDeviceProfiles(sdk);
+                    result.Skins = ListSkins(sdk);
+                } catch (const std::exception &e) {
+                    result.Error = e.what();
+                } catch (...) {
+                    result.Error = "Could not load AVD creation data.";
+                }
+                return result;
             });
         };
 
@@ -273,6 +286,7 @@ namespace CoreDeck {
                 }
                 ImGui::SameLine();
                 if (NegativeButton(Icons::TRASH)) {
+                    context.Jobs.AvdDeletion.Error.clear();
                     if (context.Prefs.ConfirmBeforeDeleteAvd) {
                         context.UI.ShowDeleteAvdDialog = true;
                     } else {
@@ -374,9 +388,14 @@ namespace CoreDeck {
             ImGui::PushID(i);
             const char *avdStatusText = isRunning ? "Running..." : "Ready";
             const ImVec4 avdStatusColor = isRunning ? HexColor(Colors::POSITIVE) : HexColor(Colors::TEXT_MUTED);
-            const std::string avdRightText = StrConcat(Tr(AvdTypeLabel(avd)), " - ", Tr(avdStatusText));
+            const std::string avdRightText = FormatAvdListMetadata(
+                avd.ApiLevel,
+                Tr(AvdTypeLabel(avd)),
+                Tr(avdStatusText)
+            );
             const auto [Icon, Color] = DeviceIconStyleFor(avd.Device);
             bool renameClicked = false;
+            bool snapshotsClicked = false;
             if (SelectableItem(
                 avd.DisplayName.c_str(),
                 isSelected,
@@ -386,13 +405,20 @@ namespace CoreDeck {
                 HexColor(Color),
                 Icons::PENCIL,
                 "Rename display name",
-                &renameClicked
+                &renameClicked,
+                Icons::CAMERA,
+                "Manage snapshots",
+                &snapshotsClicked
             )) {
                 context.Catalog.SelectedAvd = i;
             }
             if (renameClicked) {
                 context.Catalog.SelectedAvd = i;
                 OpenRenameAvdDialog(context, avd);
+            }
+            if (snapshotsClicked) {
+                context.Catalog.SelectedAvd = i;
+                OpenAvdSnapshotsDialog(context, avd);
             }
             ImGui::PopID();
         }

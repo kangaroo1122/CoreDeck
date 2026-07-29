@@ -42,6 +42,7 @@
 #include "windows/avd_info.h"
 #include "windows/avd_list.h"
 #include "windows/avd_logs.h"
+#include "windows/avd_snapshots.h"
 #include "windows/avd_options.h"
 #include "windows/create_avd.h"
 #include "windows/delete_avd.h"
@@ -681,6 +682,7 @@ namespace CoreDeck {
         BuildAvdListWindow(m_Context);
         BuildAvdInfoWindow(m_Context);
         BuildRenameAvdWindow(m_Context);
+        BuildAvdSnapshotsWindow(m_Context);
         BuildAvdLogsWindow(m_Context);
         BuildDeviceExplorerWindow(m_Context);
         BuildAboutWindow(m_Context);
@@ -1041,6 +1043,8 @@ namespace CoreDeck {
         ConsumeFuture(m_UpdateCheckFuture);
         ConsumeFuture(m_Context.AvdCreationWork.Prefetch.Future);
         ConsumeFuture(m_Context.AvdCreationWork.SystemImageRemoval.Future);
+        ConsumeFuture(m_Context.AvdSnapshotWork.ListFuture);
+        ConsumeFuture(m_Context.AvdSnapshotWork.DeleteFuture);
         ConsumeFuture(m_Context.ImageInstallationWork.Prefetch.Future);
         ConsumeFuture(m_Context.ImageInstallationWork.InstallFuture);
         ConsumeFuture(m_Context.ImageInstallationWork.LicenseCheckFuture);

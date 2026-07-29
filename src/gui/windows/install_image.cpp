@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <string>
 #include "imgui.h"
 
@@ -78,6 +79,29 @@ namespace CoreDeck {
             return MatchesImageInstallFilter(img, installFilter) &&
                    MatchesImageCategory(img, category) &&
                    MatchesImageFilter(img, filter);
+        }
+
+        void PollSystemImagePrefetch(Context &context) {
+            auto &work = context.ImageInstallationWork;
+            auto &prefetch = work.Prefetch;
+            if (!prefetch.Future.valid() ||
+                prefetch.Future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+                return;
+            }
+
+            try {
+                SystemImagePrefetchResult result = prefetch.Future.get();
+                context.AvdCreationWork.SystemImages = std::move(result.LocalImages);
+                work.RemoteImages = std::move(result.RemoteImages);
+                work.SelectedImage = result.SelectedImage;
+                work.Error = std::move(result.Error);
+            } catch (const std::exception &e) {
+                work.Error = e.what();
+            } catch (...) {
+                work.Error = "Could not load system images.";
+            }
+            prefetch.Loading = false;
+            prefetch.Ready = true;
         }
 
         void StartInstall(Context &context, const std::string &pkgPath) {
@@ -188,6 +212,8 @@ namespace CoreDeck {
 
     // NOLINTNEXTLINE(readability-function-size)
     void BuildInstallImageWindow(Context &context) {
+        PollSystemImagePrefetch(context);
+
         if (context.UI.ShowInstallImageDialog) {
             constexpr auto TITLE = "Install System Image###InstallImageDialog";
             if (!ImGui::IsPopupOpen(TITLE)) {
@@ -200,13 +226,22 @@ namespace CoreDeck {
 
             const bool installing = context.ImageInstallationWork.Installing.load();
             const bool removalBusy = context.AvdCreationWork.SystemImageRemoval.Busy.load();
-            bool *pOpen = (installing || removalBusy) ? nullptr : &context.UI.ShowInstallImageDialog;
+            const bool prefetchLoading = context.ImageInstallationWork.Prefetch.Loading.load();
+            const bool licenseBusyNow = context.ImageInstallationWork.LicenseBusy.load();
+            bool *pOpen = (installing || removalBusy || prefetchLoading || licenseBusyNow)
+                              ? nullptr
+                              : &context.UI.ShowInstallImageDialog;
 
             if (RoundedBeginPopupModal(TITLE, pOpen, WINDOW_AUTO_RESIZE_FLAGS)) {
                 auto &work = context.ImageInstallationWork;
                 auto &removal = context.AvdCreationWork.SystemImageRemoval;
                 const bool isLoading = work.Prefetch.Loading.load();
                 const bool isInstalling = installing;
+
+                if (!work.Error.empty()) {
+                    ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(work.Error.c_str()));
+                    ImGui::Spacing();
+                }
 
                 if (work.LicenseCheckFuture.valid() &&
                     work.LicenseCheckFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -557,7 +592,7 @@ namespace CoreDeck {
                     }
 
                     ImGui::SameLine();
-                    if (PrimaryButton("Close", !isInstalling && !removalBusy, ImVec2(thirdWidth, 0))) {
+                    if (PrimaryButton("Close", !isInstalling && !removalBusy && !isLoading, ImVec2(thirdWidth, 0))) {
                         work.Progress.reset();
                         context.UI.ShowInstallImageDialog = false;
                     }
@@ -591,7 +626,7 @@ namespace CoreDeck {
                     }
 
                     ImGui::SameLine();
-                    if (PrimaryButton("Close", !isInstalling && !removalBusy, ImVec2(halfWidth, 0))) {
+                    if (PrimaryButton("Close", !isInstalling && !removalBusy && !isLoading, ImVec2(halfWidth, 0))) {
                         work.Progress.reset();
                         context.UI.ShowInstallImageDialog = false;
                     }

@@ -66,7 +66,7 @@ Grab the latest prebuilt binaries from the [Releases](https://github.com/kangaro
 
 | Platform | Architecture          | File            |
 | -------- | --------------------- | --------------- |
-| Windows  | x86-64                | `.msi` / `.zip` |
+| Windows  | x86-64 / ARM64        | `.msi` / `.zip` |
 | macOS    | x86-64 (Intel) / arm64 (Apple Silicon) | `.dmg`          |
 | Linux    | x86-64, arm64         | `.tar.gz`       |
 
@@ -74,7 +74,8 @@ Each release artifact ships with a matching `.sha256` checksum for download veri
 
 ## Requirements
 
-- **Android SDK** with `cmdline-tools`, `platform-tools`, and `emulator` installed, or an empty directory where CoreDeck can install the base SDK tools.
+- **Android SDK** with `cmdline-tools`, `platform-tools`, and `emulator` installed, or an empty directory where CoreDeck can install the required base SDK tools. `cmdline-tools` provides `sdkmanager` and `avdmanager`; `platform-tools` provides `adb`. You also need at least one Android system image to create or run an AVD.
+- **Windows ARM64 note:** CoreDeck provides a Windows ARM64 build, but Google currently distributes the Windows Android SDK command-line tools, platform-tools, and emulator primarily as x86-64 packages rather than native ARM64 binaries. On Windows ARM64, these tools may run through Windows x64 emulation; performance and compatibility depend on the host system and the SDK packages in use.
 - **Java/JDK 17+** is recommended for modern Android SDK tools. CoreDeck can use a configured JDK home or download a managed user-local JDK.
 - **OS:** Windows 10/11, macOS 12+ (Intel or Apple Silicon), or a recent Linux distribution.
 

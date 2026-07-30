@@ -554,10 +554,14 @@ namespace CoreDeck {
                 bundledFonts,
                 cjkCandidates
             );
+            const int currentFontSize = static_cast<int>(std::round(NormalizeUiFontSize(context.Prefs.UiFontSize)));
+            const std::string currentFontSizeLabel = StrConcat(std::to_string(currentFontSize), " px");
 
-            const float chooseWidth = Em(15.0F);
+            const float fontSizeWidth = Em(20.0F);
+            const float resetWidth = Em(15.0F);
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - chooseWidth - spacing);
+            const float fontWidth = ImGui::GetContentRegionAvail().x - fontSizeWidth - resetWidth - (spacing * 2.0F);
+            ImGui::SetNextItemWidth(fontWidth);
             {
                 ComboStyle cs;
                 if (ImGui::BeginCombo("##CjkFont", preview.c_str())) {
@@ -604,27 +608,29 @@ namespace CoreDeck {
             }
 
             ImGui::SameLine();
-            static constexpr const char *FONT_FILTERS[] = {"*.ttf", "*.otf", "*.ttc"};
-            if (PrimaryButton("Choose Font...", true, ImVec2(chooseWidth, 0))) {
-                const auto picked = FileDialog::PickFile(
-                    Tr("Select a font file"),
-                    FONT_FILTERS,
-                    IM_ARRAYSIZE(FONT_FILTERS),
-                    Tr("Font files"),
-                    context.Prefs.CustomCjkFontPath
-                );
-                if (picked.has_value()) {
-                    if (IsSupportedFontPath(*picked)) {
-                        context.Prefs.CustomCjkFontPath = *picked;
-                        fontError = nullptr;
-                        RequestFontReload(context);
-                    } else {
-                        fontError = "The selected file is not a supported font.";
+            ImGui::SetNextItemWidth(fontSizeWidth);
+            {
+                ComboStyle cs;
+                if (ImGui::BeginCombo("##UiFontSize", currentFontSizeLabel.c_str())) {
+                    for (int size = static_cast<int>(MIN_UI_FONT_SIZE); size <= static_cast<int>(MAX_UI_FONT_SIZE); size++) {
+                        const bool selected = size == currentFontSize;
+                        const std::string label = StrConcat(std::to_string(size), " px");
+                        if (RoundedSelectable(label.c_str(), selected)) {
+                            context.Prefs.UiFontSize = static_cast<float>(size);
+                            RequestFontReload(context);
+                        }
+                        if (selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
                     }
+                    ImGui::EndCombo();
                 }
             }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s", Tr("Choose a .ttf, .otf, or .ttc font file."));
+
+            ImGui::SameLine();
+            if (PrimaryButton("Reset Font Size", context.Prefs.UiFontSize != DEFAULT_UI_FONT_SIZE, ImVec2(resetWidth, 0))) {
+                context.Prefs.UiFontSize = DEFAULT_UI_FONT_SIZE;
+                RequestFontReload(context);
             }
 
             const std::string effectivePath =
@@ -658,34 +664,6 @@ namespace CoreDeck {
                 }
             }
 
-            ImGui::Dummy(ImVec2(0, 4));
-
-            LabelText("Font size");
-            const int currentFontSize = static_cast<int>(std::round(NormalizeUiFontSize(context.Prefs.UiFontSize)));
-            const std::string currentFontSizeLabel = StrConcat(std::to_string(currentFontSize), " px");
-            ImGui::SetNextItemWidth(Em(20.0F));
-            {
-                ComboStyle cs;
-                if (ImGui::BeginCombo("##UiFontSize", currentFontSizeLabel.c_str())) {
-                    for (int size = static_cast<int>(MIN_UI_FONT_SIZE); size <= static_cast<int>(MAX_UI_FONT_SIZE); size++) {
-                        const bool selected = size == currentFontSize;
-                        const std::string label = StrConcat(std::to_string(size), " px");
-                        if (RoundedSelectable(label.c_str(), selected)) {
-                            context.Prefs.UiFontSize = static_cast<float>(size);
-                            RequestFontReload(context);
-                        }
-                        if (selected) {
-                            ImGui::SetItemDefaultFocus();
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-            }
-            ImGui::SameLine();
-            if (PrimaryButton("Reset Font Size", context.Prefs.UiFontSize != DEFAULT_UI_FONT_SIZE)) {
-                context.Prefs.UiFontSize = DEFAULT_UI_FONT_SIZE;
-                RequestFontReload(context);
-            }
         }
 
         void DrawGeneralSection(Context &context) {

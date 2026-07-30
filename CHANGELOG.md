@@ -1,3 +1,12 @@
+## [v0.10.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.10.0) — 2026-07-30
+
+- Add AVD snapshot management with snapshot size and modified-time details, refresh support, guarded deletion, and running-emulator protection
+- Show each AVD's API level alongside its system image type and running status in the AVD list
+- Harden snapshot deletion and AVD operation flows against unsafe paths, asynchronous failures, and stale UI-thread state
+- Discover the latest Android SDK Command-line Tools from Google's official repository metadata with a fixed-version fallback and archive verification
+- Keep snapshot dialogs centered while asynchronous results change their height
+- Streamline font preferences by removing the separate font-file chooser and placing font, size, and reset controls on one row
+
 ## [v0.10.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.10.0-beta.2) — 2026-07-29
 
 - Keep the snapshot dialog centered while asynchronous results change its height

@@ -1,3 +1,7 @@
+## [v0.11.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.5) — 2026-08-01
+
+- Keep docked panels visible and their adjusted proportions stable behind the quit confirmation
+
 ## [v0.11.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.4) — 2026-08-01
 
 - Replace the previous checksum and installer in a shared update download directory

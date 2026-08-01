@@ -676,6 +676,13 @@ namespace CoreDeck {
 
         BuildDockLayout(m_Context, dockSpaceId);
 
+        BuildSdkMissingBanner(m_Context);
+        BuildAvdOptionsWindow(m_Context);
+        BuildAvdListWindow(m_Context);
+        BuildAvdInfoWindow(m_Context);
+        BuildAvdLogsWindow(m_Context);
+        BuildDeviceExplorerWindow(m_Context);
+
         if (m_Context.UI.ShowQuitDialog) {
             BuildQuitConfirmWindow(m_Context);
             m_Context.Host.Manager.Update();
@@ -683,15 +690,9 @@ namespace CoreDeck {
             return;
         }
 
-        BuildSdkMissingBanner(m_Context);
         BuildDeleteAvdWindow(m_Context);
-        BuildAvdOptionsWindow(m_Context);
-        BuildAvdListWindow(m_Context);
-        BuildAvdInfoWindow(m_Context);
         BuildRenameAvdWindow(m_Context);
         BuildAvdSnapshotsWindow(m_Context);
-        BuildAvdLogsWindow(m_Context);
-        BuildDeviceExplorerWindow(m_Context);
         BuildAboutWindow(m_Context);
         BuildPreferencesWindow(m_Context);
         BuildUpdateNoticeWindow(m_Context);

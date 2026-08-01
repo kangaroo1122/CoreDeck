@@ -1,6 +1,7 @@
 ## [v0.11.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.1) — 2026-08-01
 
 - Keep Preferences open beneath update result dialogs started from its System Updates section
+- Skip quit confirmation when no emulator sessions are running
 
 ## [v0.11.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0) — 2026-08-01
 

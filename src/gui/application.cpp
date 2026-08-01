@@ -944,7 +944,9 @@ namespace CoreDeck {
             }
 
             RequestQuitConfirmation(self->m_Context);
-            glfwSetWindowShouldClose(w, GLFW_FALSE);
+            if (!self->m_Context.UI.QuitConfirmed) {
+                glfwSetWindowShouldClose(w, GLFW_FALSE);
+            }
         });
 
         glfwSetWindowSizeCallback(m_Window, [](GLFWwindow *w, const int width, const int height) {

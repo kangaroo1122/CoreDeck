@@ -4,12 +4,26 @@
 
 #include "quit_confirm.h"
 
+#include <algorithm>
 #include <GLFW/glfw3.h>
 
 #include "../widgets.h"
 
 namespace CoreDeck {
     void RequestQuitConfirmation(Context &context) {
+        const bool hasRunningAvd = std::ranges::any_of(
+            context.Catalog.Avds,
+            [&context](const AvdInfo &avd) {
+                return context.Host.Manager.IsRunning(avd.Name);
+            }
+        );
+        if (!hasRunningAvd) {
+            context.UI.QuitConfirmed = true;
+            if (context.UI.MainWindow != nullptr) {
+                glfwSetWindowShouldClose(context.UI.MainWindow, GLFW_TRUE);
+            }
+            return;
+        }
         context.UI.ShowQuitDialog = true;
     }
 

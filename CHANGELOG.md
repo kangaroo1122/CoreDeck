@@ -1,3 +1,7 @@
+## [v0.11.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.3) — 2026-08-01
+
+- Show the same up-to-date and update-available dialogs from Preferences and the Help menu
+
 ## [v0.11.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.2) — 2026-08-01
 
 - Move System Updates to the end of the Preferences menu

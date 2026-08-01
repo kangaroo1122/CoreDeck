@@ -730,20 +730,7 @@ namespace CoreDeck {
             ImGui::TextDisabled("%s", Tr(context.Prefs.IncludeBetaUpdates ? "Update channel: Stable + Beta" : "Update channel: Stable"));
             ImGui::Dummy(ImVec2(0, 8));
 
-            if (context.Updates.PendingNewVersionModal) {
-                ImGui::TextColored(
-                    HexColor(Colors::POSITIVE),
-                    "%s v%s",
-                    Tr("Update available:"),
-                    context.Updates.LatestVersion.c_str()
-                );
-                if (PositiveButton("View Update", true)) {
-                    context.UI.ShowPreferences = false;
-                    ImGui::CloseCurrentPopup();
-                }
-            } else if (context.Updates.ShowUpToDateInPreferences) {
-                ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("You're running the latest CoreDeck release."));
-            } else if (context.Updates.UpdateCheckInFlight) {
+            if (context.Updates.UpdateCheckInFlight) {
                 ImGui::TextDisabled("%s", Tr("Checking for updates..."));
             }
 
@@ -751,8 +738,8 @@ namespace CoreDeck {
             if (PrimaryButton("Check for Updates", !context.Updates.UpdateCheckInFlight)) {
                 context.Updates.PendingNewVersionModal = false;
                 context.Updates.PendingUpToDateModal = false;
-                context.Updates.ShowUpToDateInPreferences = false;
                 context.Updates.RequestManualUpdateCheck = true;
+                context.Updates.RequestManualUpdateCheckFromPreferences = true;
             }
         }
 
@@ -1299,6 +1286,14 @@ namespace CoreDeck {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         if (RoundedBeginPopupModal("Preferences###CoreDeckPrefs", &context.UI.ShowPreferences, PREFERENCES_WINDOW_FLAGS)) {
             ImGui::PopStyleVar();
+
+            if (context.Updates.ClosePreferencesForUpdateResult) {
+                context.Updates.ClosePreferencesForUpdateResult = false;
+                context.UI.ShowPreferences = false;
+                ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+                return;
+            }
 
             if (ImGui::IsWindowAppearing()) {
                 const std::string &p = context.Host.Sdk.SdkPath;

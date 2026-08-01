@@ -416,9 +416,10 @@ namespace CoreDeck {
             std::string LatestNotes;
             bool ShowUpToDateModal = false;
             bool PendingUpToDateModal = false;
-            bool ShowUpToDateInPreferences = false;
             bool RequestManualUpdateCheck = false;
+            bool RequestManualUpdateCheckFromPreferences = false;
             bool UpdateCheckInFlight = false;
+            bool ClosePreferencesForUpdateResult = false;
             std::optional<ReleaseAsset> LatestPackage;
             std::optional<ReleaseAsset> LatestChecksum;
             bool DownloadInFlight = false;

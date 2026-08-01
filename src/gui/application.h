@@ -76,6 +76,7 @@ namespace CoreDeck {
         std::future<std::optional<RemoteRelease>> m_UpdateCheckFuture;
         bool m_AutoUpdateCheckStarted = false;
         bool m_UpdateCheckWasManual = false;
+        bool m_UpdateCheckFromPreferences = false;
     };
 
     AppSettings CaptureAppSettingsFromContext(const Context &context);

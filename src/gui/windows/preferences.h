@@ -8,7 +8,7 @@
 #include "../context.h"
 
 namespace CoreDeck {
-    void BuildPreferencesWindow(Context &context);
+    bool BuildPreferencesWindow(Context &context);
 }
 
 #endif // COREDECK_PREFERENCES_H

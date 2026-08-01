@@ -694,8 +694,9 @@ namespace CoreDeck {
         BuildRenameAvdWindow(m_Context);
         BuildAvdSnapshotsWindow(m_Context);
         BuildAboutWindow(m_Context);
-        BuildPreferencesWindow(m_Context);
-        BuildUpdateNoticeWindow(m_Context);
+        if (!BuildPreferencesWindow(m_Context)) {
+            BuildUpdateNoticeWindow(m_Context);
+        }
         BuildCreateAvdWindow(m_Context);
         if (!m_Context.UI.ShowCreateAvdDialog) {
             BuildInstallImageWindow(m_Context);
@@ -1140,26 +1141,23 @@ namespace CoreDeck {
                 m_Context.Updates.LatestChecksum = std::move(newer->Checksum);
                 m_Context.Updates.DownloadedPackagePath.clear();
                 m_Context.Updates.DownloadError.clear();
-                if (m_UpdateCheckFromPreferences && m_Context.UI.ShowPreferences) {
-                    m_Context.Updates.PendingNewVersionModal = true;
-                    m_Context.Updates.ClosePreferencesForUpdateResult = true;
-                } else if (m_Context.UI.ShowPreferences || popupOpen) {
+                if (m_Context.UI.ShowPreferences) {
+                    m_Context.Updates.ShowNewVersionModal = true;
+                } else if (popupOpen) {
                     m_Context.Updates.PendingNewVersionModal = true;
                 } else {
                     m_Context.Updates.ShowNewVersionModal = true;
                 }
             } else if (m_UpdateCheckWasManual) {
-                if (m_UpdateCheckFromPreferences && m_Context.UI.ShowPreferences) {
-                    m_Context.Updates.PendingUpToDateModal = true;
-                    m_Context.Updates.ClosePreferencesForUpdateResult = true;
-                } else if (m_Context.UI.ShowPreferences || popupOpen) {
+                if (m_Context.UI.ShowPreferences) {
+                    m_Context.Updates.ShowUpToDateModal = true;
+                } else if (popupOpen) {
                     m_Context.Updates.PendingUpToDateModal = true;
                 } else {
                     m_Context.Updates.ShowUpToDateModal = true;
                 }
             }
             m_UpdateCheckWasManual = false;
-            m_UpdateCheckFromPreferences = false;
             return;
         }
 
@@ -1167,13 +1165,10 @@ namespace CoreDeck {
         if (!m_AutoUpdateCheckStarted) {
             m_AutoUpdateCheckStarted = true;
             m_UpdateCheckWasManual = false;
-            m_UpdateCheckFromPreferences = false;
             start = true;
         } else if (m_Context.Updates.RequestManualUpdateCheck) {
             m_Context.Updates.RequestManualUpdateCheck = false;
             m_UpdateCheckWasManual = true;
-            m_UpdateCheckFromPreferences = m_Context.Updates.RequestManualUpdateCheckFromPreferences;
-            m_Context.Updates.RequestManualUpdateCheckFromPreferences = false;
             start = true;
         }
 

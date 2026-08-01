@@ -417,9 +417,7 @@ namespace CoreDeck {
             bool ShowUpToDateModal = false;
             bool PendingUpToDateModal = false;
             bool RequestManualUpdateCheck = false;
-            bool RequestManualUpdateCheckFromPreferences = false;
             bool UpdateCheckInFlight = false;
-            bool ClosePreferencesForUpdateResult = false;
             std::optional<ReleaseAsset> LatestPackage;
             std::optional<ReleaseAsset> LatestChecksum;
             bool DownloadInFlight = false;

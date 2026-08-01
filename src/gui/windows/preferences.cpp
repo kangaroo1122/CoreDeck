@@ -20,6 +20,7 @@
 #include "../localization.h"
 #include "../theme.h"
 #include "../application.h"
+#include "update.h"
 #include "../../core/jdk.h"
 #include "../../core/paths.h"
 #include "../../core/sdk_bootstrap.h"
@@ -739,7 +740,6 @@ namespace CoreDeck {
                 context.Updates.PendingNewVersionModal = false;
                 context.Updates.PendingUpToDateModal = false;
                 context.Updates.RequestManualUpdateCheck = true;
-                context.Updates.RequestManualUpdateCheckFromPreferences = true;
             }
         }
 
@@ -1261,7 +1261,7 @@ namespace CoreDeck {
         }
     }
 
-    void BuildPreferencesWindow(Context &context) {
+    bool BuildPreferencesWindow(Context &context) {
         if (context.UI.ShowPreferences && !ImGui::IsPopupOpen("Preferences###CoreDeckPrefs")) {
             ImGui::OpenPopup("Preferences###CoreDeckPrefs");
         }
@@ -1286,14 +1286,6 @@ namespace CoreDeck {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         if (RoundedBeginPopupModal("Preferences###CoreDeckPrefs", &context.UI.ShowPreferences, PREFERENCES_WINDOW_FLAGS)) {
             ImGui::PopStyleVar();
-
-            if (context.Updates.ClosePreferencesForUpdateResult) {
-                context.Updates.ClosePreferencesForUpdateResult = false;
-                context.UI.ShowPreferences = false;
-                ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-                return;
-            }
 
             if (ImGui::IsWindowAppearing()) {
                 const std::string &p = context.Host.Sdk.SdkPath;
@@ -1392,9 +1384,12 @@ namespace CoreDeck {
             }
             ImGui::EndChild();
 
+            BuildUpdateNoticeWindow(context);
             ImGui::EndPopup();
+            return true;
         } else {
             ImGui::PopStyleVar();
         }
+        return false;
     }
 }

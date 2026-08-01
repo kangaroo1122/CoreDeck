@@ -1,3 +1,14 @@
+## [v0.11.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.1) — 2026-08-01
+
+- Add a System Updates section to Preferences with Stable monitoring enabled by default
+- Add an option to include Beta and other prerelease versions in update checks
+- Select the newest compatible release and platform-specific package from GitHub Releases
+- Download update packages inside CoreDeck with progress and cancellation support
+- Verify downloaded packages against the release-provided SHA-256 checksum before opening them
+- Open verified DMG installers on macOS and the downloaded archive location on Linux
+- Ask for confirmation before starting the Windows MSI, with a clear notice that CoreDeck will exit
+- Skip quit confirmation on the onboarding screen, where no emulator session is running yet
+
 ## [v0.10.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.10.0) — 2026-07-30
 
 - Add AVD snapshot management with snapshot size and modified-time details, refresh support, guarded deletion, and running-emulator protection

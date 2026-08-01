@@ -34,6 +34,7 @@ namespace CoreDeck {
         enum class PrefsSection : uint8_t {
             Appearance,
             General,
+            SystemUpdates,
             AndroidSdk,
             JavaJdk,
         };
@@ -47,6 +48,7 @@ namespace CoreDeck {
         constexpr SidebarItem SIDEBAR_ITEMS[] = {
             {.Section = PrefsSection::Appearance, .Icon = Icons::CIRCLE, .Label = "Appearance"},
             {.Section = PrefsSection::General, .Icon = Icons::GEAR, .Label = "General"},
+            {.Section = PrefsSection::SystemUpdates, .Icon = Icons::REFRESH, .Label = "System Updates"},
             {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android SDK"},
             {.Section = PrefsSection::JavaJdk, .Icon = Icons::JAVA, .Label = "Java (JDK)"},
         };
@@ -712,6 +714,26 @@ namespace CoreDeck {
             }
         }
 
+        void DrawSystemUpdatesSection(Context &context) {
+            SectionHeader("System Updates", "Choose which CoreDeck release channel to monitor.");
+
+            if (SubtitledCheckbox(
+                    "IncludeBetaUpdates",
+                    &context.Prefs.IncludeBetaUpdates,
+                    "Monitor beta releases",
+                    "Include prerelease versions in update checks. Stable releases are monitored by default."
+                )) {
+                PersistAppSettings(context);
+            }
+
+            ImGui::Dummy(ImVec2(0, 8));
+            ImGui::TextDisabled("%s", Tr(context.Prefs.IncludeBetaUpdates ? "Update channel: Stable + Beta" : "Update channel: Stable"));
+            ImGui::Dummy(ImVec2(0, 8));
+            if (PrimaryButton("Check for Updates", !context.Updates.UpdateCheckInFlight)) {
+                context.Updates.RequestManualUpdateCheck = true;
+            }
+        }
+
         void DrawSdkPackageManager(Context &context) {
             auto &work = context.SdkManagerWork;
 
@@ -1326,6 +1348,9 @@ namespace CoreDeck {
             switch (activeSection) {
                 case PrefsSection::General:
                     DrawGeneralSection(context);
+                    break;
+                case PrefsSection::SystemUpdates:
+                    DrawSystemUpdatesSection(context);
                     break;
                 case PrefsSection::Appearance:
                     DrawAppearanceSection(context);

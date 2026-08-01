@@ -34,6 +34,7 @@ namespace CoreDeck {
         int AvdSortMode = 0;
         bool AvdSortAscending = true;
         std::string JavaHomePath;
+        bool IncludeBetaUpdates = false;
     };
 }
 

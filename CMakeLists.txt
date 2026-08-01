@@ -168,6 +168,7 @@ add_library(coredeck_core STATIC
     src/core/system_image.cpp
     src/core/utilities.cpp
     src/core/version_check.cpp
+    src/core/update_download.cpp
 )
 
 target_include_directories(coredeck_core PUBLIC src)

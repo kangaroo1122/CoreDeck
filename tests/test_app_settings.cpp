@@ -17,6 +17,7 @@ TEST_CASE("AppSettings enables wipe-and-run confirmation by default", "[app_sett
     REQUIRE(settings.WindowWidth == 1200);
     REQUIRE(settings.WindowHeight == 900);
     REQUIRE_FALSE(settings.WindowMaximized);
+    REQUIRE_FALSE(settings.IncludeBetaUpdates);
 }
 
 TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[app_settings][migration]") {
@@ -51,6 +52,7 @@ TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[ap
     REQUIRE(settings.WindowWidth == 1200);
     REQUIRE(settings.WindowHeight == 900);
     REQUIRE_FALSE(settings.WindowMaximized);
+    REQUIRE_FALSE(settings.IncludeBetaUpdates);
 }
 
 TEST_CASE("AppSettings preserves a saved UI font size", "[app_settings][font]") {

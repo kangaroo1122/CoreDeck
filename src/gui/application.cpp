@@ -928,6 +928,12 @@ namespace CoreDeck {
                 return;
             }
 
+            if (self->m_Context.Flow.CurrentScreen == Screen::Onboarding) {
+                self->m_Context.UI.QuitConfirmed = true;
+                glfwSetWindowShouldClose(w, GLFW_TRUE);
+                return;
+            }
+
             RequestQuitConfirmation(self->m_Context);
             glfwSetWindowShouldClose(w, GLFW_FALSE);
         });
@@ -1036,11 +1042,15 @@ namespace CoreDeck {
     void Application::m_DrainAsyncWork() {
         RequestProgressCancel(m_Context.SdkManagerWork.Progress);
         RequestProgressCancel(m_Context.JdkDownloadWork.Progress);
+        if (m_Context.Updates.DownloadProgress) {
+            m_Context.Updates.DownloadProgress->CancelRequested.store(true);
+        }
 
         ShutdownOnboardingSdkBootstrapWork();
         CancelDeviceExplorerWork(m_Context);
 
         ConsumeFuture(m_UpdateCheckFuture);
+        ConsumeFuture(m_Context.Updates.DownloadFuture);
         ConsumeFuture(m_Context.AvdCreationWork.Prefetch.Future);
         ConsumeFuture(m_Context.AvdCreationWork.SystemImageRemoval.Future);
         ConsumeFuture(m_Context.AvdSnapshotWork.ListFuture);
@@ -1107,6 +1117,10 @@ namespace CoreDeck {
             if (newer) {
                 m_Context.Updates.LatestVersion = std::move(newer->Version);
                 m_Context.Updates.LatestNotes = std::move(newer->Notes);
+                m_Context.Updates.LatestPackage = std::move(newer->Package);
+                m_Context.Updates.LatestChecksum = std::move(newer->Checksum);
+                m_Context.Updates.DownloadedPackagePath.clear();
+                m_Context.Updates.DownloadError.clear();
                 m_Context.Updates.ShowNewVersionModal = true;
             } else if (m_UpdateCheckWasManual) {
                 m_Context.Updates.ShowUpToDateModal = true;
@@ -1128,9 +1142,10 @@ namespace CoreDeck {
 
         if (start) {
             m_Context.Updates.UpdateCheckInFlight = true;
-            m_UpdateCheckFuture = std::async(std::launch::async, []() -> std::optional<RemoteRelease> {
+            const bool includeBetaUpdates = m_Context.Prefs.IncludeBetaUpdates;
+            m_UpdateCheckFuture = std::async(std::launch::async, [includeBetaUpdates]() -> std::optional<RemoteRelease> {
                 try {
-                    return QueryRemoteNewerVersion();
+                    return QueryRemoteNewerVersion(includeBetaUpdates);
                 } catch (...) {
                     return std::nullopt;
                 }
@@ -1151,7 +1166,14 @@ namespace CoreDeck {
                     m_Context.UI.ShowPreferences = true;
                     break;
                 case NativeMenuAction::Quit:
-                    RequestQuitConfirmation(m_Context);
+                    if (m_Context.Flow.CurrentScreen == Screen::Onboarding) {
+                        m_Context.UI.QuitConfirmed = true;
+                        if (m_Context.UI.MainWindow != nullptr) {
+                            glfwSetWindowShouldClose(m_Context.UI.MainWindow, GLFW_TRUE);
+                        }
+                    } else {
+                        RequestQuitConfirmation(m_Context);
+                    }
                     break;
                 case NativeMenuAction::ToggleAvdList:
                     m_Context.UI.ShowAvdListPanel = !m_Context.UI.ShowAvdListPanel;
@@ -1225,6 +1247,7 @@ namespace CoreDeck {
         s.CustomCjkFontPath = context.Prefs.CustomCjkFontPath;
         s.UiFontSize = NormalizeUiFontSize(context.Prefs.UiFontSize);
         s.JavaHomePath = context.Prefs.JavaHomePath;
+        s.IncludeBetaUpdates = context.Prefs.IncludeBetaUpdates;
         s.WindowWidth = context.UI.WindowWidth;
         s.WindowHeight = context.UI.WindowHeight;
         s.WindowMaximized = context.UI.WindowMaximized;
@@ -1256,6 +1279,7 @@ namespace CoreDeck {
         context.Prefs.CustomCjkFontPath = settings.CustomCjkFontPath;
         context.Prefs.UiFontSize = NormalizeUiFontSize(settings.UiFontSize);
         context.Prefs.JavaHomePath = settings.JavaHomePath;
+        context.Prefs.IncludeBetaUpdates = settings.IncludeBetaUpdates;
         context.Host.Sdk.JavaHomePath = settings.JavaHomePath;
         context.Host.Manager.SetSdk(context.Host.Sdk);
         context.UI.WindowWidth = NormalizeWindowDimension(settings.WindowWidth, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_WIDTH);

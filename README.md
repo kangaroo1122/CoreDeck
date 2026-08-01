@@ -36,6 +36,7 @@ Android Studio for everyday emulator work. Built with C++20 and Dear ImGui.
 - **Emulator Control** — Launch, stop, cold boot, wipe & run, and tune per-AVD emulator options such as GPU, RAM, CPU, camera, network, boot, and timezone.
 - **SDK Package Management** — Install and remove Android SDK platforms, system images, platform-tools, emulator, and command-line tools from Preferences.
 - **Guided SDK/JDK Setup** — Configure an existing SDK, install base SDK tools during onboarding, and use a managed JDK 17+ without changing system Java.
+- **System Updates** — Monitor Stable releases by default, optionally include Beta releases, download updates in-app, verify SHA-256 checksums, and open the platform installer or archive when ready.
 - **Device Explorer** — Browse files on the selected running AVD, upload/download files or folders, create folders, and delete safely.
 - **Per-AVD Shared Folders** — Open host or emulator shared folders and sync regular files incrementally with conflict-preserving copies.
 - **Output Log Viewer** — Stream emulator output with search, navigation, selectable text, auto-scroll, and horizontal scrolling for long lines.
@@ -163,6 +164,12 @@ If Quick Boot restores stale device state, enable the per-AVD Cold Boot option.
 **Does CoreDeck replace Android Studio?**
 No — it wraps the same official command-line tools that Android Studio uses, so you still need the Android SDK
 installed. CoreDeck just gives you a focused GUI for SDK, AVD, emulator, logs, device files, and shared-folder workflows.
+
+**How do application updates work?**
+CoreDeck monitors Stable releases by default. Enable Beta monitoring in Preferences → System Updates to include prereleases.
+Updates are downloaded only after you choose Download and are verified against the release SHA-256 checksum. Windows asks
+for confirmation before starting the MSI and closing CoreDeck; macOS opens the DMG, while Linux opens the downloaded archive
+location for manual installation.
 
 ## Contributing
 

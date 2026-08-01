@@ -40,9 +40,50 @@ TEST_CASE("CompareSemanticVersion pads missing components with zero", "[version_
 TEST_CASE("CompareSemanticVersion treats pre-release as lower than matching stable", "[version_check][semver]") {
     REQUIRE(CompareSemanticVersion("1.0.0-beta", "1.0.0") == -1);
     REQUIRE(CompareSemanticVersion("1.0.0", "1.0.0-beta") == 1);
-    REQUIRE(CompareSemanticVersion("1.0.0-rc1", "1.0.0-alpha") == 0);
+    REQUIRE(CompareSemanticVersion("1.0.0-rc.1", "1.0.0-alpha") == 1);
     REQUIRE(CompareSemanticVersion("2.0.0-beta", "1.9.9") == 1);
     REQUIRE(CompareSemanticVersion("1.0.0-beta", "2.0.0") == -1);
+    REQUIRE(CompareSemanticVersion("1.0.0-beta.2", "1.0.0-beta.1") == 1);
+    REQUIRE(CompareSemanticVersion("1.0.0-rc.1", "1.0.0-beta.9") == 1);
+}
+
+TEST_CASE("Release assets select the package for a platform and architecture", "[version_check][assets]") {
+    CoreDeck::RemoteRelease release;
+    release.Assets = {
+        {.Name = "coredeck-windows-x86-64.msi", .DownloadUrl = "https://example/windows-x64", .Size = 10},
+        {.Name = "coredeck-windows-arm64.msi", .DownloadUrl = "https://example/windows-arm64", .Size = 11},
+        {.Name = "coredeck-windows-arm64.msi.sha256", .DownloadUrl = "https://example/windows-arm64.sha256", .Size = 12},
+    };
+
+    const auto selected = SelectReleaseAsset(release, "windows", "arm64");
+    REQUIRE(selected.has_value());
+    REQUIRE(selected->Name == "coredeck-windows-arm64.msi");
+}
+
+TEST_CASE("Release assets use the published macOS DMG name", "[version_check][assets]") {
+    CoreDeck::RemoteRelease release;
+    release.Assets = {
+        {.Name = "coredeck-darwin-arm64-unsigned.dmg", .DownloadUrl = "https://example/macos-arm64", .Size = 10},
+    };
+
+    const auto selected = SelectReleaseAsset(release, "macos", "arm64");
+    REQUIRE(selected.has_value());
+    REQUIRE(selected->Name == "coredeck-darwin-arm64-unsigned.dmg");
+}
+
+TEST_CASE("Release channel controls prerelease selection", "[version_check][channel]") {
+    const std::string releases = R"([
+        {"tag_name":"v1.1.0-beta.2","prerelease":true,"draft":false,"body":"beta"},
+        {"tag_name":"v1.0.1","prerelease":false,"draft":false,"body":"stable"}
+    ])";
+
+    const auto stable = SelectNewestRelease(releases, false, "v1.0.0");
+    REQUIRE(stable.has_value());
+    REQUIRE(stable->Version == "v1.0.1");
+
+    const auto beta = SelectNewestRelease(releases, true, "v1.0.0");
+    REQUIRE(beta.has_value());
+    REQUIRE(beta->Version == "v1.1.0-beta.2");
 }
 
 TEST_CASE("CompareSemanticVersion handles empty strings as 0.0.0", "[version_check][semver]") {

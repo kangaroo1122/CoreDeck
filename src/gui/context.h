@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -26,6 +27,8 @@
 #include "../core/shared_folder.h"
 #include "../core/skin.h"
 #include "../core/system_image.h"
+#include "../core/update_download.h"
+#include "../core/version_check.h"
 #include "localization.h"
 #include "theme.h"
 
@@ -153,6 +156,7 @@ namespace CoreDeck {
             std::string CustomCjkFontPath;
             float UiFontSize = 16.0F;
             std::string JavaHomePath;
+            bool IncludeBetaUpdates = false;
         } Prefs;
 
         struct UI {
@@ -412,6 +416,14 @@ namespace CoreDeck {
             bool ShowUpToDateModal = false;
             bool RequestManualUpdateCheck = false;
             bool UpdateCheckInFlight = false;
+            std::optional<ReleaseAsset> LatestPackage;
+            std::optional<ReleaseAsset> LatestChecksum;
+            bool DownloadInFlight = false;
+            std::shared_ptr<UpdateDownloadProgress> DownloadProgress;
+            std::future<UpdateDownloadResult> DownloadFuture;
+            std::string DownloadedPackagePath;
+            std::string DownloadError;
+            bool ShowInstallConfirmation = false;
         } Updates;
 
         explicit Context(SdkInfo sdk) : Host(std::move(sdk)) {

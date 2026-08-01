@@ -18,6 +18,7 @@ add_executable(coredeck_tests
         test_device_file.cpp
         test_shared_folder.cpp
         test_version_check.cpp
+        test_update_download.cpp
 )
 
 target_link_libraries(coredeck_tests PRIVATE

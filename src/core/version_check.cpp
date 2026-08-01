@@ -3,6 +3,7 @@
 //
 
 #include <algorithm>
+#include <cctype>
 #include <rfl/json.hpp>
 
 #include "version_check.h"
@@ -18,9 +19,18 @@
 
 namespace CoreDeck {
     namespace {
+        struct GitHubReleaseAsset {
+            std::string name; // NOLINT(readability-identifier-naming)
+            std::string browser_download_url; // NOLINT(readability-identifier-naming)
+            std::uint64_t size = 0;
+        };
+
         struct GitHubLatestRelease {
             std::string tag_name; // NOLINT(readability-identifier-naming)
             std::optional<std::string> body; // NOLINT(readability-identifier-naming)
+            std::optional<bool> prerelease; // NOLINT(readability-identifier-naming)
+            std::optional<bool> draft; // NOLINT(readability-identifier-naming)
+            std::vector<GitHubReleaseAsset> assets; // NOLINT(readability-identifier-naming)
         };
 
         void TrimInPlace(std::string &s) {
@@ -57,13 +67,25 @@ namespace CoreDeck {
             }
             return body.substr(0, lastSeparatorStart);
         }
+
+        RemoteRelease BuildRemoteRelease(const GitHubLatestRelease &value) {
+            RemoteRelease release;
+            release.Version = value.tag_name;
+            release.Notes = ExtractWhatsNewSection(value.body.value_or(""));
+            release.IsPrerelease = value.prerelease.value_or(false);
+            for (const auto &asset: value.assets) {
+                release.Assets.push_back({asset.name, asset.browser_download_url, asset.size});
+            }
+            TrimInPlace(release.Notes);
+            return release;
+        }
     }
 
 
     namespace detail {
         std::optional<std::string> ParseLatestReleaseTag(const std::string &body) {
             try {
-                const auto parsed = rfl::json::read<GitHubLatestRelease>(body);
+                const auto parsed = rfl::json::read<GitHubLatestRelease, rfl::DefaultIfMissing>(body);
                 if (!parsed) {
                     return std::nullopt;
                 }
@@ -80,7 +102,7 @@ namespace CoreDeck {
 
         std::optional<RemoteRelease> ParseLatestRelease(const std::string &body) {
             try {
-                const auto parsed = rfl::json::read<GitHubLatestRelease>(body);
+                const auto parsed = rfl::json::read<GitHubLatestRelease, rfl::DefaultIfMissing>(body);
                 if (!parsed) {
                     return std::nullopt;
                 }
@@ -88,28 +110,30 @@ namespace CoreDeck {
                 if (value.tag_name.empty()) {
                     return std::nullopt;
                 }
-                RemoteRelease release;
-                release.Version = value.tag_name;
-                release.Notes = ExtractWhatsNewSection(value.body.value_or(""));
-                TrimInPlace(release.Notes);
-                return release;
+                return BuildRemoteRelease(value);
             } catch (...) {
                 return std::nullopt;
             }
         }
 
         int CompareSemanticVersion(const std::string &newVersion, const std::string &currentVersion) {
-            auto parse = [](const std::string &raw) -> std::pair<std::vector<int>, bool> {
+            struct ParsedVersion {
+                std::vector<int> Core;
+                std::vector<std::string> PreRelease;
+            };
+
+            auto parse = [](const std::string &raw) -> ParsedVersion {
                 std::string s = raw;
                 if (!s.empty() && (s[0] == 'v' || s[0] == 'V')) {
                     s.erase(s.begin());
                 }
-                const bool hasPreRelease = s.find('-') != std::string::npos;
-                std::vector<int> parts;
+                const size_t dash = s.find('-');
+                const std::string core = dash == std::string::npos ? s : s.substr(0, dash);
+                ParsedVersion result;
                 size_t pos = 0;
-                while (pos < s.size()) {
-                    const size_t dot = s.find('.', pos);
-                    const std::string seg = dot == std::string::npos ? s.substr(pos) : s.substr(pos, dot - pos);
+                while (pos < core.size()) {
+                    const size_t dot = core.find('.', pos);
+                    const std::string seg = dot == std::string::npos ? core.substr(pos) : core.substr(pos, dot - pos);
                     int n = 0;
                     for (const char c: seg) {
                         if (c < '0' || c > '9') {
@@ -117,35 +141,124 @@ namespace CoreDeck {
                         }
                         n = (n * 10) + (c - '0');
                     }
-                    parts.push_back(n);
+                    result.Core.push_back(n);
                     if (dot == std::string::npos) {
                         break;
                     }
                     pos = dot + 1;
                 }
-                while (parts.size() < 3) {
-                    parts.push_back(0);
+                while (result.Core.size() < 3) {
+                    result.Core.push_back(0);
                 }
-                return {parts, hasPreRelease};
+                if (dash != std::string::npos) {
+                    const std::string pre = s.substr(dash + 1);
+                    pos = 0;
+                    while (pos <= pre.size()) {
+                        const size_t dot = pre.find('.', pos);
+                        result.PreRelease.push_back(dot == std::string::npos ? pre.substr(pos) : pre.substr(pos, dot - pos));
+                        if (dot == std::string::npos) {
+                            break;
+                        }
+                        pos = dot + 1;
+                    }
+                }
+                return result;
             };
 
-            const auto [va, preA] = parse(newVersion);
-            const auto [vb, preB] = parse(currentVersion);
-            const size_t n = std::max(va.size(), vb.size());
+            const ParsedVersion va = parse(newVersion);
+            const ParsedVersion vb = parse(currentVersion);
+            const size_t n = std::max(va.Core.size(), vb.Core.size());
             for (size_t i = 0; i < n; ++i) {
-                const int a = i < va.size() ? va[i] : 0;
-                const int b = i < vb.size() ? vb[i] : 0;
+                const int a = i < va.Core.size() ? va.Core[i] : 0;
+                const int b = i < vb.Core.size() ? vb.Core[i] : 0;
                 if (a != b) {
                     return a < b ? -1 : 1;
                 }
             }
-            if (preA && !preB) {
-                return -1;
-            }
-            if (!preA && preB) {
+            if (va.PreRelease.empty() && !vb.PreRelease.empty()) {
                 return 1;
             }
+            if (!va.PreRelease.empty() && vb.PreRelease.empty()) {
+                return -1;
+            }
+            for (size_t i = 0; i < std::max(va.PreRelease.size(), vb.PreRelease.size()); ++i) {
+                if (i >= va.PreRelease.size()) return -1;
+                if (i >= vb.PreRelease.size()) return 1;
+                const std::string &a = va.PreRelease[i];
+                const std::string &b = vb.PreRelease[i];
+                const bool aNumeric = !a.empty() && std::all_of(a.begin(), a.end(), [](const char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+                const bool bNumeric = !b.empty() && std::all_of(b.begin(), b.end(), [](const char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+                if (aNumeric && bNumeric) {
+                    const long long an = std::stoll(a);
+                    const long long bn = std::stoll(b);
+                    if (an != bn) return an < bn ? -1 : 1;
+                } else if (aNumeric != bNumeric) {
+                    return aNumeric ? -1 : 1;
+                } else if (a != b) {
+                    return a < b ? -1 : 1;
+                }
+            }
             return 0;
+        }
+
+        std::optional<ReleaseAsset> SelectReleaseAsset(
+            const RemoteRelease &release,
+            const std::string &platform,
+            const std::string &architecture
+        ) {
+            std::string expected;
+            if (platform == "windows") expected = "coredeck-windows-" + architecture + ".msi";
+            else if (platform == "macos") expected = "coredeck-darwin-" + architecture + "-unsigned.dmg";
+            else if (platform == "linux") expected = "coredeck-linux-" + architecture + ".tar.gz";
+            if (expected.empty()) return std::nullopt;
+            for (const auto &asset: release.Assets) {
+                if (asset.Name == expected) return asset;
+            }
+            return std::nullopt;
+        }
+
+        std::string CurrentPlatform() {
+#if defined(_WIN32)
+            return "windows";
+#elif defined(__APPLE__)
+            return "macos";
+#elif defined(__linux__)
+            return "linux";
+#else
+            return "unknown";
+#endif
+        }
+
+        std::string CurrentArchitecture() {
+#if defined(_M_ARM64) || defined(__aarch64__)
+            return "arm64";
+#else
+            return "x86-64";
+#endif
+        }
+
+        std::optional<RemoteRelease> SelectNewestRelease(
+            const std::string &body,
+            const bool includeBetaUpdates,
+            const std::string &currentVersion
+        ) {
+            try {
+                const auto parsed = rfl::json::read<std::vector<GitHubLatestRelease>, rfl::DefaultIfMissing>(body);
+                if (!parsed) return std::nullopt;
+                std::optional<RemoteRelease> selected;
+                for (const auto &value: parsed.value()) {
+                    if (value.tag_name.empty() || value.draft.value_or(false)) continue;
+                    if (!includeBetaUpdates && value.prerelease.value_or(false)) continue;
+                    RemoteRelease release = BuildRemoteRelease(value);
+                    if (CompareSemanticVersion(release.Version, currentVersion) <= 0) continue;
+                    if (!selected || CompareSemanticVersion(release.Version, selected->Version) > 0) {
+                        selected = std::move(release);
+                    }
+                }
+                return selected;
+            } catch (...) {
+                return std::nullopt;
+            }
         }
     }
 
@@ -249,14 +362,14 @@ namespace CoreDeck {
 #endif
     }
 
-    std::optional<RemoteRelease> QueryRemoteNewerVersion() {
+    std::optional<RemoteRelease> QueryRemoteNewerVersion(const bool includeBetaUpdates) {
 #if defined(_WIN32)
         const std::string ua = StrConcat("CoreDeck/", COREDECK_VERSION);
         std::wstring userAgent(ua.begin(), ua.end());
-        auto fetched = HttpGet(L"api.github.com", L"/repos/kangaroo1122/CoreDeck/releases/latest", userAgent);
+        auto fetched = HttpGet(L"api.github.com", L"/repos/kangaroo1122/CoreDeck/releases?per_page=30", userAgent);
 #else
         const std::string userAgent = StrConcat("CoreDeck/", COREDECK_VERSION);
-        auto fetched = HttpGet(COREDECK_GITHUB_API, userAgent);
+        auto fetched = HttpGet("https://api.github.com/repos/kangaroo1122/CoreDeck/releases?per_page=30", userAgent);
 #endif
         if (!fetched) {
             return std::nullopt;
@@ -267,13 +380,19 @@ namespace CoreDeck {
             return std::nullopt;
         }
 
-        auto remote = detail::ParseLatestRelease(body);
+        auto remote = detail::SelectNewestRelease(body, includeBetaUpdates, COREDECK_VERSION);
         if (!remote) {
             return std::nullopt;
         }
-
-        if (detail::CompareSemanticVersion(remote.value().Version, COREDECK_VERSION) <= 0) {
-            return std::nullopt;
+        remote->Package = detail::SelectReleaseAsset(*remote, detail::CurrentPlatform(), detail::CurrentArchitecture());
+        if (remote->Package) {
+            const std::string checksumName = remote->Package->Name + ".sha256";
+            for (const auto &asset: remote->Assets) {
+                if (asset.Name == checksumName) {
+                    remote->Checksum = asset;
+                    break;
+                }
+            }
         }
         return remote;
     }

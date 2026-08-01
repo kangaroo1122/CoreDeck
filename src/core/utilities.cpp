@@ -27,6 +27,18 @@ namespace CoreDeck {
 #endif
     }
 
+    bool OpenPath(const std::string &path) {
+#if defined(_WIN32)
+        return reinterpret_cast<std::intptr_t>(ShellExecuteA(nullptr, "open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) > 32;
+#elif defined(__APPLE__)
+        RunCommandArgs("/usr/bin/open", {path});
+        return true;
+#else
+        RunCommandArgs("xdg-open", {path});
+        return true;
+#endif
+    }
+
     std::uintmax_t GetDirectorySize(const std::string &path) {
         std::uintmax_t total = 0;
         std::error_code ec;

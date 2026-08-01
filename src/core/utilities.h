@@ -10,6 +10,8 @@
 namespace CoreDeck {
     void OpenUrl(const char *url);
 
+    bool OpenPath(const std::string &path);
+
     std::uintmax_t GetDirectorySize(const std::string &path);
 
     std::string FormatFileSize(std::uintmax_t bytes);

@@ -1,3 +1,13 @@
+## [v0.11.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0) — 2026-08-01
+
+- Add System Updates preferences with Stable monitoring enabled by default and an option to include Beta releases
+- Select the newest compatible release and platform-specific package from GitHub Releases
+- Download updates inside CoreDeck with progress, cancellation, SHA-256 verification, and same-file replacement
+- Show the same update result dialogs from Preferences and the Help menu
+- Open verified DMG installers on macOS, ask before starting Windows MSI installers, and open the downloaded package location on Linux
+- Move System Updates to the end of the Preferences menu
+- Skip quit confirmation during onboarding and keep docked panels visible behind the quit confirmation
+
 ## [v0.11.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.5) — 2026-08-01
 
 - Keep docked panels visible and their adjusted proportions stable behind the quit confirmation

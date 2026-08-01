@@ -676,6 +676,13 @@ namespace CoreDeck {
 
         BuildDockLayout(m_Context, dockSpaceId);
 
+        if (m_Context.UI.ShowQuitDialog) {
+            BuildQuitConfirmWindow(m_Context);
+            m_Context.Host.Manager.Update();
+            DriveSharedFolderSync(m_Context);
+            return;
+        }
+
         BuildSdkMissingBanner(m_Context);
         BuildDeleteAvdWindow(m_Context);
         BuildAvdOptionsWindow(m_Context);
@@ -1106,6 +1113,17 @@ namespace CoreDeck {
     }
 
     void Application::m_PollUpdateCheckIfNeeded() {
+        const bool popupOpen = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+        if (!popupOpen && !m_Context.UI.ShowPreferences && !m_Context.UI.ShowQuitDialog) {
+            if (m_Context.Updates.PendingNewVersionModal) {
+                m_Context.Updates.PendingNewVersionModal = false;
+                m_Context.Updates.ShowNewVersionModal = true;
+            } else if (m_Context.Updates.PendingUpToDateModal) {
+                m_Context.Updates.PendingUpToDateModal = false;
+                m_Context.Updates.ShowUpToDateModal = true;
+            }
+        }
+
         if (m_UpdateCheckFuture.valid()) {
             if (m_UpdateCheckFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
                 return;
@@ -1121,9 +1139,19 @@ namespace CoreDeck {
                 m_Context.Updates.LatestChecksum = std::move(newer->Checksum);
                 m_Context.Updates.DownloadedPackagePath.clear();
                 m_Context.Updates.DownloadError.clear();
-                m_Context.Updates.ShowNewVersionModal = true;
+                if (m_Context.UI.ShowPreferences || popupOpen) {
+                    m_Context.Updates.PendingNewVersionModal = true;
+                } else {
+                    m_Context.Updates.ShowNewVersionModal = true;
+                }
             } else if (m_UpdateCheckWasManual) {
-                m_Context.Updates.ShowUpToDateModal = true;
+                if (m_Context.UI.ShowPreferences) {
+                    m_Context.Updates.ShowUpToDateInPreferences = true;
+                } else if (popupOpen) {
+                    m_Context.Updates.PendingUpToDateModal = true;
+                } else {
+                    m_Context.Updates.ShowUpToDateModal = true;
+                }
             }
             m_UpdateCheckWasManual = false;
             return;

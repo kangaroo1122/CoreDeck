@@ -1,3 +1,9 @@
+## [v0.11.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.2) — 2026-08-01
+
+- Move System Updates to the end of the Preferences menu
+- Show update-check progress and results inside Preferences while it is open
+- Prevent update dialogs from hiding Preferences or blocking the quit confirmation
+
 ## [v0.11.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.1) — 2026-08-01
 
 - Add a System Updates section to Preferences with Stable monitoring enabled by default

@@ -48,9 +48,9 @@ namespace CoreDeck {
         constexpr SidebarItem SIDEBAR_ITEMS[] = {
             {.Section = PrefsSection::Appearance, .Icon = Icons::CIRCLE, .Label = "Appearance"},
             {.Section = PrefsSection::General, .Icon = Icons::GEAR, .Label = "General"},
-            {.Section = PrefsSection::SystemUpdates, .Icon = Icons::REFRESH, .Label = "System Updates"},
             {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android SDK"},
             {.Section = PrefsSection::JavaJdk, .Icon = Icons::JAVA, .Label = "Java (JDK)"},
+            {.Section = PrefsSection::SystemUpdates, .Icon = Icons::REFRESH, .Label = "System Updates"},
         };
 
         constexpr ImGuiWindowFlags PREFERENCES_WINDOW_FLAGS =
@@ -729,7 +729,29 @@ namespace CoreDeck {
             ImGui::Dummy(ImVec2(0, 8));
             ImGui::TextDisabled("%s", Tr(context.Prefs.IncludeBetaUpdates ? "Update channel: Stable + Beta" : "Update channel: Stable"));
             ImGui::Dummy(ImVec2(0, 8));
+
+            if (context.Updates.PendingNewVersionModal) {
+                ImGui::TextColored(
+                    HexColor(Colors::POSITIVE),
+                    "%s v%s",
+                    Tr("Update available:"),
+                    context.Updates.LatestVersion.c_str()
+                );
+                if (PositiveButton("View Update", true)) {
+                    context.UI.ShowPreferences = false;
+                    ImGui::CloseCurrentPopup();
+                }
+            } else if (context.Updates.ShowUpToDateInPreferences) {
+                ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("You're running the latest CoreDeck release."));
+            } else if (context.Updates.UpdateCheckInFlight) {
+                ImGui::TextDisabled("%s", Tr("Checking for updates..."));
+            }
+
+            ImGui::Dummy(ImVec2(0, 8));
             if (PrimaryButton("Check for Updates", !context.Updates.UpdateCheckInFlight)) {
+                context.Updates.PendingNewVersionModal = false;
+                context.Updates.PendingUpToDateModal = false;
+                context.Updates.ShowUpToDateInPreferences = false;
                 context.Updates.RequestManualUpdateCheck = true;
             }
         }

@@ -411,9 +411,12 @@ namespace CoreDeck {
 
         struct Updates {
             bool ShowNewVersionModal = false;
+            bool PendingNewVersionModal = false;
             std::string LatestVersion;
             std::string LatestNotes;
             bool ShowUpToDateModal = false;
+            bool PendingUpToDateModal = false;
+            bool ShowUpToDateInPreferences = false;
             bool RequestManualUpdateCheck = false;
             bool UpdateCheckInFlight = false;
             std::optional<ReleaseAsset> LatestPackage;

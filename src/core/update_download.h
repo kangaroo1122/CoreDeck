@@ -29,7 +29,6 @@ namespace CoreDeck {
     UpdateDownloadResult DownloadAndVerifyUpdate(
         const ReleaseAsset &package,
         const ReleaseAsset &checksum,
-        const std::string &version,
         const std::shared_ptr<UpdateDownloadProgress> &progress
     );
 

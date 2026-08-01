@@ -1,3 +1,7 @@
+## [v0.11.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.4) — 2026-08-01
+
+- Replace the previous checksum and installer in a shared update download directory
+
 ## [v0.11.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.0-beta.3) — 2026-08-01
 
 - Show the same up-to-date and update-available dialogs from Preferences and the Help menu

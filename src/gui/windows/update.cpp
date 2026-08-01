@@ -58,12 +58,11 @@ namespace CoreDeck {
             context.Updates.DownloadInFlight = true;
             const ReleaseAsset package = *context.Updates.LatestPackage;
             const ReleaseAsset checksum = *context.Updates.LatestChecksum;
-            const std::string version = context.Updates.LatestVersion;
             const auto progress = context.Updates.DownloadProgress;
             context.Updates.DownloadFuture = std::async(
                 std::launch::async,
-                [package, checksum, version, progress]() {
-                    return DownloadAndVerifyUpdate(package, checksum, version, progress);
+                [package, checksum, progress]() {
+                    return DownloadAndVerifyUpdate(package, checksum, progress);
                 }
             );
         }

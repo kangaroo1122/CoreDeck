@@ -259,7 +259,6 @@ namespace CoreDeck {
     UpdateDownloadResult DownloadAndVerifyUpdate(
         const ReleaseAsset &package,
         const ReleaseAsset &checksum,
-        const std::string &version,
         const std::shared_ptr<UpdateDownloadProgress> &progress
     ) {
         UpdateDownloadResult result;
@@ -270,25 +269,37 @@ namespace CoreDeck {
         }
 
         std::error_code ec;
-        const std::filesystem::path directory = std::filesystem::path(Paths::GetAppConfigPath("updates")) / version;
+        const std::filesystem::path directory = Paths::GetAppConfigPath("updates");
         std::filesystem::create_directories(directory, ec);
         if (ec) { result.Error = "Could not create the update download directory."; return result; }
-        const std::filesystem::path checksumPath = directory / (packageName + ".sha256.part");
+        const std::filesystem::path checksumPath = directory / (packageName + ".sha256");
+        const std::filesystem::path checksumPartialPath = checksumPath.string() + ".part";
         const std::filesystem::path partialPath = directory / (packageName + ".part");
         const std::filesystem::path packagePath = directory / packageName;
 
         SetProgressStatus(progress, "Downloading checksum...");
         std::string error;
-        if (!DownloadFile(checksum.DownloadUrl, checksumPath, nullptr, error)) {
+        if (!DownloadFile(checksum.DownloadUrl, checksumPartialPath, nullptr, error)) {
             result.Error = error;
-            std::filesystem::remove(checksumPath, ec);
+            std::filesystem::remove(checksumPartialPath, ec);
             return result;
         }
-        std::ifstream checksumFile(checksumPath);
+        std::ifstream checksumFile(checksumPartialPath);
         const std::string checksumText((std::istreambuf_iterator<char>(checksumFile)), std::istreambuf_iterator<char>());
+        checksumFile.close();
         const auto expectedHash = detail::ParseSha256Checksum(checksumText, packageName);
+        if (!expectedHash) {
+            std::filesystem::remove(checksumPartialPath, ec);
+            result.Error = "The update checksum file is invalid.";
+            return result;
+        }
         std::filesystem::remove(checksumPath, ec);
-        if (!expectedHash) { result.Error = "The update checksum file is invalid."; return result; }
+        ec.clear();
+        std::filesystem::rename(checksumPartialPath, checksumPath, ec);
+        if (ec) {
+            result.Error = "Could not replace the update checksum file.";
+            return result;
+        }
 
         if (std::filesystem::exists(packagePath) && detail::Sha256File(packagePath.string()) == *expectedHash) {
             result.Succeeded = true;

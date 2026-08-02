@@ -2,7 +2,11 @@
 build/
 build-release/
 build-debug/
+build-sanitize/
 cmake-build-*/
+
+# Local design and implementation notes
+docs/
 
 # IDE
 .idea/

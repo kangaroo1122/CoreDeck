@@ -479,12 +479,12 @@ namespace CoreDeck {
                 }
             }
 
-            std::lock_guard lock(progress->Mutex);
-            progress->Percent = static_cast<float>(pct) / 100.0F;
-            if (!description.empty()) {
-                progress->StatusText = description;
-            }
-            progress->DetailText = line;
+            ReportSdkProgress(
+                progress,
+                static_cast<float>(pct) / 100.0F,
+                description.empty() ? "Installing SDK packages..." : description,
+                line
+            );
         }
 
         void MarkFinished(const std::shared_ptr<SdkOperationProgress> &progress, const bool ok, const char *success, const char *failure) {
@@ -492,10 +492,12 @@ namespace CoreDeck {
                 return;
             }
 
+            if (ok) {
+                ReportSdkProgress(progress, 1.0F, success);
+            }
             std::lock_guard lock(progress->Mutex);
             progress->Finished = true;
             progress->Succeeded = ok;
-            progress->Percent = ok ? 1.0F : progress->Percent;
             progress->StatusText = ok ? success : failure;
         }
 
@@ -775,13 +777,7 @@ namespace CoreDeck {
             return false;
         }
 
-        if (progress) {
-            std::lock_guard lock(progress->Mutex);
-            progress->StatusText = "Starting installation...";
-            progress->Percent = 0.0F;
-            progress->Finished = false;
-            progress->Succeeded = false;
-        }
+        ReportSdkProgress(progress, 0.0F, "Starting installation...");
 
         std::vector<std::string> args = {"--install"};
         args.insert(args.end(), packagePaths.begin(), packagePaths.end());
@@ -835,13 +831,7 @@ namespace CoreDeck {
             return false;
         }
 
-        if (progress) {
-            std::lock_guard lock(progress->Mutex);
-            progress->StatusText = "Starting removal...";
-            progress->Percent = 0.0F;
-            progress->Finished = false;
-            progress->Succeeded = false;
-        }
+        ReportSdkProgress(progress, 0.0F, "Starting removal...");
 
         std::vector<std::string> args = {"--uninstall"};
         args.insert(args.end(), packagePaths.begin(), packagePaths.end());

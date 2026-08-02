@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -23,6 +24,8 @@
 #include "../../core/paths.h"
 #include "../../core/sdk_bootstrap.h"
 #include "../../core/sdk_packages.h"
+#include "../../core/sdk_progress.h"
+#include "../../core/sdk_install_session.h"
 #include "../../core/sdk.h"
 #include "../../core/system_image.h"
 #include "../../core/utilities.h"
@@ -43,7 +46,7 @@ namespace CoreDeck {
             std::future<bool> LicenseAcceptFuture;
             std::future<SdkBootstrapResult> PackagesFuture;
             std::shared_ptr<SdkOperationProgress> Progress;
-            std::string SdkRoot;
+            SdkInstallSession InstallSession;
             std::string Error;
         };
 
@@ -160,16 +163,7 @@ namespace CoreDeck {
             const char *status,
             const char *detail = ""
         ) {
-            if (!progress) {
-                return;
-            }
-
-            std::lock_guard lock(progress->Mutex);
-            progress->Percent = percent;
-            progress->StatusText = status;
-            progress->DetailText = detail;
-            progress->Finished = false;
-            progress->Succeeded = false;
+            ReportSdkProgress(progress, percent, status, detail);
         }
 
         void FailOnboardingSdkBootstrap(
@@ -179,6 +173,7 @@ namespace CoreDeck {
             work.Busy = false;
             work.AwaitingLicenseConsent = false;
             work.Error = error;
+            work.InstallSession.Reset();
             if (work.Progress) {
                 std::lock_guard lock(work.Progress->Mutex);
                 work.Progress->Finished = true;
@@ -207,6 +202,7 @@ namespace CoreDeck {
             work.Busy = false;
             work.AwaitingLicenseConsent = false;
             work.Error.clear();
+            work.InstallSession.Reset();
             std::lock_guard lock(work.Progress->Mutex);
             work.Progress->Finished = true;
             work.Progress->Succeeded = false;
@@ -227,13 +223,14 @@ namespace CoreDeck {
             const Context &context,
             OnboardingSdkBootstrapWork &work
         ) {
-            const SdkInfo sdk = BuildSdkInfoFromSdkRoot(work.SdkRoot, context.Prefs.JavaHomePath);
+            const SdkInfo sdk = BuildSdkInfoFromSdkRoot(work.InstallSession.ActiveRoot().string(), context.Prefs.JavaHomePath);
             if (sdk.SdkManagerPath.empty()) {
                 FailOnboardingSdkBootstrap(work, "SDK Manager was not found.");
                 return;
             }
 
-            SetOnboardingProgress(work.Progress, 0.02F, "Checking licenses...");
+            SetSdkProgressRange(work.Progress, OnboardingSdkProgress::Licenses.Start, OnboardingSdkProgress::Licenses.End);
+            SetOnboardingProgress(work.Progress, 0.0F, "Checking licenses...");
             work.Busy = true;
             work.LicenseCheckFuture = std::async(std::launch::async, [sdk] {
                 return CheckSdkLicensesDetailed(sdk);
@@ -244,13 +241,14 @@ namespace CoreDeck {
             const Context &context,
             OnboardingSdkBootstrapWork &work
         ) {
-            const SdkInfo sdk = BuildSdkInfoFromSdkRoot(work.SdkRoot, context.Prefs.JavaHomePath);
+            const SdkInfo sdk = BuildSdkInfoFromSdkRoot(work.InstallSession.ActiveRoot().string(), context.Prefs.JavaHomePath);
             if (sdk.SdkManagerPath.empty()) {
                 FailOnboardingSdkBootstrap(work, "SDK Manager was not found.");
                 return;
             }
 
             work.Busy = true;
+            SetSdkProgressRange(work.Progress, OnboardingSdkProgress::Packages.Start, OnboardingSdkProgress::Packages.End);
             const auto progress = work.Progress;
             work.PackagesFuture = std::async(std::launch::async, [sdk, progress] {
                 return InstallBaseSdkPackages(sdk, progress);
@@ -274,6 +272,7 @@ namespace CoreDeck {
                     if (result.Cancelled) {
                         work.Busy = false;
                         work.Error.clear();
+                        work.InstallSession.Reset();
                         return;
                     }
                     FailOnboardingSdkBootstrap(work, result.Error);
@@ -305,7 +304,7 @@ namespace CoreDeck {
                 } else if (status == LicenseStatus::SomeUnaccepted) {
                     work.Busy = false;
                     work.AwaitingLicenseConsent = true;
-                    SetOnboardingProgress(work.Progress, 0.02F, "Accept Android SDK License Terms");
+                    SetOnboardingProgress(work.Progress, 0.5F, "Accept Android SDK License Terms");
                 } else {
                     FailOnboardingSdkBootstrap(
                         work,
@@ -357,6 +356,7 @@ namespace CoreDeck {
                 if (!result.Succeeded) {
                     if (result.Cancelled) {
                         work.Error.clear();
+                        work.InstallSession.Reset();
                         return;
                     }
                     FailOnboardingSdkBootstrap(work, result.Error);
@@ -364,7 +364,33 @@ namespace CoreDeck {
                 }
 
                 work.Error.clear();
-                ApplyOnboardingSdkPath(context, work.SdkRoot);
+                SetSdkProgressRange(work.Progress, OnboardingSdkProgress::Finalize.Start, OnboardingSdkProgress::Finalize.End);
+                SetOnboardingProgress(work.Progress, 0.0F, "Verifying Android SDK installation...");
+                const std::string targetRoot = work.InstallSession.TargetRoot().string();
+                const SdkInfo installed = BuildSdkInfoFromSdkRoot(
+                    work.InstallSession.ActiveRoot().string(),
+                    context.Prefs.JavaHomePath
+                );
+                if (installed.SdkManagerPath.empty() || installed.AvdManagerPath.empty() ||
+                    installed.AdbPath.empty() || installed.EmulatorPath.empty()) {
+                    FailOnboardingSdkBootstrap(work, "Android SDK verification failed: required tools are missing.");
+                    return;
+                }
+                if (work.InstallSession.IsTransactional()) {
+                    SetOnboardingProgress(work.Progress, 0.6F, "Switching Android SDK into place...");
+                    std::string error;
+                    if (!work.InstallSession.Commit(error)) {
+                        FailOnboardingSdkBootstrap(work, error.empty() ? "Could not switch the installed Android SDK into place." : error);
+                        return;
+                    }
+                }
+                ApplyOnboardingSdkPath(context, targetRoot);
+                SetOnboardingProgress(work.Progress, 1.0F, "Android SDK setup completed.");
+                {
+                    std::lock_guard lock(work.Progress->Mutex);
+                    work.Progress->Finished = true;
+                    work.Progress->Succeeded = true;
+                }
             }
         }
 
@@ -434,7 +460,10 @@ namespace CoreDeck {
             const float actionSpacing = ImGui::GetStyle().ItemSpacing.x;
             const float halfWidth = (width - actionSpacing) * 0.5F;
             if (PositiveButton("Agree & Install", !work.Busy, ImVec2(halfWidth, 0))) {
-                const SdkInfo sdk = BuildSdkInfoFromSdkRoot(work.SdkRoot, context.Prefs.JavaHomePath);
+                const SdkInfo sdk = BuildSdkInfoFromSdkRoot(
+                    work.InstallSession.ActiveRoot().string(),
+                    context.Prefs.JavaHomePath
+                );
                 work.Busy = true;
                 work.Error.clear();
                 SetOnboardingProgress(work.Progress, 0.02F, "Recording acceptance with the SDK Manager...");
@@ -445,6 +474,8 @@ namespace CoreDeck {
             ImGui::SameLine();
             if (NegativeButton("Cancel", !work.Busy, ImVec2(halfWidth, 0))) {
                 work.AwaitingLicenseConsent = false;
+                work.InstallSession.Reset();
+                work.Progress.reset();
             }
         }
 
@@ -606,12 +637,21 @@ namespace CoreDeck {
             const std::string &sdkRoot
         ) {
             work.Progress = std::make_shared<SdkOperationProgress>();
-            work.SdkRoot = sdkRoot;
+            SetSdkProgressRange(work.Progress, OnboardingSdkProgress::Tools.Start, OnboardingSdkProgress::Tools.End);
+            std::string transactionError;
+            if (!work.InstallSession.BeginFresh(std::filesystem::path(sdkRoot), transactionError)) {
+                work.Progress->Finished = true;
+                work.Progress->StatusText = "Android SDK setup failed.";
+                work.Progress->DetailText = transactionError;
+                work.Error = transactionError;
+                work.Busy = false;
+                return;
+            }
             work.Error.clear();
             work.AwaitingLicenseConsent = false;
             work.Busy = true;
             const auto progress = work.Progress;
-            const std::string root = work.SdkRoot;
+            const std::string root = work.InstallSession.ActiveRoot().string();
             work.ToolsFuture = std::async(std::launch::async, [root, progress] {
                 return BootstrapCommandLineTools(root, progress);
             });
@@ -737,7 +777,7 @@ namespace CoreDeck {
                                canAct,
                                ImVec2(formWidth, 0)
                            )) {
-                    bootstrap.SdkRoot = currentPath;
+                    bootstrap.InstallSession.UseExisting(currentPath);
                     bootstrap.Progress = std::make_shared<SdkOperationProgress>();
                     StartOnboardingLicenseCheck(context, bootstrap);
                 }
@@ -857,7 +897,7 @@ namespace CoreDeck {
         bootstrap.Busy = false;
         bootstrap.AwaitingLicenseConsent = false;
         bootstrap.Error.clear();
-        bootstrap.SdkRoot.clear();
+        bootstrap.InstallSession.Reset();
         bootstrap.Progress.reset();
     }
 }

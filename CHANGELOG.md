@@ -1,3 +1,10 @@
+## [v0.12.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0-beta.1) — 2026-08-02
+
+- Add guided Android SDK installation during onboarding, including command-line tools, licenses, platform tools, emulator, and a stable SDK platform
+- Install fresh SDKs transactionally with rollback on failure or cancellation and continuous progress across every setup phase
+- Parse Google's repository metadata with tinyxml2, verify downloads with official SHA-1 or fallback SHA-256 metadata, and extract archives in-process with miniz
+- Harden archive path validation, emulator stop/relaunch lifecycle handling, Windows process cleanup, and asynchronous system image operations
+
 ## [v0.11.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.11.1) — 2026-08-01
 
 - Keep Preferences open beneath update result dialogs started from its System Updates section

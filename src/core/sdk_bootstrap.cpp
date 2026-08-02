@@ -24,7 +24,10 @@
 #endif
 
 #include "paths.h"
+#include "archive.h"
 #include "process.h"
+#include "sha256.h"
+#include "sdk_progress.h"
 #include "system_image.h"
 #include "utilities.h"
 
@@ -36,19 +39,7 @@ namespace CoreDeck {
             const std::string &status,
             const std::string &detail = ""
         ) {
-            if (!progress) {
-                return;
-            }
-            if (progress->CancelRequested.load()) {
-                return;
-            }
-
-            std::lock_guard lock(progress->Mutex);
-            progress->Percent = percent;
-            progress->StatusText = status;
-            progress->Finished = false;
-            progress->Succeeded = false;
-            progress->DetailText = detail;
+            ReportSdkProgress(progress, percent, status, detail);
         }
 
         SdkBootstrapResult Fail(
@@ -70,12 +61,11 @@ namespace CoreDeck {
             const std::shared_ptr<SdkOperationProgress> &progress,
             const char *status = "Command-line tools installed."
         ) {
+            ReportSdkProgress(progress, 1.0F, status);
             if (progress) {
                 std::lock_guard lock(progress->Mutex);
                 progress->Finished = true;
                 progress->Succeeded = true;
-                progress->Percent = 1.0F;
-                progress->StatusText = status;
             }
             return {.Succeeded = true};
         }
@@ -267,54 +257,6 @@ namespace CoreDeck {
 
         constexpr const char *COMMAND_LINE_TOOLS_REPOSITORY_URL =
             "https://dl.google.com/android/repository/repository2-3.xml";
-        constexpr const char *COMMAND_LINE_TOOLS_DOWNLOAD_ROOT =
-            "https://dl.google.com/android/repository/";
-
-        std::string XmlTagValue(const std::string &body, const std::string_view tag, const std::size_t start) {
-            const std::string open = StrConcat("<", std::string(tag), ">");
-            const std::string close = StrConcat("</", std::string(tag), ">");
-            const std::size_t valueStart = body.find(open, start);
-            if (valueStart == std::string::npos) {
-                return "";
-            }
-            const std::size_t contentStart = valueStart + open.size();
-            const std::size_t contentEnd = body.find(close, contentStart);
-            if (contentEnd == std::string::npos) {
-                return "";
-            }
-            return body.substr(contentStart, contentEnd - contentStart);
-        }
-
-        std::string XmlTagValueWithAttributes(
-            const std::string &body,
-            const std::string_view tag,
-            const std::size_t start
-        ) {
-            const std::string prefix = StrConcat("<", std::string(tag));
-            const std::size_t tagStart = body.find(prefix, start);
-            if (tagStart == std::string::npos) {
-                return "";
-            }
-            const std::size_t openEnd = body.find('>', tagStart);
-            if (openEnd == std::string::npos) {
-                return "";
-            }
-            const std::string close = StrConcat("</", std::string(tag), ">");
-            const std::size_t contentStart = openEnd + 1;
-            const std::size_t contentEnd = body.find(close, contentStart);
-            if (contentEnd == std::string::npos) {
-                return "";
-            }
-            return body.substr(contentStart, contentEnd - contentStart);
-        }
-
-        int XmlTagInt(const std::string &body, const std::string_view tag, const std::size_t start) {
-            const std::string value = XmlTagValue(body, tag, start);
-            if (value.empty()) {
-                return 0;
-            }
-            return static_cast<int>(std::strtol(value.c_str(), nullptr, 10));
-        }
 
         std::string CurrentCommandLineToolsHostOs() {
 #if defined(_WIN32)
@@ -481,6 +423,7 @@ namespace CoreDeck {
             const std::string &url,
             const std::filesystem::path &destination,
             const std::shared_ptr<SdkOperationProgress> &progress,
+            const SdkProgressRange &progressRange,
             std::string &error
         ) {
             if (IsCancelRequested(progress)) {
@@ -610,7 +553,12 @@ namespace CoreDeck {
 
                 if (total > 0) {
                     const float fraction = static_cast<float>(downloaded) / static_cast<float>(total);
-                    SetProgress(progress, 0.05F + (fraction * 0.65F), "Downloading command-line tools...");
+                    ReportSdkProgressInSubrange(
+                        progress,
+                        progressRange,
+                        fraction,
+                        "Downloading command-line tools..."
+                    );
                 }
             }
 
@@ -624,44 +572,6 @@ namespace CoreDeck {
                    !fileEc;
         }
 
-        std::string PowerShellQuote(const std::string &value) {
-            std::string escaped = "'";
-            for (const char c: value) {
-                if (c == '\'') {
-                    escaped += "''";
-                } else {
-                    escaped.push_back(c);
-                }
-            }
-            escaped.push_back('\'');
-            return escaped;
-        }
-
-        bool ExtractZip(
-            const std::filesystem::path &zipPath,
-            const std::filesystem::path &destination,
-            const std::shared_ptr<SdkOperationProgress> &progress
-        ) {
-            const std::string command = StrConcat(
-                "Expand-Archive -LiteralPath ",
-                PowerShellQuote(zipPath.string()),
-                " -DestinationPath ",
-                PowerShellQuote(destination.string()),
-                " -Force"
-            );
-            const bool completed = StreamCommandArgsWithEnvCancelable(
-                "powershell.exe",
-                {"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command},
-                "",
-                {},
-                {},
-                [&progress] {
-                    return IsCancelRequested(progress);
-                }
-            );
-            std::error_code ec;
-            return completed && std::filesystem::exists(destination / "cmdline-tools", ec) && !ec;
-        }
 #else
         size_t WriteFileCallback(const char *ptr, const size_t size, const size_t nmemb, void *userdata) {
             auto *out = static_cast<std::ofstream *>(userdata);
@@ -669,17 +579,27 @@ namespace CoreDeck {
             return size * nmemb;
         }
 
+        struct DownloadProgressContext {
+            std::shared_ptr<SdkOperationProgress> Progress;
+            SdkProgressRange Range;
+        };
+
         int DownloadProgressCallback(void *clientp, const curl_off_t dltotal, const curl_off_t dlnow, curl_off_t, curl_off_t) {
-            auto *progress = static_cast<std::shared_ptr<SdkOperationProgress> *>(clientp);
-            if (progress != nullptr && IsCancelRequested(*progress)) {
+            auto *context = static_cast<DownloadProgressContext *>(clientp);
+            if (context != nullptr && IsCancelRequested(context->Progress)) {
                 return 1;
             }
-            if (progress == nullptr || !*progress || dltotal <= 0) {
+            if (context == nullptr || !context->Progress || dltotal <= 0) {
                 return 0;
             }
 
             const float fraction = static_cast<float>(dlnow) / static_cast<float>(dltotal);
-            SetProgress(*progress, 0.05F + (fraction * 0.65F), "Downloading command-line tools...");
+            ReportSdkProgressInSubrange(
+                context->Progress,
+                context->Range,
+                fraction,
+                "Downloading command-line tools..."
+            );
             return 0;
         }
 
@@ -687,6 +607,7 @@ namespace CoreDeck {
             const std::string &url,
             const std::filesystem::path &destination,
             const std::shared_ptr<SdkOperationProgress> &progress,
+            const SdkProgressRange &progressRange,
             std::string &error
         ) {
             if (IsCancelRequested(progress)) {
@@ -717,7 +638,8 @@ namespace CoreDeck {
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
             curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, DownloadProgressCallback);
-            curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progress);
+            DownloadProgressContext progressContext{progress, progressRange};
+            curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progressContext);
 
             const CURLcode rc = curl_easy_perform(curl);
             curl_easy_cleanup(curl);
@@ -733,26 +655,30 @@ namespace CoreDeck {
                    !fileEc;
         }
 
+#endif
+
         bool ExtractZip(
             const std::filesystem::path &zipPath,
             const std::filesystem::path &destination,
             const std::shared_ptr<SdkOperationProgress> &progress
         ) {
-            const std::string unzipPath = std::filesystem::exists("/usr/bin/unzip") ? "/usr/bin/unzip" : "unzip";
-            const bool completed = StreamCommandArgsWithEnvCancelable(
-                unzipPath,
-                {"-q", "-o", zipPath.string(), "-d", destination.string()},
-                "",
-                {},
-                {},
-                [&progress] {
-                    return IsCancelRequested(progress);
-                }
+            std::string error;
+            return CoreDeck::ExtractZip(
+                zipPath.string(),
+                destination.string(),
+                ExtractOptions{},
+                [&progress](const float fraction) {
+                    ReportSdkProgressInSubrange(
+                        progress,
+                        {0.74F, 0.88F},
+                        fraction,
+                        "Extracting command-line tools..."
+                    );
+                    return !IsCancelRequested(progress);
+                },
+                error
             );
-            std::error_code ec;
-            return completed && std::filesystem::exists(destination / "cmdline-tools", ec) && !ec;
         }
-#endif
     }
 
     std::string CommandLineToolsDownloadUrl() {
@@ -767,71 +693,28 @@ namespace CoreDeck {
 #endif
     }
 
+    CommandLineToolsPackage BundledCommandLineToolsPackage() {
+        CommandLineToolsPackage package;
+        package.DownloadUrl = CommandLineToolsDownloadUrl();
+#if defined(_WIN32)
+        package.SizeBytes = 155655386ULL;
+        package.Sha256 = "90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a";
+#elif defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+        package.SizeBytes = 156083281ULL;
+        package.Sha256 = "835b62a26162b229b441d1f6d4680383815a270809eb33522c0d480fa5002c4e";
+#elif defined(__APPLE__)
+        package.SizeBytes = 156281494ULL;
+        package.Sha256 = "c5a6378ab5cf7e0d5701921405115befff13e9ff7417fb588389338f8bd050f3";
+#elif defined(__linux__)
+        package.SizeBytes = 181833628ULL;
+        package.Sha256 = "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583";
+#else
+        package.DownloadUrl.clear();
+#endif
+        return package;
+    }
+
     namespace detail { // NOLINT(readability-identifier-naming)
-        std::optional<CommandLineToolsPackage> ParseCommandLineToolsPackage(
-            const std::string &body,
-            const std::string &hostOs,
-            const std::string &hostArch
-        ) {
-            std::optional<CommandLineToolsPackage> result;
-            int selectedMajor = -1;
-            int selectedMinor = -1;
-            std::size_t packageStart = 0;
-
-            while ((packageStart = body.find("<remotePackage", packageStart)) != std::string::npos) {
-                const std::size_t packageTagEnd = body.find('>', packageStart);
-                const std::size_t packageEnd = body.find("</remotePackage>", packageTagEnd);
-                if (packageTagEnd == std::string::npos || packageEnd == std::string::npos) {
-                    break;
-                }
-
-                const std::string packageTag = body.substr(packageStart, packageTagEnd - packageStart + 1);
-                const bool isLatest = packageTag.find("path=\"cmdline-tools;latest\"") != std::string::npos;
-                const bool isObsolete = packageTag.find("obsolete=\"true\"") != std::string::npos;
-                if (isLatest && !isObsolete) {
-                    const int major = XmlTagInt(body, "major", packageStart);
-                    const int minor = XmlTagInt(body, "minor", packageStart);
-                    if (major > selectedMajor || (major == selectedMajor && minor > selectedMinor)) {
-                        const std::string packageBody = body.substr(packageTagEnd + 1, packageEnd - packageTagEnd - 1);
-                        std::size_t archiveStart = 0;
-                        while ((archiveStart = packageBody.find("<archive>", archiveStart)) != std::string::npos) {
-                            const std::size_t archiveTagEnd = packageBody.find('>', archiveStart);
-                            const std::size_t archiveEnd = packageBody.find("</archive>", archiveTagEnd);
-                            if (archiveTagEnd == std::string::npos || archiveEnd == std::string::npos) {
-                                break;
-                            }
-
-                            const std::string archiveBody = packageBody.substr(archiveTagEnd + 1, archiveEnd - archiveTagEnd - 1);
-                            if (XmlTagValue(archiveBody, "host-os", 0) == hostOs &&
-                                (hostArch.empty() || XmlTagValue(archiveBody, "host-arch", 0) == hostArch)) {
-                                const std::string url = XmlTagValue(archiveBody, "url", 0);
-                                if (!url.empty()) {
-                                    CommandLineToolsPackage package;
-                                    package.DownloadUrl = url.starts_with("https://")
-                                                               ? url
-                                                               : StrConcat(COMMAND_LINE_TOOLS_DOWNLOAD_ROOT, url);
-                                    package.Sha1 = XmlTagValueWithAttributes(archiveBody, "checksum", 0);
-                                    package.SizeBytes = static_cast<std::uintmax_t>(std::strtoull(
-                                        XmlTagValue(archiveBody, "size", 0).c_str(),
-                                        nullptr,
-                                        10
-                                    ));
-                                    result = std::move(package);
-                                    selectedMajor = major;
-                                    selectedMinor = minor;
-                                    break;
-                                }
-                            }
-                            archiveStart = archiveEnd + std::string("</archive>").size();
-                        }
-                    }
-                }
-                packageStart = packageEnd + std::string("</remotePackage>").size();
-            }
-
-            return result;
-        }
-
         bool FileMatchesCommandLineToolsPackage(
             const std::string &path,
             const CommandLineToolsPackage &package
@@ -846,7 +729,10 @@ namespace CoreDeck {
             if (ec) {
                 return false;
             }
-            return package.Sha1.empty() || Sha1ForFile(path) == LowerCopy(package.Sha1);
+            if (!package.Sha1.empty() && Sha1ForFile(path) != LowerCopy(package.Sha1)) {
+                return false;
+            }
+            return package.Sha256.empty() || EqualsIgnoreCaseHex(Sha256File(path), package.Sha256);
         }
     }
 
@@ -964,35 +850,42 @@ namespace CoreDeck {
             }
 
             std::string error;
-            std::string url = CommandLineToolsDownloadUrl();
+            const CommandLineToolsPackage fallbackPackage = BundledCommandLineToolsPackage();
+            if (fallbackPackage.DownloadUrl.empty() || fallbackPackage.SizeBytes == 0 || fallbackPackage.Sha256.empty()) {
+                std::filesystem::remove_all(tempDir, ec);
+                return Fail(progress, "Google does not publish command-line tools for this platform.");
+            }
+
+            std::string url = fallbackPackage.DownloadUrl;
+            CommandLineToolsPackage expectedPackage = fallbackPackage;
             std::optional<CommandLineToolsPackage> metadataPackage;
             const std::filesystem::path metadataPath = tempDir / "repository.xml";
-            if (DownloadFile(COMMAND_LINE_TOOLS_REPOSITORY_URL, metadataPath, progress, error)) {
+            if (DownloadFile(COMMAND_LINE_TOOLS_REPOSITORY_URL, metadataPath, progress, {0.02F, 0.05F}, error)) {
                 std::ifstream metadata(metadataPath);
                 std::string body(
                     (std::istreambuf_iterator<char>(metadata)),
                     std::istreambuf_iterator<char>()
                 );
-                metadataPackage = detail::ParseCommandLineToolsPackage(
+                metadataPackage = ParseCommandLineToolsRepository(
                     body,
                     CurrentCommandLineToolsHostOs(),
                     CurrentCommandLineToolsHostArch()
                 );
                 if (metadataPackage.has_value()) {
                     url = metadataPackage->DownloadUrl;
+                    expectedPackage = *metadataPackage;
                 }
             }
             error.clear();
             SetProgress(progress, 0.05F, "Downloading command-line tools...", url);
-            if (!DownloadFile(url, zipPath, progress, error)) {
+            if (!DownloadFile(url, zipPath, progress, {0.05F, 0.74F}, error)) {
                 std::filesystem::remove_all(tempDir, ec);
                 if (IsCancelRequested(progress)) {
                     return Cancelled(progress);
                 }
                 return Fail(progress, error.empty() ? "Command-line tools download failed." : error);
             }
-            if (metadataPackage.has_value() &&
-                !detail::FileMatchesCommandLineToolsPackage(zipPath.string(), *metadataPackage)) {
+            if (!detail::FileMatchesCommandLineToolsPackage(zipPath.string(), expectedPackage)) {
                 std::filesystem::remove_all(tempDir, ec);
                 return Fail(progress, "Downloaded command-line tools failed the official checksum or size check.");
             }
@@ -1100,7 +993,10 @@ namespace CoreDeck {
             return Cancelled(progress);
         }
 
-        SetProgress(progress, 0.02F, "Fetching SDK packages from official sources...");
+        const SdkProgressRange packageRange = GetSdkProgressRange(progress);
+        constexpr float FetchPhaseEnd = 6.0F / 55.0F;
+        SetSdkProgressSubrange(progress, packageRange, 0.0F, FetchPhaseEnd);
+        SetProgress(progress, 0.0F, "Fetching SDK packages from official sources...");
         const SdkPackageListResult list = ListSdkPackages(sdk, false);
         if (IsCancelRequested(progress)) {
             return Cancelled(progress);
@@ -1155,9 +1051,11 @@ namespace CoreDeck {
             );
         }
 
+        SetSdkProgressSubrange(progress, packageRange, FetchPhaseEnd, 1.0F);
+
         SetProgress(
             progress,
-            0.05F,
+            0.0F,
             "Installing base Android SDK packages...",
             JoinPackagePaths(packagesToInstall)
         );

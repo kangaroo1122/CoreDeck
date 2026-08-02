@@ -439,15 +439,26 @@ namespace CoreDeck {
         CloseHandle(hWritePipe);
 
         DWORD pipeMode = PIPE_NOWAIT;
-        SetNamedPipeHandleState(hReadPipe, &pipeMode, nullptr, nullptr);
-
-        outputFd = _open_osfhandle(reinterpret_cast<intptr_t>(hReadPipe), _O_RDONLY);
-        if (outputFd == -1) {
+        if (!SetNamedPipeHandleState(hReadPipe, &pipeMode, nullptr, nullptr)) {
+            TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 2000);
+            CloseHandle(pi.hProcess);
             CloseHandle(hReadPipe);
             return 0;
         }
 
-        return pi.dwProcessId;
+        outputFd = _open_osfhandle(reinterpret_cast<intptr_t>(hReadPipe), _O_RDONLY);
+        if (outputFd == -1) {
+            TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 2000);
+            CloseHandle(pi.hProcess);
+            CloseHandle(hReadPipe);
+            return 0;
+        }
+
+        const ProcessId pid = pi.dwProcessId;
+        CloseHandle(pi.hProcess);
+        return pid;
 #else
         int pipeFd[2];
         if (pipe(pipeFd) == -1) {

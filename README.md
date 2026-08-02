@@ -35,7 +35,7 @@ Android Studio for everyday emulator work. Built with C++20 and Dear ImGui.
 - **AVD Management** — Create, rename, delete, sort, search, and inspect Android Virtual Devices.
 - **Emulator Control** — Launch, stop, cold boot, wipe & run, and tune per-AVD emulator options such as GPU, RAM, CPU, camera, network, boot, and timezone.
 - **SDK Package Management** — Install and remove Android SDK platforms, system images, platform-tools, emulator, and command-line tools from Preferences.
-- **Guided SDK/JDK Setup** — Configure an existing SDK, install base SDK tools during onboarding, and use a managed JDK 17+ without changing system Java.
+- **Guided SDK/JDK Setup** — Configure an existing SDK, or transactionally install a fresh base SDK during onboarding. Repository metadata is parsed with tinyxml2, downloads are checksum-verified, and miniz extracts archives in-process with unsafe paths rejected.
 - **System Updates** — Monitor Stable releases by default, optionally include Beta releases, download updates in-app, verify SHA-256 checksums, and open the platform installer or archive when ready.
 - **Device Explorer** — Browse files on the selected running AVD, upload/download files or folders, create folders, and delete safely.
 - **Per-AVD Shared Folders** — Open host or emulator shared folders and sync regular files incrementally with conflict-preserving copies.
@@ -147,7 +147,7 @@ The repo ships pre-configured `.vscode/` settings (build tasks, launch configs, 
 
 Each has a matching Release entry and `CoreDeck Tests (...)` variant for the Catch2 test suite. Cursor on Windows should pick the `LLDB` entries; VS Code on Windows can pick either (MSVC is the better PDB-aware option when available).
 
-The first build is a full from-scratch compile of all bundled dependencies (sentry-native, Dear ImGui, GLFW, reflect-cpp, etc.). Subsequent builds are incremental and fast.
+The first build is a full from-scratch compile of all bundled dependencies (sentry-native, Dear ImGui, GLFW, reflect-cpp, miniz, tinyxml2, etc.). Subsequent builds are incremental and fast.
 
 ## FAQ
 

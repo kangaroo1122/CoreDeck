@@ -27,6 +27,20 @@
 #endif
 
 namespace CoreDeck {
+    namespace detail {
+        bool CanLaunchEmulatorInstance(const EmulatorInstance &instance) {
+            return !instance.IsRunning && !instance.Stopping;
+        }
+
+        bool IsCurrentEmulatorInstance(
+            const EmulatorInstance &instance,
+            const ProcessId pid,
+            const std::uint64_t generation
+        ) {
+            return instance.Pid == pid && instance.Generation == generation;
+        }
+    }
+
     namespace {
         bool WaitForConsoleUnavailable(const int port, const int timeoutMs) {
             if (port <= 0) {
@@ -286,10 +300,14 @@ namespace CoreDeck {
         }
 
         int consolePort = -1;
+        std::uint64_t generation = 0;
+        std::string emulatorPath;
         {
             std::lock_guard lock(m_Mutex);
-            if (const auto it = m_Instances.find(avdName); it != m_Instances.end() && it->second.IsRunning) {
-                return false;
+            if (const auto it = m_Instances.find(avdName); it != m_Instances.end()) {
+                if (!detail::CanLaunchEmulatorInstance(it->second)) {
+                    return false;
+                }
             }
             if (std::ranges::find(m_PendingLaunchAvds, avdName) != m_PendingLaunchAvds.end()) {
                 return false;
@@ -301,6 +319,8 @@ namespace CoreDeck {
             }
             m_ReservedConsolePorts.push_back(consolePort);
             m_PendingLaunchAvds.push_back(avdName);
+            generation = ++m_NextGeneration;
+            emulatorPath = m_Sdk.EmulatorPath;
         }
 
         std::vector<std::string> finalArgs = StripManagedPortArgs(args);
@@ -311,7 +331,7 @@ namespace CoreDeck {
         finalArgs.emplace_back(std::to_string(consolePort));
 
         int outputFd = -1;
-        const ProcessId pid = SpawnProcessWithPipe(m_Sdk.EmulatorPath, finalArgs, outputFd);
+        const ProcessId pid = SpawnProcessWithPipe(emulatorPath, finalArgs, outputFd);
 
 #if defined(_WIN32)
         if (pid == 0) {
@@ -336,6 +356,7 @@ namespace CoreDeck {
             EmulatorInstance instance;
             instance.AvdName = avdName;
             instance.Pid = pid;
+            instance.Generation = generation;
             instance.ConsolePort = consolePort;
             instance.IsRunning = true;
             instance.Log = std::move(log);
@@ -352,6 +373,7 @@ namespace CoreDeck {
 
     bool EmulatorManager::Stop(const std::string &avdName) {
         ProcessId pid = 0;
+        std::uint64_t generation = 0;
         int consolePort = 0;
         std::shared_ptr<std::atomic<bool>> stopFlag;
         std::thread readerThread;
@@ -363,6 +385,7 @@ namespace CoreDeck {
                 return false;
             }
             pid = it->second.Pid;
+            generation = it->second.Generation;
             consolePort = it->second.ConsolePort;
             stopFlag = it->second.StopRequested;
             readerThread = std::move(it->second.ReaderThread);
@@ -374,7 +397,7 @@ namespace CoreDeck {
         }
 
         std::thread worker(
-            [this, avdName, pid, consolePort, stopFlag, reader = std::move(readerThread)]() mutable {
+            [this, avdName, pid, generation, consolePort, stopFlag, reader = std::move(readerThread)]() mutable {
                 bool exited = false;
                 if (consolePort > 0 && EmulatorConsole::SendKill(consolePort)) {
                     exited = WaitForConsoleUnavailable(consolePort, 10000);
@@ -403,7 +426,8 @@ namespace CoreDeck {
                 }
                 {
                     std::lock_guard lock(m_Mutex);
-                    if (const auto it = m_Instances.find(avdName); it != m_Instances.end()) {
+                    if (const auto it = m_Instances.find(avdName);
+                        it != m_Instances.end() && detail::IsCurrentEmulatorInstance(it->second, pid, generation)) {
                         it->second.IsRunning = !exited;
                         it->second.Stopping = false;
                         if (!exited && reader.joinable()) {
@@ -412,16 +436,23 @@ namespace CoreDeck {
                     }
                 }
                 if (!exited && reader.joinable()) {
-                    reader.detach();
+                    if (stopFlag) {
+                        stopFlag->store(true);
+                    }
+                    reader.join();
                 }
             }
         );
 
-        std::lock_guard lock(m_Mutex);
-        if (const auto it = m_Instances.find(avdName); it != m_Instances.end()) {
-            it->second.StopThread = std::move(worker);
-        } else {
-            worker.detach();
+        {
+            std::lock_guard lock(m_Mutex);
+            if (const auto it = m_Instances.find(avdName);
+                it != m_Instances.end() && detail::IsCurrentEmulatorInstance(it->second, pid, generation)) {
+                it->second.StopThread = std::move(worker);
+            }
+        }
+        if (worker.joinable()) {
+            worker.join();
         }
         return true;
     }
@@ -476,7 +507,7 @@ namespace CoreDeck {
         {
             std::lock_guard lock(m_Mutex);
             for (auto &instance: m_Instances | std::views::values) {
-                if (instance.IsRunning) {
+                if (instance.IsRunning && !instance.Stopping) {
                     if (!IsProcessRunning(instance.Pid)) {
                         instance.IsRunning = instance.ConsolePort > 0 &&
                                              EmulatorConsole::IsAvailable(instance.ConsolePort, 25);

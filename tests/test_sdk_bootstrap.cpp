@@ -17,44 +17,6 @@ namespace {
     }
 }
 
-TEST_CASE("Command-line tools metadata selects the newest matching archive", "[sdk_bootstrap][parse]") {
-    const std::string xml = R"xml(
-        <remotePackage path="cmdline-tools;latest">
-            <revision><major>21</major><minor>0</minor></revision>
-            <archives>
-                <archive><complete><size>10</size><checksum type="sha1">old</checksum><url>old.zip</url></complete><host-os>macosx</host-os><host-arch>aarch64</host-arch></archive>
-            </archives>
-        </remotePackage>
-        <remotePackage path="cmdline-tools;latest">
-            <revision><major>22</major><minor>0</minor></revision>
-            <archives>
-                <archive><complete><size>20</size><checksum type="sha1">new</checksum><url>new.zip</url></complete><host-os>macosx</host-os><host-arch>aarch64</host-arch></archive>
-                <archive><complete><size>30</size><checksum type="sha1">wrong-arch</checksum><url>wrong.zip</url></complete><host-os>macosx</host-os><host-arch>x64</host-arch></archive>
-            </archives>
-        </remotePackage>
-    )xml";
-
-    const auto package = detail::ParseCommandLineToolsPackage(xml, "macosx", "aarch64");
-
-    REQUIRE(package.has_value());
-    REQUIRE(package->DownloadUrl == "https://dl.google.com/android/repository/new.zip");
-    REQUIRE(package->Sha1 == "new");
-    REQUIRE(package->SizeBytes == 20);
-}
-
-TEST_CASE("Command-line tools metadata returns no package for an unsupported host", "[sdk_bootstrap][parse]") {
-    const std::string xml = R"xml(
-        <remotePackage path="cmdline-tools;latest">
-            <revision><major>22</major><minor>0</minor></revision>
-            <archives>
-                <archive><complete><size>20</size><checksum type="sha1">sha</checksum><url>linux.zip</url></complete><host-os>linux</host-os></archive>
-            </archives>
-        </remotePackage>
-    )xml";
-
-    REQUIRE_FALSE(detail::ParseCommandLineToolsPackage(xml, "windows").has_value());
-}
-
 TEST_CASE("Command-line tools package verification checks size and SHA-1", "[sdk_bootstrap][verify]") {
     const std::filesystem::path tempDir = MakeTempDir("coredeck_cmdline_tools_verify");
     const std::filesystem::path archive = tempDir / "package.zip";
@@ -69,6 +31,36 @@ TEST_CASE("Command-line tools package verification checks size and SHA-1", "[sdk
     REQUIRE_FALSE(detail::FileMatchesCommandLineToolsPackage(archive.string(), package));
     package.SizeBytes = 3;
     package.Sha1 = "0000000000000000000000000000000000000000";
+    REQUIRE_FALSE(detail::FileMatchesCommandLineToolsPackage(archive.string(), package));
+
+    std::error_code ec;
+    std::filesystem::remove_all(tempDir, ec);
+}
+
+TEST_CASE("Bundled command-line tools fallback has independent integrity metadata", "[sdk_bootstrap][fallback]") {
+    const CommandLineToolsPackage package = BundledCommandLineToolsPackage();
+
+    REQUIRE(package.DownloadUrl.starts_with("https://dl.google.com/android/repository/"));
+    REQUIRE(package.DownloadUrl.ends_with("_latest.zip"));
+    REQUIRE(package.SizeBytes > 0);
+    REQUIRE(package.Sha1.empty());
+    REQUIRE(package.Sha256.size() == 64);
+}
+
+TEST_CASE("Command-line tools package verification checks size and SHA-256", "[sdk_bootstrap][fallback]") {
+    const std::filesystem::path tempDir = MakeTempDir("coredeck_cmdline_tools_sha256_verify");
+    const std::filesystem::path archive = tempDir / "package.zip";
+    std::ofstream(archive, std::ios::binary) << "abc";
+
+    CommandLineToolsPackage package;
+    package.SizeBytes = 3;
+    package.Sha256 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    REQUIRE(detail::FileMatchesCommandLineToolsPackage(archive.string(), package));
+
+    package.SizeBytes = 4;
+    REQUIRE_FALSE(detail::FileMatchesCommandLineToolsPackage(archive.string(), package));
+    package.SizeBytes = 3;
+    package.Sha256 = std::string(64, '0');
     REQUIRE_FALSE(detail::FileMatchesCommandLineToolsPackage(archive.string(), package));
 
     std::error_code ec;

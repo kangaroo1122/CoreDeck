@@ -5,20 +5,13 @@
 #ifndef COREDECK_SDK_BOOTSTRAP_H
 #define COREDECK_SDK_BOOTSTRAP_H
 
-#include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 
 #include "sdk_packages.h"
+#include "sdk_repository.h"
 
 namespace CoreDeck {
-    struct CommandLineToolsPackage {
-        std::string DownloadUrl;
-        std::string Sha1;
-        std::uintmax_t SizeBytes = 0;
-    };
-
     struct SdkBootstrapResult {
         bool Succeeded = false;
         bool Cancelled = false;
@@ -27,13 +20,9 @@ namespace CoreDeck {
 
     std::string CommandLineToolsDownloadUrl();
 
-    namespace detail { // NOLINT(readability-identifier-naming)
-        std::optional<CommandLineToolsPackage> ParseCommandLineToolsPackage(
-            const std::string &body,
-            const std::string &hostOs,
-            const std::string &hostArch = ""
-        );
+    CommandLineToolsPackage BundledCommandLineToolsPackage();
 
+    namespace detail { // NOLINT(readability-identifier-naming)
         bool FileMatchesCommandLineToolsPackage(
             const std::string &path,
             const CommandLineToolsPackage &package

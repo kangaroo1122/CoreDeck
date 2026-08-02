@@ -17,3 +17,9 @@
 [submodule "extern/sentry-native"]
 	path = extern/sentry-native
 	url = https://github.com/getsentry/sentry-native.git
+[submodule "extern/miniz"]
+	path = extern/miniz
+	url = https://github.com/richgel999/miniz.git
+[submodule "extern/tinyxml2"]
+	path = extern/tinyxml2
+	url = https://github.com/leethomason/tinyxml2.git

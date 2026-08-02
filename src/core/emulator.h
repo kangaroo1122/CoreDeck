@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <thread>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -20,7 +21,8 @@
 namespace CoreDeck {
     struct EmulatorInstance {
         std::string AvdName;
-        ProcessId Pid;
+        ProcessId Pid = 0;
+        std::uint64_t Generation = 0;
         int ConsolePort = 0;
         bool IsRunning = false;
         bool Stopping = false;
@@ -29,6 +31,16 @@ namespace CoreDeck {
         std::thread StopThread;
         std::shared_ptr<std::atomic<bool>> StopRequested;
     };
+
+    namespace detail { // NOLINT(readability-identifier-naming)
+        bool CanLaunchEmulatorInstance(const EmulatorInstance &instance);
+
+        bool IsCurrentEmulatorInstance(
+            const EmulatorInstance &instance,
+            ProcessId pid,
+            std::uint64_t generation
+        );
+    }
 
     class EmulatorManager {
     public:
@@ -74,6 +86,7 @@ namespace CoreDeck {
         std::unordered_map<std::string, EmulatorInstance> m_Instances;
         std::vector<int> m_ReservedConsolePorts;
         std::vector<std::string> m_PendingLaunchAvds;
+        std::uint64_t m_NextGeneration = 0;
         ProcessStatsSampler m_Stats;
     };
 }

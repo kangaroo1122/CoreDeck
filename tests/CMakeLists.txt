@@ -9,7 +9,14 @@ add_executable(coredeck_tests
         test_log_buffer.cpp
         test_log_filter.cpp
         test_options.cpp
+        test_emulator_lifecycle.cpp
         test_skin.cpp
+        test_sha256.cpp
+        test_archive.cpp
+        test_sdk_repository.cpp
+        test_sdk_progress.cpp
+        test_sdk_install_transaction.cpp
+        test_sdk_install_session.cpp
         test_sdk_bootstrap.cpp
         test_sdk_packages.cpp
         test_system_image.cpp

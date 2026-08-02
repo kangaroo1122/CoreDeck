@@ -5,14 +5,13 @@
 #ifndef COREDECK_SDK_PACKAGES_H
 #define COREDECK_SDK_PACKAGES_H
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
 #include "sdk.h"
+#include "sdk_progress.h"
 
 namespace CoreDeck {
     enum class SdkPackageViewTab : uint8_t {
@@ -61,16 +60,6 @@ namespace CoreDeck {
         std::vector<SdkPackage> Packages;
         std::string Error;
         bool SdkManagerMissing = false;
-    };
-
-    struct SdkOperationProgress {
-        std::mutex Mutex;
-        std::atomic<bool> CancelRequested{false};
-        float Percent = 0.0F;
-        std::string StatusText;
-        std::string DetailText;
-        bool Finished = false;
-        bool Succeeded = false;
     };
 
     SdkPackageListResult ListSdkPackages(const SdkInfo &sdk, bool includeObsolete = false);

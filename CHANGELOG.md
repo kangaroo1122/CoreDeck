@@ -1,3 +1,7 @@
+## [v0.12.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0-beta.2) — 2026-08-02
+
+- Keep miniz and tinyxml2 development headers and libraries out of macOS installation images
+
 ## [v0.12.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0-beta.1) — 2026-08-02
 
 - Add guided Android SDK installation during onboarding, including command-line tools, licenses, platform tools, emulator, and a stable SDK platform

@@ -1,3 +1,12 @@
+## [v0.12.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0) — 2026-08-02
+
+- Add guided Android SDK installation during onboarding, including command-line tools, license acceptance, platform tools, the emulator, and a stable SDK platform
+- Install fresh SDKs transactionally with rollback on failure or cancellation, continuous progress across setup phases, and a single staging layout that avoids Windows path-length failures
+- Parse Google's repository metadata with tinyxml2, verify downloads with official SHA-1 or pinned SHA-256 fallback metadata, and extract archives in-process with miniz and path traversal protection
+- Report SDK installation failures with the filesystem operation, source and destination paths, and native system error details
+- Harden emulator stop and relaunch lifecycle handling, Windows process cleanup, and asynchronous system image operations
+- Keep bundled miniz and tinyxml2 development headers and libraries out of macOS installation images
+
 ## [v0.12.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0-beta.4) — 2026-08-02
 
 - Avoid Windows path-length failures by removing redundant command-line tools staging inside fresh SDK transactions

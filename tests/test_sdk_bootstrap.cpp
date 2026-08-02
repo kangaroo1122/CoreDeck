@@ -67,6 +67,28 @@ TEST_CASE("SDK bootstrap filesystem errors include actionable path context", "[s
     CHECK(error.find("code " + std::to_string(ec.value())) != std::string::npos);
 }
 
+TEST_CASE("Command-line tools install directly into the SDK transaction root", "[sdk_bootstrap][install]") {
+    const std::filesystem::path root = MakeTempDir("coredeck_cmdline_tools_layout");
+    const std::filesystem::path extractedTools = root / "extracted" / "cmdline-tools";
+    const std::filesystem::path sdkRoot = root / ".Sdk-coredeck-installing-123456789";
+    std::filesystem::create_directories(extractedTools / "bin");
+    std::filesystem::create_directories(extractedTools / "lib");
+    std::ofstream(extractedTools / "bin" / "sdkmanager.bat") << "sdkmanager";
+    std::ofstream(extractedTools / "lib" / "tool.jar") << "jar";
+
+    std::string error;
+    REQUIRE(detail::InstallExtractedCommandLineTools(extractedTools, sdkRoot, error));
+
+    const std::filesystem::path cmdlineToolsRoot = sdkRoot / "cmdline-tools";
+    CHECK(std::filesystem::exists(cmdlineToolsRoot / "latest" / "bin" / "sdkmanager.bat"));
+    CHECK(std::filesystem::exists(cmdlineToolsRoot / "latest" / "lib" / "tool.jar"));
+    for (const auto &entry: std::filesystem::directory_iterator(cmdlineToolsRoot)) {
+        CHECK(entry.path().filename() == "latest");
+    }
+
+    std::filesystem::remove_all(root);
+}
+
 TEST_CASE("Command-line tools package verification checks size and SHA-256", "[sdk_bootstrap][fallback]") {
     const std::filesystem::path tempDir = MakeTempDir("coredeck_cmdline_tools_sha256_verify");
     const std::filesystem::path archive = tempDir / "package.zip";

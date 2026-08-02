@@ -32,6 +32,13 @@ namespace CoreDeck {
             const std::error_code &error
         );
 
+        bool InstallExtractedCommandLineTools(
+            const std::filesystem::path &extractedTools,
+            const std::filesystem::path &sdkRoot,
+            std::string &error,
+            const std::shared_ptr<SdkOperationProgress> &progress = nullptr
+        );
+
         bool FileMatchesCommandLineToolsPackage(
             const std::string &path,
             const CommandLineToolsPackage &package

@@ -194,19 +194,6 @@ namespace CoreDeck {
             return true;
         }
 
-        std::filesystem::path UniqueSiblingPath(const std::filesystem::path &target, const std::string_view suffix) {
-            std::filesystem::path parent = target.parent_path();
-            if (parent.empty()) {
-                parent = ".";
-            }
-            std::string name = target.filename().string();
-            if (name.empty()) {
-                name = "sdk";
-            }
-            const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-            return parent / StrConcat(".", name, "-", std::string(suffix), "-", std::to_string(now));
-        }
-
         class BootstrapDirectoryCleanup {
         public:
             explicit BootstrapDirectoryCleanup(std::filesystem::path sdkRoot)
@@ -243,69 +230,6 @@ namespace CoreDeck {
             bool m_CmdlineToolsRootExisted = false;
             bool m_Active = true;
         };
-
-        bool ReplaceDirectoryWithStagedInstall(
-            const std::filesystem::path &stagingDir,
-            const std::filesystem::path &installDir,
-            std::string &error
-        ) {
-            std::error_code ec;
-            std::filesystem::path backupDir;
-
-            const bool installDirExists = std::filesystem::exists(installDir, ec);
-            if (ec) {
-                error = detail::FormatFilesystemError(
-                    "Inspecting existing command-line tools directory",
-                    installDir,
-                    {},
-                    ec
-                );
-                return false;
-            }
-            if (installDirExists) {
-                backupDir = UniqueSiblingPath(installDir, "previous");
-                std::filesystem::rename(installDir, backupDir, ec);
-                if (ec) {
-                    error = detail::FormatFilesystemError(
-                        "Moving existing command-line tools to backup",
-                        installDir,
-                        backupDir,
-                        ec
-                    );
-                    return false;
-                }
-            }
-
-            std::filesystem::rename(stagingDir, installDir, ec);
-            if (ec) {
-                error = detail::FormatFilesystemError(
-                    "Moving staged command-line tools into place",
-                    stagingDir,
-                    installDir,
-                    ec
-                );
-                if (!backupDir.empty()) {
-                    std::error_code restoreEc;
-                    if (!std::filesystem::exists(installDir, restoreEc)) {
-                        std::filesystem::rename(backupDir, installDir, restoreEc);
-                    }
-                    if (restoreEc) {
-                        error += "\n" + detail::FormatFilesystemError(
-                            "Restoring previous command-line tools directory",
-                            backupDir,
-                            installDir,
-                            restoreEc
-                        );
-                    }
-                }
-                return false;
-            }
-
-            if (!backupDir.empty()) {
-                std::filesystem::remove_all(backupDir, ec);
-            }
-            return true;
-        }
 
         bool IsInstalledPackage(const std::vector<SdkPackage> &packages, const std::string &path) {
             return std::ranges::any_of(packages, [&](const SdkPackage &package) {
@@ -809,6 +733,20 @@ namespace CoreDeck {
             return message;
         }
 
+        bool InstallExtractedCommandLineTools(
+            const std::filesystem::path &extractedTools,
+            const std::filesystem::path &sdkRoot,
+            std::string &error,
+            const std::shared_ptr<SdkOperationProgress> &progress
+        ) {
+            return CopyDirectoryContents(
+                extractedTools,
+                sdkRoot / "cmdline-tools" / "latest",
+                error,
+                progress
+            );
+        }
+
         bool FileMatchesCommandLineToolsPackage(
             const std::string &path,
             const CommandLineToolsPackage &package
@@ -1003,28 +941,8 @@ namespace CoreDeck {
 
             SetProgress(progress, 0.88F, "Installing command-line tools...");
             const std::filesystem::path extractedTools = extractDir / "cmdline-tools";
-            const std::filesystem::path cmdlineToolsRoot = std::filesystem::path(sdkRoot) / "cmdline-tools";
-            const std::filesystem::path latestTools = cmdlineToolsRoot / "latest";
-            std::filesystem::create_directories(cmdlineToolsRoot, ec);
-            if (ec) {
+            if (!detail::InstallExtractedCommandLineTools(extractedTools, sdkRoot, error, progress)) {
                 std::filesystem::remove_all(tempDir, ec);
-                return Fail(progress, StrConcat("Could not create cmdline-tools directory: ", ec.message()));
-            }
-            const std::filesystem::path stagingTools = UniqueSiblingPath(latestTools, "installing");
-            std::filesystem::remove_all(stagingTools, ec);
-            if (ec) {
-                std::filesystem::remove_all(tempDir, ec);
-                return Fail(progress, StrConcat("Could not prepare cmdline-tools staging directory: ", ec.message()));
-            }
-            std::filesystem::create_directories(stagingTools, ec);
-            if (ec) {
-                std::filesystem::remove_all(tempDir, ec);
-                return Fail(progress, StrConcat("Could not create cmdline-tools staging directory: ", ec.message()));
-            }
-
-            if (!CopyDirectoryContents(extractedTools, stagingTools, error, progress)) {
-                std::filesystem::remove_all(tempDir, ec);
-                std::filesystem::remove_all(stagingTools, ec);
                 if (IsCancelRequested(progress)) {
                     return Cancelled(progress);
                 }
@@ -1032,13 +950,7 @@ namespace CoreDeck {
             }
             if (IsCancelRequested(progress)) {
                 std::filesystem::remove_all(tempDir, ec);
-                std::filesystem::remove_all(stagingTools, ec);
                 return Cancelled(progress);
-            }
-            if (!ReplaceDirectoryWithStagedInstall(stagingTools, latestTools, error)) {
-                std::filesystem::remove_all(tempDir, ec);
-                std::filesystem::remove_all(stagingTools, ec);
-                return Fail(progress, error.empty() ? "Could not install command-line tools." : error);
             }
 
             std::filesystem::remove_all(tempDir, ec);

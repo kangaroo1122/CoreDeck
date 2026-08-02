@@ -1,3 +1,7 @@
+## [v0.12.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0-beta.4) — 2026-08-02
+
+- Avoid Windows path-length failures by removing redundant command-line tools staging inside fresh SDK transactions
+
 ## [v0.12.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0-beta.3) — 2026-08-02
 
 - Include filesystem operations, source and destination paths, and native error codes in SDK installation failures

@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <system_error>
 
 #include "core/sdk_bootstrap.h"
 
@@ -45,6 +46,25 @@ TEST_CASE("Bundled command-line tools fallback has independent integrity metadat
     REQUIRE(package.SizeBytes > 0);
     REQUIRE(package.Sha1.empty());
     REQUIRE(package.Sha256.size() == 64);
+}
+
+TEST_CASE("SDK bootstrap filesystem errors include actionable path context", "[sdk_bootstrap][diagnostics]") {
+    const std::filesystem::path source = std::filesystem::path("source") / "cmdline-tools" / "lib" / "tool.jar";
+    const std::filesystem::path destination = std::filesystem::path("destination") / "cmdline-tools" / "latest" / "lib" / "tool.jar";
+    const std::error_code ec = std::make_error_code(std::errc::no_such_file_or_directory);
+
+    const std::string error = detail::FormatFilesystemError(
+        "Copying command-line tools entry",
+        source,
+        destination,
+        ec
+    );
+
+    CHECK(error.find("Copying command-line tools entry") != std::string::npos);
+    CHECK(error.find(source.string()) != std::string::npos);
+    CHECK(error.find(destination.string()) != std::string::npos);
+    CHECK(error.find(ec.message()) != std::string::npos);
+    CHECK(error.find("code " + std::to_string(ec.value())) != std::string::npos);
 }
 
 TEST_CASE("Command-line tools package verification checks size and SHA-256", "[sdk_bootstrap][fallback]") {

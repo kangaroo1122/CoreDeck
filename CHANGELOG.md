@@ -1,3 +1,7 @@
+## [v0.12.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0-beta.3) — 2026-08-02
+
+- Include filesystem operations, source and destination paths, and native error codes in SDK installation failures
+
 ## [v0.12.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0-beta.2) — 2026-08-02
 
 - Keep miniz and tinyxml2 development headers and libraries out of macOS installation images

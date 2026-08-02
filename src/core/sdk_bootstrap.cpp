@@ -116,33 +116,77 @@ namespace CoreDeck {
             std::error_code ec;
             std::filesystem::create_directories(to, ec);
             if (ec) {
-                error = ec.message();
+                error = detail::FormatFilesystemError(
+                    "Creating command-line tools destination directory",
+                    {},
+                    to,
+                    ec
+                );
                 return false;
             }
 
-            for (const auto &entry: std::filesystem::directory_iterator(from, ec)) {
-                if (ec) {
-                    error = ec.message();
-                    return false;
+            const bool sourceIsDirectory = std::filesystem::is_directory(from, ec);
+            if (ec || !sourceIsDirectory) {
+                if (!ec) {
+                    ec = std::make_error_code(std::errc::not_a_directory);
                 }
+                error = detail::FormatFilesystemError(
+                    "Opening extracted command-line tools directory",
+                    from,
+                    to,
+                    ec
+                );
+                return false;
+            }
+
+            std::filesystem::directory_iterator entry(from, ec);
+            const std::filesystem::directory_iterator end;
+            if (ec) {
+                error = detail::FormatFilesystemError(
+                    "Enumerating extracted command-line tools directory",
+                    from,
+                    to,
+                    ec
+                );
+                return false;
+            }
+
+            while (entry != end) {
                 if (IsCancelRequested(progress)) {
                     error = "Operation cancelled.";
                     return false;
                 }
 
-                const std::filesystem::path target = to / entry.path().filename();
+                const std::filesystem::path source = entry->path();
+                const std::filesystem::path target = to / source.filename();
                 std::filesystem::copy(
-                    entry.path(),
+                    source,
                     target,
                     std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
                     ec
                 );
                 if (ec) {
-                    error = ec.message();
+                    error = detail::FormatFilesystemError(
+                        "Copying command-line tools entry",
+                        source,
+                        target,
+                        ec
+                    );
                     return false;
                 }
                 if (IsCancelRequested(progress)) {
                     error = "Operation cancelled.";
+                    return false;
+                }
+
+                entry.increment(ec);
+                if (ec) {
+                    error = detail::FormatFilesystemError(
+                        "Enumerating extracted command-line tools directory",
+                        from,
+                        to,
+                        ec
+                    );
                     return false;
                 }
             }
@@ -208,25 +252,50 @@ namespace CoreDeck {
             std::error_code ec;
             std::filesystem::path backupDir;
 
-            if (std::filesystem::exists(installDir, ec)) {
+            const bool installDirExists = std::filesystem::exists(installDir, ec);
+            if (ec) {
+                error = detail::FormatFilesystemError(
+                    "Inspecting existing command-line tools directory",
+                    installDir,
+                    {},
+                    ec
+                );
+                return false;
+            }
+            if (installDirExists) {
                 backupDir = UniqueSiblingPath(installDir, "previous");
                 std::filesystem::rename(installDir, backupDir, ec);
                 if (ec) {
-                    error = StrConcat("Could not prepare existing directory for replacement: ", ec.message());
+                    error = detail::FormatFilesystemError(
+                        "Moving existing command-line tools to backup",
+                        installDir,
+                        backupDir,
+                        ec
+                    );
                     return false;
                 }
             }
 
             std::filesystem::rename(stagingDir, installDir, ec);
             if (ec) {
-                error = StrConcat("Could not move directory into place: ", ec.message());
+                error = detail::FormatFilesystemError(
+                    "Moving staged command-line tools into place",
+                    stagingDir,
+                    installDir,
+                    ec
+                );
                 if (!backupDir.empty()) {
                     std::error_code restoreEc;
                     if (!std::filesystem::exists(installDir, restoreEc)) {
                         std::filesystem::rename(backupDir, installDir, restoreEc);
                     }
                     if (restoreEc) {
-                        error += StrConcat(" The previous directory could not be restored: ", restoreEc.message());
+                        error += "\n" + detail::FormatFilesystemError(
+                            "Restoring previous command-line tools directory",
+                            backupDir,
+                            installDir,
+                            restoreEc
+                        );
                     }
                 }
                 return false;
@@ -715,6 +784,31 @@ namespace CoreDeck {
     }
 
     namespace detail { // NOLINT(readability-identifier-naming)
+        std::string FormatFilesystemError(
+            const std::string &operation,
+            const std::filesystem::path &source,
+            const std::filesystem::path &destination,
+            const std::error_code &error
+        ) {
+            std::string message = StrConcat(operation, " failed.");
+            if (!source.empty()) {
+                message += StrConcat("\nSource: ", source.string());
+            }
+            if (!destination.empty()) {
+                message += StrConcat("\nDestination: ", destination.string());
+            }
+            message += StrConcat(
+                "\nSystem error: ",
+                error.message(),
+                " (code ",
+                std::to_string(error.value()),
+                ", category ",
+                error.category().name(),
+                ")"
+            );
+            return message;
+        }
+
         bool FileMatchesCommandLineToolsPackage(
             const std::string &path,
             const CommandLineToolsPackage &package

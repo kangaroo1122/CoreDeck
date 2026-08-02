@@ -5,8 +5,10 @@
 #ifndef COREDECK_SDK_BOOTSTRAP_H
 #define COREDECK_SDK_BOOTSTRAP_H
 
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <system_error>
 
 #include "sdk_packages.h"
 #include "sdk_repository.h"
@@ -23,6 +25,13 @@ namespace CoreDeck {
     CommandLineToolsPackage BundledCommandLineToolsPackage();
 
     namespace detail { // NOLINT(readability-identifier-naming)
+        std::string FormatFilesystemError(
+            const std::string &operation,
+            const std::filesystem::path &source,
+            const std::filesystem::path &destination,
+            const std::error_code &error
+        );
+
         bool FileMatchesCommandLineToolsPackage(
             const std::string &path,
             const CommandLineToolsPackage &package

@@ -174,6 +174,7 @@ add_library(coredeck_core STATIC
     src/core/jdk_download.cpp
     src/core/log_buffer.cpp
     src/core/log_filter.cpp
+    src/core/logcat.cpp
     src/core/options.cpp
     src/core/paths.cpp
     src/core/process.cpp

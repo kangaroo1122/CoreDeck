@@ -41,7 +41,7 @@ namespace CoreDeck {
                     context.UI.ShowDetailsPanel = !context.UI.ShowDetailsPanel;
                     PersistAppSettings(context);
                 }
-                if (RoundedMenuItem(context.UI.ShowLogPanel ? "Hide Output Log" : "Show Output Log")) {
+                if (RoundedMenuItem(context.UI.ShowLogPanel ? "Hide Logs" : "Show Logs")) {
                     context.UI.ShowLogPanel = !context.UI.ShowLogPanel;
                     PersistAppSettings(context);
                 }

@@ -36,7 +36,6 @@ TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[ap
 
     const auto settings = rfl::json::read<AppSettings, rfl::DefaultIfMissing>(oldSettingsJson).value();
 
-    REQUIRE_FALSE(settings.AutoScroll);
     REQUIRE_FALSE(settings.ConfirmBeforeDeleteAvd);
     REQUIRE(settings.ConfirmBeforeWipeAndRun);
     REQUIRE_FALSE(settings.CrashReportingEnabled);

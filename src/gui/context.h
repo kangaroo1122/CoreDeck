@@ -20,6 +20,7 @@
 #include "../core/device_file.h"
 #include "../core/emulator.h"
 #include "../core/jdk_download.h"
+#include "../core/logcat.h"
 #include "../core/options.h"
 #include "../core/sdk.h"
 #include "../core/sdk_bootstrap.h"
@@ -78,6 +79,11 @@ namespace CoreDeck {
         Tools,
     };
 
+    enum class LogSource : uint8_t {
+        Emulator,
+        Logcat,
+    };
+
     struct StorageScanResult {
         std::uintmax_t TotalAvdSize = 0;
         std::uintmax_t SystemImagesSize = 0;
@@ -111,6 +117,7 @@ namespace CoreDeck {
         struct Host {
             SdkInfo Sdk;
             EmulatorManager Manager;
+            LogcatStream Logcat;
 
             explicit Host(SdkInfo sdk) : Sdk(std::move(sdk)), Manager(Sdk) {
             }
@@ -137,11 +144,34 @@ namespace CoreDeck {
             std::string Search;
             int ActiveMatchIndex = 0;
             bool UseRegex = false;
+            bool AutoScroll = true;
+        };
+
+        struct LogcatViewState {
+            std::string Search;
+            bool UseRegex = false;
+            LogcatPriority MinimumPriority = LogcatPriority::Debug;
+            int SelectedPid = 0;
+            LogcatBuffer Buffer = LogcatBuffer::Main;
+            bool Paused = false;
+            bool AutoScroll = true;
+            std::uint64_t CachedRevision = 0;
+            std::vector<LogcatEntry> CachedEntries;
+            std::uint64_t FilteredRevision = 0;
+            LogcatPriority FilteredMinimumPriority = LogcatPriority::Unknown;
+            int FilteredPid = -1;
+            std::string FilteredSearch;
+            bool FilteredUseRegex = false;
+            LogcatFilterResult CachedFilter;
+            std::chrono::steady_clock::time_point LastStartAttempt{};
+            std::string ExportStatus;
+            bool ExportSucceeded = false;
         };
 
         struct Logs {
             std::unordered_map<std::string, LogViewState> PerAvdView;
-            bool AutoScroll = true;
+            std::unordered_map<std::string, LogcatViewState> PerAvdLogcatView;
+            LogSource ActiveSource = LogSource::Emulator;
             bool PendingScroll = false;
             bool PendingFocus = false;
             int PendingSyncFrames = 0;

@@ -155,7 +155,7 @@ namespace {
         [g_ToggleAvdListItem setTitle:Translated(state.ShowAvdListPanel ? "Hide AVD List" : "Show AVD List")];
         [g_ToggleOptionsItem setTitle:Translated(state.ShowOptionsPanel ? "Hide Options" : "Show Options")];
         [g_ToggleDetailsItem setTitle:Translated(state.ShowDetailsPanel ? "Hide Details" : "Show Details")];
-        [g_ToggleOutputLogItem setTitle:Translated(state.ShowLogPanel ? "Hide Output Log" : "Show Output Log")];
+        [g_ToggleOutputLogItem setTitle:Translated(state.ShowLogPanel ? "Hide Logs" : "Show Logs")];
         [g_ToggleDeviceExplorerItem setTitle:Translated(state.ShowDeviceExplorerPanel ? "Hide Device Explorer" : "Show Device Explorer")];
         [g_StorageOverviewItem setTitle:Translated("Storage Overview")];
 
@@ -227,7 +227,7 @@ namespace CoreDeck::MacosMenu {
             g_ToggleAvdListItem = ActionItem(Translated("Hide AVD List"), NativeMenuAction::ToggleAvdList);
             g_ToggleOptionsItem = ActionItem(Translated("Hide Options"), NativeMenuAction::ToggleOptions);
             g_ToggleDetailsItem = ActionItem(Translated("Hide Details"), NativeMenuAction::ToggleDetails);
-            g_ToggleOutputLogItem = ActionItem(Translated("Hide Output Log"), NativeMenuAction::ToggleOutputLog);
+            g_ToggleOutputLogItem = ActionItem(Translated("Hide Logs"), NativeMenuAction::ToggleOutputLog);
             g_ToggleDeviceExplorerItem = ActionItem(Translated("Show Device Explorer"), NativeMenuAction::ToggleDeviceExplorer);
             g_StorageOverviewItem = ActionItem(Translated("Storage Overview"), NativeMenuAction::StorageOverview);
             [viewMenu addItem:g_ToggleAvdListItem];

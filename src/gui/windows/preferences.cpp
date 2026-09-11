@@ -673,17 +673,6 @@ namespace CoreDeck {
             SectionHeader("General", "Behavior of CoreDeck while you work with AVDs.");
 
             if (SubtitledCheckbox(
-                    "AutoScrollLogs",
-                    &context.Logs.AutoScroll,
-                    "Enable auto-scrolling of output logs",
-                    "Keep the log view pinned to the most recent line as new output arrives."
-                )) {
-                PersistAppSettings(context);
-            }
-
-            ImGui::Dummy(ImVec2(0, 4));
-
-            if (SubtitledCheckbox(
                     "ConfirmDeleteAvd",
                     &context.Prefs.ConfirmBeforeDeleteAvd,
                     "Confirm before deleting an AVD",

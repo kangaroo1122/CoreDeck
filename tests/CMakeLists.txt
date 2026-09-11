@@ -8,6 +8,7 @@ add_executable(coredeck_tests
         test_app_settings.cpp
         test_log_buffer.cpp
         test_log_filter.cpp
+        test_logcat.cpp
         test_options.cpp
         test_emulator_lifecycle.cpp
         test_skin.cpp

@@ -18,6 +18,14 @@ namespace CoreDeck::FileDialog {
         const std::string &filterDescription,
         const std::string &defaultPath = ""
     );
+
+    std::optional<std::string> SaveFile(
+        const std::string &title,
+        const char *const *filters,
+        int filterCount,
+        const std::string &filterDescription,
+        const std::string &defaultPath = ""
+    );
 }
 
 #endif // COREDECK_FILE_DIALOG_H

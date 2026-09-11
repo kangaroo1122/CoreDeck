@@ -1,3 +1,11 @@
+## [v0.13.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0-beta.1) — 2026-09-11
+
+- Replace Output Log with a unified Logs workspace that keeps emulator process output and real-time ADB Logcat in separate tabs
+- Stream and parse Logcat in threadtime format with automatic reconnects and a bounded 10,000-entry buffer
+- Filter Logcat by severity, process or PID, buffer, text, and regular expression, with pause, clear, export, and color-coded levels
+- Move auto-scroll control into each log source, preserving independent per-AVD Emulator and Logcat view state instead of a global preference
+- Add Simplified Chinese localization, documentation, parser coverage, and compatibility for existing settings files
+
 ## [v0.12.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.1) — 2026-09-11
 
 - Bring the selected emulator window to the foreground after opening its shared folder from CoreDeck, with platform-native activation on macOS, Windows, and X11 Linux

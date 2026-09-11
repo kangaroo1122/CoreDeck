@@ -10,7 +10,6 @@
 namespace CoreDeck {
     struct AppSettings {
         int SchemaVersion = 1;
-        bool AutoScroll = true;
         bool ConfirmBeforeDeleteAvd = true;
         bool ConfirmBeforeWipeAndRun = true;
         bool CrashReportingEnabled = true;

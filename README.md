@@ -39,8 +39,8 @@ Android Studio for everyday emulator work. Built with C++20 and Dear ImGui.
 - **System Updates** — Monitor Stable releases by default, optionally include Beta releases, download updates in-app, verify SHA-256 checksums, and open the platform installer or archive when ready.
 - **Device Explorer** — Browse files on the selected running AVD, upload/download files or folders, create folders, and delete safely.
 - **Per-AVD Shared Folders** — Open host or emulator shared folders and sync regular files incrementally with conflict-preserving copies.
-- **Output Log Viewer** — Stream emulator output with search, navigation, selectable text, auto-scroll, and horizontal scrolling for long lines.
-- **Five-Panel Workspace** — Toggle AVDs, Options, Details, Output Log, and Device Explorer independently with persisted split ratios.
+- **Logs Workspace** — Keep emulator process output and real-time ADB Logcat in separate tabs, with search, severity/process/buffer filters, pause, export, and auto-scroll controls.
+- **Five-Panel Workspace** — Toggle AVDs, Options, Details, Logs, and Device Explorer independently with persisted split ratios.
 - **Storage Overview** — Inspect per-AVD disk usage and clear heavy or unused data.
 - **Preferences & Localization** — Switch theme/language, choose CJK UI fonts, adjust font size, and restore window size/maximized state across restarts.
 

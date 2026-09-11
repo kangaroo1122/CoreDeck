@@ -3,9 +3,15 @@
 //
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <limits>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "imgui.h"
@@ -16,20 +22,27 @@
 #include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"
+#include "../../core/file_dialog.h"
 #include "../../core/log_filter.h"
 
 namespace CoreDeck {
     namespace {
+        constexpr auto LOGCAT_RETRY_DELAY = std::chrono::milliseconds(1500);
+
         struct PanelInputs {
-            std::shared_ptr<LogBuffer> Log;
+            std::shared_ptr<LogBuffer> EmulatorLog;
             std::string AvdName;
+            std::string DisplayName;
+            std::string Serial;
             bool HasSelection = false;
+            bool IsRunning = false;
         };
 
-        struct PanelView {
+        struct EmulatorPanelView {
             LogFilterResult Filter;
             std::string Placeholder;
             bool HasContent = false;
+            std::size_t LineCount = 0;
         };
 
         struct SyncSelection {
@@ -38,60 +51,97 @@ namespace CoreDeck {
             int End = 0;
         };
 
+        struct PriorityOption {
+            LogcatPriority Value;
+            const char *Label;
+        };
+
+        struct BufferOption {
+            LogcatBuffer Value;
+            const char *Label;
+        };
+
+        constexpr PriorityOption PRIORITY_OPTIONS[] = {
+            {LogcatPriority::Verbose, "Verbose+"},
+            {LogcatPriority::Debug, "Debug+"},
+            {LogcatPriority::Info, "Info+"},
+            {LogcatPriority::Warning, "Warning+"},
+            {LogcatPriority::Error, "Error+"},
+            {LogcatPriority::Fatal, "Fatal"},
+        };
+
+        constexpr BufferOption BUFFER_OPTIONS[] = {
+            {LogcatBuffer::Main, "Main"},
+            {LogcatBuffer::System, "System"},
+            {LogcatBuffer::Crash, "Crash"},
+            {LogcatBuffer::All, "All buffers"},
+        };
+
         PanelInputs ResolveInputs(Context &context) {
             PanelInputs inputs;
-            if (context.Catalog.SelectedAvd >= 0) {
-                inputs.HasSelection = true;
-                inputs.AvdName = context.Catalog.Avds[context.Catalog.SelectedAvd].Name;
-                inputs.Log = context.Host.Manager.GetLog(inputs.AvdName);
+            const int selected = context.Catalog.SelectedAvd;
+            if (selected < 0 || selected >= static_cast<int>(context.Catalog.Avds.size())) {
+                return inputs;
             }
+
+            const AvdInfo &avd = context.Catalog.Avds[selected];
+            inputs.HasSelection = true;
+            inputs.AvdName = avd.Name;
+            inputs.DisplayName = avd.DisplayName.empty() ? avd.Name : avd.DisplayName;
+            inputs.IsRunning = context.Host.Manager.IsRunning(avd.Name);
+            inputs.EmulatorLog = context.Host.Manager.GetLog(avd.Name);
+            inputs.Serial = EmulatorSerialForConsolePort(context.Host.Manager.GetConsolePort(avd.Name));
             return inputs;
         }
 
-        Context::LogViewState &ResolveViewState(Context &context, const std::string &avdName) {
+        Context::LogViewState &ResolveEmulatorViewState(Context &context, const std::string &avdName) {
             return context.Logs.PerAvdView[avdName];
         }
 
-        PanelView BuildView(const PanelInputs &inputs, const Context::LogViewState &state) {
-            PanelView view;
+        Context::LogcatViewState &ResolveLogcatViewState(Context &context, const std::string &avdName) {
+            return context.Logs.PerAvdLogcatView[avdName];
+        }
+
+        EmulatorPanelView BuildEmulatorView(const PanelInputs &inputs, const Context::LogViewState &state) {
+            EmulatorPanelView view;
             if (!inputs.HasSelection) {
                 view.Placeholder = Tr("Select an AVD to view logs");
                 return view;
             }
-            if (!inputs.Log) {
+            if (!inputs.EmulatorLog) {
                 char buffer[256];
                 std::snprintf(buffer, sizeof(buffer), Tr("Run the \"%s\" AVD to view logs"), inputs.AvdName.c_str());
                 view.Placeholder = buffer;
                 return view;
             }
 
-            const auto lines = inputs.Log->GetLines();
+            const auto lines = inputs.EmulatorLog->GetLines();
+            view.LineCount = lines.size();
             LogFilterOptions options;
             options.Query = state.Search;
             options.UseRegex = state.UseRegex;
             view.Filter = FilterLog(lines, options);
             view.HasContent = !view.Filter.Joined.empty();
-
             if (!view.HasContent) {
                 view.Placeholder = lines.empty() ? Tr("No available logs to view") : Tr("No matching log entries found");
             }
             return view;
         }
 
-        bool RenderToolbarButtons(const PanelInputs &inputs, const bool hasContent) {
-            const bool disabled = !inputs.Log;
+        bool RenderEmulatorToolbarButtons(const PanelInputs &inputs, const bool hasContent) {
+            const bool disabled = !inputs.EmulatorLog;
             if (disabled) {
                 ImGui::BeginDisabled();
             }
             if (PrimaryButton(Icons::TRASH)) {
-                inputs.Log->Clear();
+                inputs.EmulatorLog->Clear();
             }
             if (disabled) {
                 ImGui::EndDisabled();
             }
             ImGui::SameLine();
 
-            const bool canCopy = inputs.Log && hasContent;
+            const bool canCopy = inputs.EmulatorLog && hasContent;
             if (!canCopy) {
                 ImGui::BeginDisabled();
             }
@@ -103,30 +153,25 @@ namespace CoreDeck {
             return copyClicked;
         }
 
-        bool RenderSearchBar(Context::LogViewState &state, const PanelView &view, const int matchCount, bool &queryChanged) {
+        bool RenderEmulatorSearchBar(
+            Context::LogViewState &state,
+            const EmulatorPanelView &view,
+            const int matchCount,
+            bool &queryChanged
+        ) {
             queryChanged = false;
             bool navChanged = false;
 
             const float squareButtonSize = ImGui::GetFrameHeight();
-            const float regexToggleWidth = squareButtonSize;
-            const float navButtonWidth = squareButtonSize;
             const float searchWidth = Em(29.0F);
-
-            const bool hasQueryForWidth = !state.Search.empty();
-            const bool regexInvalidForWidth = state.UseRegex && hasQueryForWidth && !view.Filter.RegexValid;
-            const int displayedIndexForWidth = matchCount > 0 ? state.ActiveMatchIndex + 1 : 0;
-            std::string counter;
-            if (!hasQueryForWidth) {
-                counter = "0 / 0";
-            } else if (regexInvalidForWidth) {
-                counter = "—";
-            } else {
-                counter = std::to_string(displayedIndexForWidth) + " / " + std::to_string(matchCount);
-            }
+            const bool hasQuery = !state.Search.empty();
+            const bool regexInvalid = state.UseRegex && hasQuery && !view.Filter.RegexValid;
+            const int displayedIndex = matchCount > 0 ? state.ActiveMatchIndex + 1 : 0;
+            const std::string counter = !hasQuery ? "0 / 0" : (regexInvalid ? "—" : std::to_string(displayedIndex) + " / " + std::to_string(matchCount));
 
             const ImGuiStyle &style = ImGui::GetStyle();
             const float counterWidth = ImGui::CalcTextSize(counter.c_str()).x;
-            const float fixedWidth = regexToggleWidth + counterWidth + (navButtonWidth * 2.0F) + (style.ItemSpacing.x * 4.0F);
+            const float fixedWidth = (squareButtonSize * 3.0F) + counterWidth + (style.ItemSpacing.x * 4.0F);
             const float contentMaxX = ImGui::GetWindowContentRegionMax().x;
             float startX = ImGui::GetCursorPosX();
             if ((contentMaxX - startX) < fixedWidth + Em(10.0F)) {
@@ -137,32 +182,24 @@ namespace CoreDeck {
             const float resolvedSearchWidth = std::min(searchWidth, availableSearchWidth);
             ImGui::SetCursorPosX(std::max(startX, contentMaxX - fixedWidth - resolvedSearchWidth));
 
-            // Regex toggle
-            if (ToggleButton(".*##RegexToggle", state.UseRegex, ImVec2(regexToggleWidth, squareButtonSize))) {
+            if (ToggleButton(".*##EmulatorRegexToggle", state.UseRegex, ImVec2(squareButtonSize, squareButtonSize))) {
                 queryChanged = true;
             }
             ImGui::SameLine();
 
-            // Search field
-            const bool regexInvalid = state.UseRegex && !state.Search.empty() && !view.Filter.RegexValid;
             char searchBuffer[256];
             std::strncpy(searchBuffer, state.Search.c_str(), sizeof(searchBuffer) - 1);
             searchBuffer[sizeof(searchBuffer) - 1] = '\0';
-
             const std::string hint = IconWithLabel(Icons::SEARCH, state.UseRegex ? "Regex" : "Search logs...");
             ImGui::SetNextItemWidth(resolvedSearchWidth);
             if (regexInvalid) {
                 ImGui::PushStyleColor(ImGuiCol_Border, HexColor(Colors::NEGATIVE));
-            }
-            if (regexInvalid) {
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0F);
             }
-            const bool edited = ImGui::InputTextWithHint("##search", hint.c_str(), searchBuffer, sizeof(searchBuffer));
+            const bool edited = ImGui::InputTextWithHint("##EmulatorLogSearch", hint.c_str(), searchBuffer, sizeof(searchBuffer));
             const bool enterPressed = ImGui::IsItemDeactivatedAfterEdit() && ImGui::IsKeyPressed(ImGuiKey_Enter, false);
             if (regexInvalid) {
                 ImGui::PopStyleVar();
-            }
-            if (regexInvalid) {
                 ImGui::PopStyleColor();
             }
             if (regexInvalid && ImGui::IsItemHovered()) {
@@ -173,34 +210,29 @@ namespace CoreDeck {
                 queryChanged = true;
             }
             ImGui::SameLine();
-
-            // Match counter
             ImGui::TextDisabled("%s", counter.c_str());
             ImGui::SameLine();
 
-            // Prev / Next
-            const bool canNav = matchCount > 0;
-            if (!canNav) {
+            const bool canNavigate = matchCount > 0;
+            if (!canNavigate) {
                 ImGui::BeginDisabled();
             }
-            if (ImGui::Button((std::string{Icons::CHEVRON_LEFT} + "##LogPrev").c_str(), ImVec2(navButtonWidth, squareButtonSize))) {
+            if (ImGui::Button((std::string{Icons::CHEVRON_LEFT} + "##EmulatorLogPrev").c_str(), ImVec2(squareButtonSize, squareButtonSize))) {
                 state.ActiveMatchIndex = (state.ActiveMatchIndex - 1 + matchCount) % matchCount;
                 navChanged = true;
             }
             ImGui::SameLine();
-            if (ImGui::Button((std::string{Icons::CHEVRON_RIGHT} + "##LogNext").c_str(), ImVec2(navButtonWidth, squareButtonSize))) {
+            if (ImGui::Button((std::string{Icons::CHEVRON_RIGHT} + "##EmulatorLogNext").c_str(), ImVec2(squareButtonSize, squareButtonSize))) {
                 state.ActiveMatchIndex = (state.ActiveMatchIndex + 1) % matchCount;
                 navChanged = true;
             }
-            if (!canNav) {
+            if (!canNavigate) {
                 ImGui::EndDisabled();
             }
-
-            if (canNav && enterPressed) {
+            if (canNavigate && enterPressed) {
                 state.ActiveMatchIndex = (state.ActiveMatchIndex + 1) % matchCount;
                 navChanged = true;
             }
-
             return navChanged;
         }
 
@@ -226,46 +258,16 @@ namespace CoreDeck {
         }
 
         bool ApplyScrollToLine(const int lineIndex, ImGuiWindow *window) {
-            if (lineIndex < 0) {
-                return false;
-            }
-            if (!window) {
+            if (lineIndex < 0 || !window) {
                 return false;
             }
             const float lineHeight = ImGui::GetTextLineHeight();
-            const float regionH = window->InnerRect.GetHeight();
-            const float targetY = static_cast<float>(lineIndex) * lineHeight;
-            window->Scroll.y = std::max(0.0F, targetY - (regionH * 0.3F));
+            const float regionHeight = window->InnerRect.GetHeight();
+            window->Scroll.y = std::max(0.0F, (static_cast<float>(lineIndex) * lineHeight) - (regionHeight * 0.3F));
             return true;
         }
 
-        bool ApplyScrollToBottom(ImGuiWindow *window) {
-            if (!window) {
-                return false;
-            }
-            window->Scroll.y = window->ScrollMax.y;
-            return true;
-        }
-
-        void DriveAutoScroll(
-            const PanelInputs &inputs,
-            const Context &context,
-            const PanelView &view,
-            const bool hasQuery,
-            ImGuiWindow *window
-        ) {
-            if (!inputs.Log || !context.Logs.AutoScroll || hasQuery || !view.HasContent) {
-                return;
-            }
-            if (!inputs.Log->HasNewContent()) {
-                return;
-            }
-
-            ApplyScrollToBottom(window);
-            inputs.Log->ResetNewContentFlag();
-        }
-
-        ImVec2 ResolveLogContentSize(const std::string &display) {
+        ImVec2 ResolveEmulatorLogContentSize(const std::string &display) {
             const ImGuiStyle &style = ImGui::GetStyle();
             const ImVec2 available = ImGui::GetContentRegionAvail();
             const char *textStart = display.data();
@@ -273,7 +275,6 @@ namespace CoreDeck {
             const char *lineStart = textStart;
             float maxLineWidth = 0.0F;
             int lineCount = 1;
-
             for (const char *cursor = textStart; cursor < textEnd; ++cursor) {
                 if (*cursor != '\n') {
                     continue;
@@ -283,22 +284,16 @@ namespace CoreDeck {
                 ++lineCount;
             }
             maxLineWidth = std::max(maxLineWidth, ImGui::CalcTextSize(lineStart, textEnd, false).x);
-
-            return ImVec2(
+            return {
                 std::max(available.x, maxLineWidth + (style.FramePadding.x * 2.0F) + style.ScrollbarSize),
-                std::max(
-                    available.y,
-                    (static_cast<float>(lineCount) * ImGui::GetTextLineHeight()) +
-                        (style.FramePadding.y * 2.0F) +
-                        style.ScrollbarSize
-                )
-            );
+                std::max(available.y, (static_cast<float>(lineCount) * ImGui::GetTextLineHeight()) + (style.FramePadding.y * 2.0F) + style.ScrollbarSize)
+            };
         }
 
-        bool RenderLogBody(
+        bool RenderEmulatorLogBody(
             const PanelInputs &inputs,
-            const Context &context,
-            const PanelView &view,
+            const Context::LogViewState &state,
+            const EmulatorPanelView &view,
             const SyncSelection &sync,
             const bool focusLog,
             const int scrollLine,
@@ -308,17 +303,20 @@ namespace CoreDeck {
             std::vector<char> buffer(display.begin(), display.end());
             buffer.push_back('\0');
 
-            ImGuiInputTextFlags flags = ImGuiInputTextFlags_ReadOnly |
-                                        ImGuiInputTextFlags_NoUndoRedo;
+            ImGuiInputTextFlags flags = ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoUndoRedo;
             if (sync.Active) {
                 flags |= ImGuiInputTextFlags_CallbackAlways;
             }
 
-            const ImVec2 contentSize = ResolveLogContentSize(display);
+            const ImVec2 contentSize = ResolveEmulatorLogContentSize(display);
             ImGui::SetNextWindowContentSize(contentSize);
-            ImGui::BeginChild("##LogText", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
+            ImGui::BeginChild(
+                "##EmulatorLogText",
+                ImVec2(0, -ImGui::GetFrameHeightWithSpacing()),
+                ImGuiChildFlags_None,
+                ImGuiWindowFlags_HorizontalScrollbar
+            );
             ImGuiWindow *logWindow = ImGui::GetCurrentWindow();
-
             bool scrollApplied = true;
             if (scrollLine >= 0) {
                 scrollApplied = ApplyScrollToLine(scrollLine, logWindow);
@@ -332,7 +330,7 @@ namespace CoreDeck {
                 ImGui::SetKeyboardFocusHere();
             }
             ImGui::InputTextMultiline(
-                "##LogTextInput",
+                "##EmulatorLogTextInput",
                 buffer.data(),
                 buffer.size(),
                 contentSize,
@@ -345,84 +343,546 @@ namespace CoreDeck {
                 ImGui::PopStyleColor();
             }
 
-            if (scrollLine < 0) {
-                DriveAutoScroll(inputs, context, view, hasQuery, logWindow);
+            if (scrollLine < 0 && inputs.EmulatorLog && state.AutoScroll && !hasQuery && view.HasContent && inputs.EmulatorLog->HasNewContent()) {
+                logWindow->Scroll.y = logWindow->ScrollMax.y;
+                inputs.EmulatorLog->ResetNewContentFlag();
             }
-
             ImGui::EndChild();
             return scrollApplied;
         }
 
-        void DrawLogPanelContent(Context &context) {
-            const PanelInputs inputs = ResolveInputs(context);
+        void DrawAutoScrollFooter(const std::string &status, bool &autoScroll, const char *id) {
+            ImGui::TextDisabled("%s", status.c_str());
+            const std::string visibleLabel = Tr("Auto-scroll");
+            const std::string checkboxLabel = visibleLabel + "###" + id;
+            const float checkboxWidth = ImGui::CalcTextSize(visibleLabel.c_str()).x + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x;
+            ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - checkboxWidth));
+            ImGui::Checkbox(checkboxLabel.c_str(), &autoScroll);
+        }
+
+        void DrawEmulatorLogPanel(Context &context, const PanelInputs &inputs) {
             Context::LogViewState scratch{};
-            Context::LogViewState &state = inputs.HasSelection ? ResolveViewState(context, inputs.AvdName) : scratch;
+            Context::LogViewState &state = inputs.HasSelection ? ResolveEmulatorViewState(context, inputs.AvdName) : scratch;
+            EmulatorPanelView view = BuildEmulatorView(inputs, state);
+            int matchCount = static_cast<int>(view.Filter.Matches.size());
+            state.ActiveMatchIndex = std::clamp(state.ActiveMatchIndex, 0, std::max(0, matchCount - 1));
 
-            PanelView view = BuildView(inputs, state);
-            const int matchCount = static_cast<int>(view.Filter.Matches.size());
-
-            if (state.ActiveMatchIndex >= matchCount) {
-                state.ActiveMatchIndex = 0;
-            }
-            state.ActiveMatchIndex = std::max(state.ActiveMatchIndex, 0);
-
-            const bool copyClicked = RenderToolbarButtons(inputs, view.HasContent);
+            const bool copyClicked = RenderEmulatorToolbarButtons(inputs, view.HasContent);
             bool queryChanged = false;
-            const bool navChanged = RenderSearchBar(state, view, matchCount, queryChanged);
-
+            const bool navChanged = RenderEmulatorSearchBar(state, view, matchCount, queryChanged);
             if (queryChanged) {
                 state.ActiveMatchIndex = 0;
-                view = BuildView(inputs, state);
-                context.Logs.PendingScroll = !view.Filter.Matches.empty();
-                if (!view.Filter.Matches.empty()) {
-                    context.Logs.PendingSyncFrames = 2;
-                }
+                view = BuildEmulatorView(inputs, state);
+                matchCount = static_cast<int>(view.Filter.Matches.size());
+                context.Logs.PendingScroll = matchCount > 0;
+                context.Logs.PendingSyncFrames = matchCount > 0 ? 2 : 0;
             }
             if (navChanged) {
                 context.Logs.PendingScroll = true;
                 context.Logs.PendingFocus = true;
                 context.Logs.PendingSyncFrames = 2;
             }
-
             if (copyClicked && view.HasContent) {
                 ImGui::SetClipboardText(view.Filter.Joined.c_str());
             }
 
             SyncSelection sync;
             int scrollLine = -1;
-            const bool haveActiveMatch = !view.Filter.Matches.empty() && state.ActiveMatchIndex < static_cast<int>(view.Filter.Matches.size());
-            if (haveActiveMatch && context.Logs.PendingSyncFrames > 0) {
-                const auto &[StartOffset, EndOffset] = view.Filter.Matches[state.ActiveMatchIndex];
-                sync.Active = true;
-                sync.Start = static_cast<int>(StartOffset);
-                sync.End = static_cast<int>(EndOffset);
+            const bool hasActiveMatch = !view.Filter.Matches.empty() && state.ActiveMatchIndex < static_cast<int>(view.Filter.Matches.size());
+            if (hasActiveMatch && context.Logs.PendingSyncFrames > 0) {
+                const auto &[startOffset, endOffset] = view.Filter.Matches[state.ActiveMatchIndex];
+                sync = {.Active = true, .Start = static_cast<int>(startOffset), .End = static_cast<int>(endOffset)};
             }
-            if (haveActiveMatch && context.Logs.PendingScroll) {
-                const auto &[StartOffset, _] = view.Filter.Matches[state.ActiveMatchIndex];
-                scrollLine = static_cast<int>(LineIndexFor(view.Filter.Joined, StartOffset));
+            if (hasActiveMatch && context.Logs.PendingScroll) {
+                scrollLine = static_cast<int>(LineIndexFor(view.Filter.Joined, view.Filter.Matches[state.ActiveMatchIndex].StartOffset));
             }
 
-            const bool focusLog = context.Logs.PendingFocus && haveActiveMatch;
-
-            const bool scrollApplied = RenderLogBody(inputs, context, view, sync, focusLog, scrollLine, !state.Search.empty());
+            const bool scrollApplied = RenderEmulatorLogBody(
+                inputs,
+                state,
+                view,
+                sync,
+                context.Logs.PendingFocus && hasActiveMatch,
+                scrollLine,
+                !state.Search.empty()
+            );
+            DrawAutoScrollFooter(
+                std::to_string(view.LineCount) + " " + Tr("lines") + " · " + Tr("Emulator"),
+                state.AutoScroll,
+                "EmulatorAutoScroll"
+            );
             if (scrollApplied) {
                 context.Logs.PendingScroll = false;
             }
-
             context.Logs.PendingFocus = false;
             if (context.Logs.PendingSyncFrames > 0) {
                 --context.Logs.PendingSyncFrames;
             }
         }
 
+        const char *PriorityOptionLabel(const LogcatPriority priority) {
+            for (const auto &option: PRIORITY_OPTIONS) {
+                if (option.Value == priority) {
+                    return option.Label;
+                }
+            }
+            return "Debug+";
+        }
+
+        const char *BufferOptionLabel(const LogcatBuffer buffer) {
+            for (const auto &option: BUFFER_OPTIONS) {
+                if (option.Value == buffer) {
+                    return option.Label;
+                }
+            }
+            return "Main";
+        }
+
+        ImVec4 PriorityColor(const LogcatPriority priority) {
+            switch (priority) {
+                case LogcatPriority::Info: return HexColor(Colors::POSITIVE);
+                case LogcatPriority::Warning: return HexColor(Colors::WARNING_STRONG);
+                case LogcatPriority::Error:
+                case LogcatPriority::Fatal: return HexColor(Colors::NEGATIVE);
+                case LogcatPriority::Verbose: return HexColor(Colors::TEXT_SUBTLE);
+                case LogcatPriority::Debug:
+                case LogcatPriority::Unknown: return ImGui::GetStyleColorVec4(ImGuiCol_Text);
+            }
+            return ImGui::GetStyleColorVec4(ImGuiCol_Text);
+        }
+
+        std::string ProcessLabel(const int pid, const std::vector<LogcatProcess> &processes) {
+            if (pid <= 0) {
+                return Tr("All processes");
+            }
+            const auto it = std::ranges::find_if(processes, [pid](const LogcatProcess &process) {
+                return process.Pid == pid;
+            });
+            if (it == processes.end()) {
+                return "PID " + std::to_string(pid);
+            }
+            if (it->Name.empty()) {
+                return "PID " + std::to_string(pid);
+            }
+            return it->Name + " · " + std::to_string(it->Pid);
+        }
+
+        std::vector<LogcatProcess> BuildVisibleProcessList(
+            const std::vector<LogcatProcess> &knownProcesses,
+            const std::vector<LogcatEntry> &entries
+        ) {
+            std::unordered_map<int, std::string> namesByPid;
+            namesByPid.reserve(knownProcesses.size());
+            for (const auto &process: knownProcesses) {
+                namesByPid[process.Pid] = process.Name;
+            }
+
+            std::vector<LogcatProcess> result;
+            std::unordered_set<int> includedPids;
+            for (const auto &entry: entries) {
+                if (entry.Pid <= 0 || !includedPids.insert(entry.Pid).second) {
+                    continue;
+                }
+                result.push_back({.Pid = entry.Pid, .Name = namesByPid[entry.Pid]});
+            }
+            std::ranges::sort(result, [](const LogcatProcess &left, const LogcatProcess &right) {
+                if (left.Name.empty() != right.Name.empty()) {
+                    return !left.Name.empty();
+                }
+                if (left.Name == right.Name) {
+                    return left.Pid < right.Pid;
+                }
+                return left.Name < right.Name;
+            });
+            return result;
+        }
+
+        void StopLogcatForInvalidTarget(Context &context, const PanelInputs &inputs) {
+            const LogcatStreamStatus status = context.Host.Logcat.Status();
+            if ((!status.Running && !status.Connecting) || status.AvdName.empty()) {
+                return;
+            }
+            if (!inputs.HasSelection || !inputs.IsRunning || inputs.Serial.empty() || status.AvdName != inputs.AvdName) {
+                context.Host.Logcat.Stop();
+            }
+        }
+
+        void EnsureLogcatStream(Context &context, const PanelInputs &inputs, Context::LogcatViewState &state) {
+            if (!inputs.HasSelection || !inputs.IsRunning || inputs.Serial.empty() || context.Host.Sdk.AdbPath.empty()) {
+                return;
+            }
+
+            const bool matches = context.Host.Logcat.Matches(
+                context.Host.Sdk.AdbPath,
+                inputs.AvdName,
+                inputs.Serial,
+                state.Buffer
+            );
+            const LogcatStreamStatus status = context.Host.Logcat.Status();
+            if (matches && (status.Running || status.Connecting)) {
+                return;
+            }
+
+            const auto now = std::chrono::steady_clock::now();
+            if (matches && now - state.LastStartAttempt < LOGCAT_RETRY_DELAY) {
+                return;
+            }
+
+            state.LastStartAttempt = now;
+            if (!matches) {
+                state.CachedEntries.clear();
+                state.CachedRevision = std::numeric_limits<std::uint64_t>::max();
+                state.SelectedPid = 0;
+            }
+            context.Host.Logcat.Start(context.Host.Sdk, inputs.AvdName, inputs.Serial, state.Buffer);
+        }
+
+        bool RefreshLogcatCache(Context &context, Context::LogcatViewState &state) {
+            if (state.Paused) {
+                return false;
+            }
+            const std::uint64_t revision = context.Host.Logcat.Revision();
+            if (revision == state.CachedRevision) {
+                return false;
+            }
+            state.CachedEntries = context.Host.Logcat.Entries();
+            state.CachedRevision = revision;
+            return true;
+        }
+
+        const LogcatFilterResult &ResolveLogcatFilter(Context::LogcatViewState &state) {
+            const bool cacheMatches =
+                state.FilteredRevision == state.CachedRevision &&
+                state.FilteredMinimumPriority == state.MinimumPriority &&
+                state.FilteredPid == state.SelectedPid &&
+                state.FilteredSearch == state.Search &&
+                state.FilteredUseRegex == state.UseRegex;
+            if (cacheMatches) {
+                return state.CachedFilter;
+            }
+
+            LogcatFilterOptions options;
+            options.MinimumPriority = state.MinimumPriority;
+            options.Pid = state.SelectedPid;
+            options.Query = state.Search;
+            options.UseRegex = state.UseRegex;
+            state.CachedFilter = FilterLogcatEntries(state.CachedEntries, options);
+            state.FilteredRevision = state.CachedRevision;
+            state.FilteredMinimumPriority = state.MinimumPriority;
+            state.FilteredPid = state.SelectedPid;
+            state.FilteredSearch = state.Search;
+            state.FilteredUseRegex = state.UseRegex;
+            return state.CachedFilter;
+        }
+
+        void DrawPriorityCombo(Context::LogcatViewState &state) {
+            ImGui::SetNextItemWidth(Em(10.0F));
+            ComboStyle style;
+            if (ImGui::BeginCombo("##LogcatPriority", Tr(PriorityOptionLabel(state.MinimumPriority)))) {
+                for (const auto &option: PRIORITY_OPTIONS) {
+                    const bool selected = option.Value == state.MinimumPriority;
+                    if (RoundedSelectable(Tr(option.Label), selected)) {
+                        state.MinimumPriority = option.Value;
+                    }
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", Tr("Minimum log level"));
+            }
+        }
+
+        void DrawProcessCombo(Context::LogcatViewState &state, const std::vector<LogcatProcess> &processes) {
+            const std::string preview = ProcessLabel(state.SelectedPid, processes);
+            ImGui::SetNextItemWidth(Em(19.0F));
+            ImGui::SetNextWindowSizeConstraints(ImVec2(Em(18.0F), 0), ImVec2(Em(36.0F), Eh(20.0F)));
+            ComboStyle style;
+            if (ImGui::BeginCombo("##LogcatProcess", preview.c_str())) {
+                if (RoundedSelectable(Tr("All processes"), state.SelectedPid == 0)) {
+                    state.SelectedPid = 0;
+                }
+                for (const auto &process: processes) {
+                    const std::string label = process.Name + " · " + std::to_string(process.Pid);
+                    if (RoundedSelectable(label.c_str(), state.SelectedPid == process.Pid)) {
+                        state.SelectedPid = process.Pid;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", Tr("Application or process"));
+            }
+        }
+
+        bool DrawBufferCombo(Context::LogcatViewState &state) {
+            bool changed = false;
+            ImGui::SetNextItemWidth(Em(11.0F));
+            ComboStyle style;
+            if (ImGui::BeginCombo("##LogcatBuffer", Tr(BufferOptionLabel(state.Buffer)))) {
+                for (const auto &option: BUFFER_OPTIONS) {
+                    const bool selected = option.Value == state.Buffer;
+                    if (RoundedSelectable(Tr(option.Label), selected)) {
+                        state.Buffer = option.Value;
+                        changed = true;
+                    }
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", Tr("Log buffer"));
+            }
+            return changed;
+        }
+
+        void ExportLogcat(
+            Context::LogcatViewState &state,
+            const PanelInputs &inputs,
+            const LogcatFilterResult &filtered
+        ) {
+            static const char *filters[] = {"*.txt", "*.log"};
+            const std::string defaultName = inputs.AvdName + "-logcat.txt";
+            const auto selectedPath = FileDialog::SaveFile(Tr("Export Logcat"), filters, 2, Tr("Log files"), defaultName);
+            if (!selectedPath) {
+                return;
+            }
+
+            std::ofstream output(*selectedPath, std::ios::binary | std::ios::trunc);
+            if (!output) {
+                state.ExportStatus = Tr("Could not export Logcat.");
+                state.ExportSucceeded = false;
+                return;
+            }
+            for (const std::size_t index: filtered.Indices) {
+                output << state.CachedEntries[index].Raw << '\n';
+            }
+            state.ExportSucceeded = output.good();
+            state.ExportStatus = Tr(state.ExportSucceeded ? "Logcat exported." : "Could not export Logcat.");
+        }
+
+        LogcatFilterResult DrawLogcatToolbar(
+            Context &context,
+            const PanelInputs &inputs,
+            Context::LogcatViewState &state,
+            const std::vector<LogcatProcess> &processes
+        ) {
+            DrawPriorityCombo(state);
+            ImGui::SameLine();
+            DrawProcessCombo(state, processes);
+            ImGui::SameLine();
+            if (DrawBufferCombo(state)) {
+                state.LastStartAttempt = {};
+                state.CachedEntries.clear();
+                state.CachedRevision = std::numeric_limits<std::uint64_t>::max();
+                state.SelectedPid = 0;
+                state.Paused = false;
+                context.Host.Logcat.Start(context.Host.Sdk, inputs.AvdName, inputs.Serial, state.Buffer);
+            }
+
+            ImGui::Spacing();
+
+            const float squareButtonSize = ImGui::GetFrameHeight();
+            ToggleButton(".*##LogcatRegexToggle", state.UseRegex, ImVec2(squareButtonSize, squareButtonSize));
+            ImGui::SameLine();
+
+            char searchBuffer[256];
+            std::strncpy(searchBuffer, state.Search.c_str(), sizeof(searchBuffer) - 1);
+            searchBuffer[sizeof(searchBuffer) - 1] = '\0';
+            ImGui::SetNextItemWidth(std::max(Em(12.0F), ImGui::GetContentRegionAvail().x - Em(26.0F)));
+            ImGui::InputTextWithHint("##LogcatSearch", Tr("Filter tag or message..."), searchBuffer, sizeof(searchBuffer));
+            state.Search = searchBuffer;
+
+            LogcatFilterResult filtered = ResolveLogcatFilter(state);
+            if (!filtered.RegexValid && ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(Tr("Invalid regex: %s"), filtered.RegexError.c_str());
+            }
+
+            ImGui::SameLine();
+            const std::string pauseLabel = state.Paused ? Tr("Resume") : Tr("Pause");
+            if (PrimaryButton(pauseLabel.c_str())) {
+                state.Paused = !state.Paused;
+                if (!state.Paused) {
+                    state.CachedRevision = std::numeric_limits<std::uint64_t>::max();
+                }
+            }
+            ImGui::SameLine();
+            if (PrimaryButton(IconWithLabel(Icons::TRASH, "Clear").c_str())) {
+                context.Host.Logcat.Clear();
+                state.CachedEntries.clear();
+                state.CachedRevision = context.Host.Logcat.Revision();
+                filtered.Indices.clear();
+                state.ExportStatus.clear();
+            }
+            ImGui::SameLine();
+            const bool canExport = filtered.RegexValid && !filtered.Indices.empty();
+            if (!canExport) {
+                ImGui::BeginDisabled();
+            }
+            if (PrimaryButton(IconWithLabel(Icons::DOWNLOAD, "Export").c_str())) {
+                ExportLogcat(state, inputs, filtered);
+            }
+            if (!canExport) {
+                ImGui::EndDisabled();
+            }
+            return filtered;
+        }
+
+        void DrawLogcatEntryRow(const LogcatEntry &entry) {
+            ImGui::TableNextRow();
+            if (entry.Priority == LogcatPriority::Unknown) {
+                ImGui::TableSetColumnIndex(4);
+                ImGui::TextDisabled("%s", entry.Raw.c_str());
+                return;
+            }
+
+            ImGui::TableSetColumnIndex(0);
+            const std::string timestamp = entry.Timestamp.size() > 6 ? entry.Timestamp.substr(6) : entry.Timestamp;
+            ImGui::TextDisabled("%s", timestamp.c_str());
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextColored(PriorityColor(entry.Priority), "%s", LogcatPriorityLabel(entry.Priority));
+            ImGui::TableSetColumnIndex(2);
+            ImGui::TextDisabled("%d", entry.Pid);
+            ImGui::TableSetColumnIndex(3);
+            ImGui::TextDisabled("%s", entry.Tag.c_str());
+            ImGui::TableSetColumnIndex(4);
+            ImGui::TextUnformatted(entry.Message.c_str());
+        }
+
+        void DrawLogcatBody(
+            Context::LogcatViewState &state,
+            const LogcatFilterResult &filtered,
+            const bool receivedNewEntries
+        ) {
+            if (!filtered.RegexValid) {
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), Tr("Invalid regex: %s"), filtered.RegexError.c_str());
+            }
+
+            const ImGuiTableFlags flags =
+                ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_Resizable |
+                ImGuiTableFlags_ScrollX |
+                ImGuiTableFlags_ScrollY |
+                ImGuiTableFlags_SizingFixedFit;
+            const float footerHeight = ImGui::GetFrameHeightWithSpacing();
+            if (ImGui::BeginTable("##LogcatEntries", 5, flags, ImVec2(0, -footerHeight))) {
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableSetupColumn(Tr("Time"), ImGuiTableColumnFlags_WidthFixed, Em(10.5F));
+                ImGui::TableSetupColumn(Tr("Level"), ImGuiTableColumnFlags_WidthFixed, Em(2.5F));
+                ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, Em(5.0F));
+                ImGui::TableSetupColumn("Tag", ImGuiTableColumnFlags_WidthFixed, Em(15.0F));
+                ImGui::TableSetupColumn(Tr("Message"), ImGuiTableColumnFlags_WidthStretch, Em(30.0F));
+                ImGui::TableHeadersRow();
+
+                ImGuiListClipper clipper;
+                clipper.Begin(static_cast<int>(filtered.Indices.size()));
+                while (clipper.Step()) {
+                    for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+                        DrawLogcatEntryRow(state.CachedEntries[filtered.Indices[row]]);
+                    }
+                }
+                if (receivedNewEntries && state.AutoScroll && !state.Paused && state.Search.empty()) {
+                    ImGui::SetScrollY(ImGui::GetScrollMaxY());
+                }
+                ImGui::EndTable();
+            }
+
+            const std::string status =
+                std::to_string(filtered.Indices.size()) + " " + Tr("lines") +
+                " · threadtime · " + Tr(BufferOptionLabel(state.Buffer)) +
+                (state.Paused ? Tr(" · Paused") : "");
+            DrawAutoScrollFooter(status, state.AutoScroll, "LogcatAutoScroll");
+        }
+
+        void DrawLogcatPanel(Context &context, const PanelInputs &inputs) {
+            if (!inputs.HasSelection) {
+                ImGui::TextDisabled("%s", Tr("Select an AVD to view logs"));
+                return;
+            }
+            if (!inputs.IsRunning || inputs.Serial.empty()) {
+                ImGui::TextDisabled(Tr("Run the \"%s\" AVD to view Logcat"), inputs.AvdName.c_str());
+                return;
+            }
+            if (context.Host.Sdk.AdbPath.empty()) {
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr("ADB is not available."));
+                return;
+            }
+
+            Context::LogcatViewState &state = ResolveLogcatViewState(context, inputs.AvdName);
+            EnsureLogcatStream(context, inputs, state);
+            const bool receivedNewEntries = RefreshLogcatCache(context, state);
+            const LogcatStreamStatus status = context.Host.Logcat.Status();
+            const std::vector<LogcatProcess> processes = BuildVisibleProcessList(
+                context.Host.Logcat.Processes(),
+                state.CachedEntries
+            );
+
+            if (status.Running) {
+                StatusBadge("Connected", true);
+            } else if (status.Connecting) {
+                ImGui::TextColored(HexColor(Colors::WARNING), "%s", Tr("Connecting..."));
+            } else {
+                StatusBadge("Disconnected", false);
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", Tr("Retrying automatically..."));
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", inputs.Serial.c_str());
+
+            const LogcatFilterResult filtered = DrawLogcatToolbar(context, inputs, state, processes);
+            if (!state.ExportStatus.empty()) {
+                ImGui::TextColored(
+                    HexColor(state.ExportSucceeded ? Colors::POSITIVE : Colors::NEGATIVE),
+                    "%s",
+                    state.ExportStatus.c_str()
+                );
+            }
+            if (state.CachedEntries.empty() && status.Connecting) {
+                ImGui::TextDisabled("%s", Tr("Waiting for Logcat..."));
+                return;
+            }
+            if (state.CachedEntries.empty() && !status.Error.empty()) {
+                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(status.Error.c_str()));
+                return;
+            }
+            if (state.CachedEntries.empty()) {
+                ImGui::TextDisabled("%s", Tr("No Logcat entries received yet."));
+                return;
+            }
+            DrawLogcatBody(state, filtered, receivedNewEntries);
+        }
+
+        void DrawSelectedAvdHeader(Context &context, const PanelInputs &inputs) {
+            if (!inputs.HasSelection) {
+                return;
+            }
+            ImGui::TextUnformatted(inputs.DisplayName.c_str());
+            if (inputs.DisplayName != inputs.AvdName) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", inputs.AvdName.c_str());
+            }
+            ImGui::SameLine();
+            if (context.Logs.ActiveSource == LogSource::Emulator) {
+                StatusBadge(inputs.IsRunning ? "Running" : "Stopped", inputs.IsRunning);
+            }
+            ImGui::Separator();
+        }
     }
 
     void BuildAvdLogsWindow(Context &context) {
         if (!context.UI.ShowLogPanel) {
+            const LogcatStreamStatus status = context.Host.Logcat.Status();
+            if (status.Running || status.Connecting) {
+                context.Host.Logcat.Stop();
+            }
             return;
         }
 
-        const std::string title = TrLabel("Output Log###Output Log");
+        const std::string title = TrLabel("Logs###Output Log");
         const ImGuiID dockId = context.UI.OutputLogDockId != 0 ? context.UI.OutputLogDockId : context.UI.BottomDockId;
         if (dockId != 0) {
             ImGui::SetNextWindowDockID(dockId, ImGuiCond_Always);
@@ -435,7 +895,23 @@ namespace CoreDeck {
             }
         }
 
-        DrawLogPanelContent(context);
+        const PanelInputs inputs = ResolveInputs(context);
+        StopLogcatForInvalidTarget(context, inputs);
+        DrawSelectedAvdHeader(context, inputs);
+
+        if (ImGui::BeginTabBar("##LogSources")) {
+            if (ImGui::BeginTabItem(Tr("Emulator"))) {
+                context.Logs.ActiveSource = LogSource::Emulator;
+                DrawEmulatorLogPanel(context, inputs);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Logcat")) {
+                context.Logs.ActiveSource = LogSource::Logcat;
+                DrawLogcatPanel(context, inputs);
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
 
         ImGui::End();
     }

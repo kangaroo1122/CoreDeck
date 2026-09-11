@@ -11,6 +11,7 @@
 #include "../../core/file_dialog.h"
 #include "../../core/shared_folder.h"
 #include "../../core/utilities.h"
+#include "../../platform/window_activation.h"
 #include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"
@@ -449,10 +450,12 @@ namespace CoreDeck {
             if (result.Success) {
                 work.Status = "Shared folder opened.";
                 work.Error.clear();
+                ActivateProcessWindow(work.OpenInEmulatorProcessId);
             } else {
                 work.Status.clear();
                 work.Error = result.Output.empty() ? "Operation failed." : result.Output;
             }
+            work.OpenInEmulatorProcessId = 0;
         }
 
         void DrawDeviceHeader(Context &context, Context::DeviceExplorerTabState &work) {
@@ -902,6 +905,7 @@ namespace CoreDeck {
         context.DeviceExplorer.Status = "Opening shared folder in emulator...";
         context.DeviceExplorer.Error.clear();
         context.DeviceExplorer.OpenInEmulatorBusy = true;
+        context.DeviceExplorer.OpenInEmulatorProcessId = context.Host.Manager.GetPid(target->Name);
         const SdkInfo sdk = context.Host.Sdk;
         const std::string serial = target->Serial;
         const std::string devicePath = GetSharedFolderDevicePath();
@@ -933,6 +937,7 @@ namespace CoreDeck {
         CancelAllTabs(context);
         ConsumeFuture(context.DeviceExplorer.OpenInEmulatorFuture);
         context.DeviceExplorer.OpenInEmulatorBusy = false;
+        context.DeviceExplorer.OpenInEmulatorProcessId = 0;
     }
 
     void PollDeviceExplorer(Context &context) {
@@ -949,7 +954,7 @@ namespace CoreDeck {
         }
         auto tab = ResolveSelectedExplorerTab(context);
 
-        const ImGuiID dockId = context.UI.DeviceExplorerDockId != 0
+            const ImGuiID dockId = context.UI.DeviceExplorerDockId != 0
                                   ? context.UI.DeviceExplorerDockId
                                   : context.UI.BottomDockId;
         if (dockId != 0) {

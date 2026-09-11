@@ -372,6 +372,7 @@ namespace CoreDeck {
             std::string Error;
             std::string Status;
             std::atomic<bool> OpenInEmulatorBusy{false};
+            ProcessId OpenInEmulatorProcessId = 0;
             std::future<DeviceFileOperationResult> OpenInEmulatorFuture;
         } DeviceExplorer;
 

@@ -220,7 +220,7 @@ endif()
 
 if(WIN32)
     target_compile_definitions(coredeck_core PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_link_libraries(coredeck_core PUBLIC shell32 comdlg32 ole32 winhttp ws2_32)
+    target_link_libraries(coredeck_core PUBLIC shell32 comdlg32 ole32 user32 winhttp ws2_32)
 elseif(UNIX AND NOT APPLE)
     target_link_libraries(coredeck_core PUBLIC ${CMAKE_DL_LIBS} Threads::Threads CURL::libcurl)
 else()
@@ -312,6 +312,7 @@ if(COREDECK_SENTRY_DSN)
 endif()
 
 if(WIN32)
+    target_sources(${PROJECT_NAME} PRIVATE src/platform/window_activation.cpp)
     configure_file(${CMAKE_SOURCE_DIR}/resources.rc.in ${CMAKE_BINARY_DIR}/resources.rc @ONLY)
     if(MSVC)
         target_link_options(${PROJECT_NAME} PRIVATE "/SUBSYSTEM:WINDOWS" "/ENTRY:mainCRTStartup")
@@ -321,8 +322,15 @@ if(WIN32)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/resources.rc)
 elseif(APPLE)
     target_compile_definitions(${PROJECT_NAME} PRIVATE GL_SILENCE_DEPRECATION)
-    target_sources(${PROJECT_NAME} PRIVATE src/platform/macos_menu.mm)
-    set_source_files_properties(src/platform/macos_menu.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/platform/macos_menu.mm
+        src/platform/window_activation_macos.mm
+    )
+    set_source_files_properties(
+        src/platform/macos_menu.mm
+        src/platform/window_activation_macos.mm
+        PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+    )
     target_link_libraries(${PROJECT_NAME} PRIVATE "-framework Cocoa" "-framework IOKit" "-framework CoreVideo")
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
@@ -342,6 +350,10 @@ elseif(APPLE)
             "$<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}>/Resources/icon.icns"
         )
     endif()
+elseif(UNIX)
+    find_package(X11 REQUIRED)
+    target_sources(${PROJECT_NAME} PRIVATE src/platform/window_activation.cpp)
+    target_link_libraries(${PROJECT_NAME} PRIVATE X11::X11)
 endif()
 
 if(WIN32)

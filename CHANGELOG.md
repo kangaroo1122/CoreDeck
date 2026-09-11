@@ -1,3 +1,7 @@
+## [v0.12.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.1) — 2026-09-11
+
+- Bring the selected emulator window to the foreground after opening its shared folder from CoreDeck, with platform-native activation on macOS, Windows, and X11 Linux
+
 ## [v0.12.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.12.0) — 2026-08-02
 
 - Add guided Android SDK installation during onboarding, including command-line tools, license acceptance, platform tools, the emulator, and a stable SDK platform

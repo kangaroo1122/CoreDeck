@@ -718,7 +718,9 @@ namespace CoreDeck {
             }
 
             const float squareButtonSize = ImGui::GetFrameHeight();
-            const float minimumTrailingWidth = squareButtonSize + Em(38.0F);
+            const ImGuiStyle &style = ImGui::GetStyle();
+            const float minimumTrailingWidth =
+                (squareButtonSize * 4.0F) + Em(12.0F) + (style.ItemSpacing.x * 4.0F);
             if (ImGui::GetContentRegionAvail().x < minimumTrailingWidth) {
                 ImGui::NewLine();
             } else {
@@ -730,7 +732,9 @@ namespace CoreDeck {
             char searchBuffer[256];
             std::strncpy(searchBuffer, state.Search.c_str(), sizeof(searchBuffer) - 1);
             searchBuffer[sizeof(searchBuffer) - 1] = '\0';
-            ImGui::SetNextItemWidth(std::max(Em(12.0F), ImGui::GetContentRegionAvail().x - Em(26.0F)));
+            const float actionAreaWidth =
+                (squareButtonSize * 3.0F) + (style.ItemSpacing.x * 3.0F);
+            ImGui::SetNextItemWidth(std::max(Em(12.0F), ImGui::GetContentRegionAvail().x - actionAreaWidth));
             ImGui::InputTextWithHint("##LogcatSearch", Tr("Filter tag or message..."), searchBuffer, sizeof(searchBuffer));
             state.Search = searchBuffer;
 
@@ -741,31 +745,34 @@ namespace CoreDeck {
 
             ImGui::SameLine();
             const std::string pauseLabel = state.Paused ? Tr("Resume") : Tr("Pause");
-            if (PrimaryButton(pauseLabel.c_str())) {
+            const std::string pauseButton = StrConcat(
+                state.Paused ? Icons::PLAY : Icons::PAUSE,
+                "###LogcatPause"
+            );
+            if (PrimaryButton(pauseButton.c_str(), true, ImVec2(squareButtonSize, squareButtonSize))) {
                 state.Paused = !state.Paused;
                 if (!state.Paused) {
                     state.CachedRevision = std::numeric_limits<std::uint64_t>::max();
                 }
             }
+            HoverTooltip(pauseLabel);
             ImGui::SameLine();
-            if (PrimaryButton(IconWithLabel(Icons::TRASH, "Clear").c_str())) {
+            const std::string clearButton = StrConcat(Icons::TRASH, "###LogcatClear");
+            if (PrimaryButton(clearButton.c_str(), true, ImVec2(squareButtonSize, squareButtonSize))) {
                 context.Host.Logcat.Clear();
                 state.CachedEntries.clear();
                 state.CachedRevision = context.Host.Logcat.Revision();
                 filtered.Indices.clear();
                 state.ExportStatus.clear();
             }
+            HoverTooltip(Tr("Clear"));
             ImGui::SameLine();
             const bool canExport = filtered.RegexValid && !filtered.Indices.empty();
-            if (!canExport) {
-                ImGui::BeginDisabled();
-            }
-            if (PrimaryButton(IconWithLabel(Icons::DOWNLOAD, "Export").c_str())) {
+            const std::string exportButton = StrConcat(Icons::DOWNLOAD, "###LogcatExport");
+            if (PrimaryButton(exportButton.c_str(), canExport, ImVec2(squareButtonSize, squareButtonSize))) {
                 ExportLogcat(state, inputs, filtered);
             }
-            if (!canExport) {
-                ImGui::EndDisabled();
-            }
+            HoverTooltip(Tr("Export"));
             if (!enabled) {
                 ImGui::EndDisabled();
             }
@@ -909,7 +916,7 @@ namespace CoreDeck {
         }
 
         void DrawLogSourceSelector(Context &context) {
-            const ImVec2 buttonSize(Em(10.0F), ImGui::GetFrameHeight());
+            const ImVec2 buttonSize(Em(8.0F), ImGui::GetFrameHeight());
             bool emulatorSelected = context.Logs.ActiveSource == LogSource::Emulator;
             if (ToggleButton("Emulator###LogSourceEmulator", emulatorSelected, buttonSize)) {
                 context.Logs.ActiveSource = LogSource::Emulator;

@@ -17,6 +17,7 @@ namespace CoreDeck {
 
     namespace Icons {
         constexpr const char *PLAY = "\xef\x81\x8b";
+        constexpr const char *PAUSE = "\xef\x81\x8c";
         constexpr const char *STOP = "\xef\x81\x8d";
         constexpr const char *REFRESH = "\xef\x80\xa1";
         constexpr const char *TRASH = "\xef\x87\xb8";

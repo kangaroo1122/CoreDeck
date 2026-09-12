@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <unordered_set>
@@ -58,15 +60,18 @@ namespace CoreDeck {
             return -1;
         }
 
-        std::vector<LogcatProcess> QueryProcesses(
+        std::optional<std::vector<LogcatProcess>> RunProcessQuery(
             const SdkInfo &sdk,
             const std::string &serial,
+            const std::vector<std::string> &shellArgs,
             const std::shared_ptr<std::atomic<bool>> &cancelRequested
         ) {
             std::string output;
+            std::vector<std::string> args = {"-s", serial, "shell"};
+            args.insert(args.end(), shellArgs.begin(), shellArgs.end());
             const bool ok = StreamCommandArgsWithEnvCancelable(
                 sdk.AdbPath,
-                {"-s", serial, "shell", "ps", "-A", "-o", "PID,NAME"},
+                args,
                 "",
                 BuildAndroidToolEnvironment(sdk),
                 [&output](const std::string &line) {
@@ -77,7 +82,43 @@ namespace CoreDeck {
                     return cancelRequested->load();
                 }
             );
-            return ok ? ParseAdbProcessList(output) : std::vector<LogcatProcess>{};
+            if (!ok) {
+                return std::nullopt;
+            }
+            return ParseAdbProcessList(output);
+        }
+
+        std::optional<std::vector<LogcatProcess>> QueryProcesses(
+            const SdkInfo &sdk,
+            const std::string &serial,
+            const std::shared_ptr<std::atomic<bool>> &cancelRequested
+        ) {
+            auto preferred = RunProcessQuery(sdk, serial, {"ps", "-A", "-o", "PID,NAME"}, cancelRequested);
+            if (cancelRequested->load() || (preferred && !preferred->empty())) {
+                return preferred;
+            }
+
+            auto fallback = RunProcessQuery(sdk, serial, {"ps", "-A"}, cancelRequested);
+            return fallback ? fallback : preferred;
+        }
+
+        void MergeProcesses(std::vector<LogcatProcess> &destination, const std::vector<LogcatProcess> &source) {
+            for (const auto &process: source) {
+                const auto existing = std::ranges::find_if(destination, [&process](const LogcatProcess &candidate) {
+                    return candidate.Pid == process.Pid;
+                });
+                if (existing == destination.end()) {
+                    destination.push_back(process);
+                } else {
+                    existing->Name = process.Name;
+                }
+            }
+            std::ranges::sort(destination, [](const LogcatProcess &left, const LogcatProcess &right) {
+                if (left.Name == right.Name) {
+                    return left.Pid < right.Pid;
+                }
+                return left.Name < right.Name;
+            });
         }
     }
 
@@ -128,13 +169,54 @@ namespace CoreDeck {
         std::unordered_set<int> seen;
         std::istringstream lines(output);
         std::string line;
+        int pidColumn = -1;
+        int nameColumn = -1;
         while (std::getline(lines, line)) {
             std::istringstream parts(TrimCopy(line));
-            std::string pidText;
-            std::string name;
-            parts >> pidText >> name;
+            std::vector<std::string> columns;
+            std::string column;
+            while (parts >> column) {
+                columns.push_back(column);
+            }
+            if (columns.empty()) {
+                continue;
+            }
+
+            const auto pidHeader = std::ranges::find(columns, "PID");
+            if (pidHeader != columns.end()) {
+                pidColumn = static_cast<int>(std::distance(columns.begin(), pidHeader));
+                for (const char *candidate: {"NAME", "CMD", "CMDLINE", "COMMAND", "ARGS"}) {
+                    const auto nameHeader = std::ranges::find(columns, candidate);
+                    if (nameHeader != columns.end()) {
+                        nameColumn = static_cast<int>(std::distance(columns.begin(), nameHeader));
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            int resolvedPidColumn = pidColumn;
+            int resolvedNameColumn = nameColumn;
+            if (resolvedPidColumn < 0 || resolvedNameColumn < 0) {
+                int ignored = 0;
+                if (columns.size() >= 2 && ParseInteger(columns[0], ignored)) {
+                    resolvedPidColumn = 0;
+                    resolvedNameColumn = 1;
+                } else if (columns.size() >= 3 && ParseInteger(columns[1], ignored)) {
+                    resolvedPidColumn = 1;
+                    resolvedNameColumn = static_cast<int>(columns.size() - 1);
+                } else {
+                    continue;
+                }
+            }
+            if (resolvedPidColumn >= static_cast<int>(columns.size()) ||
+                resolvedNameColumn >= static_cast<int>(columns.size())) {
+                continue;
+            }
+
             int pid = 0;
-            if (!ParseInteger(pidText, pid) || pid <= 0 || name.empty() || !seen.insert(pid).second) {
+            const std::string &name = columns[resolvedNameColumn];
+            if (!ParseInteger(columns[resolvedPidColumn], pid) || pid <= 0 || name.empty() || !seen.insert(pid).second) {
                 continue;
             }
             result.push_back({.Pid = pid, .Name = name});
@@ -259,14 +341,25 @@ namespace CoreDeck {
             m_CancelRequested = cancelRequested;
         }
 
-        m_Thread = std::thread([this, sdk, avdName, serial, buffer, cancelRequested] {
-            const auto processes = QueryProcesses(sdk, serial, cancelRequested);
-            if (cancelRequested->load()) {
-                return;
+        m_ProcessThread = std::thread([this, sdk, serial, cancelRequested] {
+            while (!cancelRequested->load()) {
+                const auto processes = QueryProcesses(sdk, serial, cancelRequested);
+                if (cancelRequested->load()) {
+                    return;
+                }
+                if (processes) {
+                    std::lock_guard lock(m_Mutex);
+                    MergeProcesses(m_Processes, *processes);
+                }
+                for (int interval = 0; interval < 20 && !cancelRequested->load(); ++interval) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
             }
+        });
+
+        m_Thread = std::thread([this, sdk, serial, buffer, cancelRequested] {
             {
                 std::lock_guard lock(m_Mutex);
-                m_Processes = processes;
                 m_Status.Connecting = false;
                 m_Status.Running = true;
             }
@@ -300,6 +393,7 @@ namespace CoreDeck {
 
     void LogcatStream::Stop() {
         std::thread worker;
+        std::thread processWorker;
         {
             std::lock_guard lock(m_Mutex);
             if (m_CancelRequested) {
@@ -308,9 +402,15 @@ namespace CoreDeck {
             if (m_Thread.joinable()) {
                 worker = std::move(m_Thread);
             }
+            if (m_ProcessThread.joinable()) {
+                processWorker = std::move(m_ProcessThread);
+            }
         }
         if (worker.joinable()) {
             worker.join();
+        }
+        if (processWorker.joinable()) {
+            processWorker.join();
         }
         std::lock_guard lock(m_Mutex);
         m_Status.Connecting = false;

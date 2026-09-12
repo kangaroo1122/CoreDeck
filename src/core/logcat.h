@@ -125,6 +125,7 @@ namespace CoreDeck {
         LogcatStreamStatus m_Status;
         std::string m_AdbPath;
         std::thread m_Thread;
+        std::thread m_ProcessThread;
         std::shared_ptr<std::atomic<bool>> m_CancelRequested;
         std::atomic<std::uint64_t> m_Revision{0};
     };

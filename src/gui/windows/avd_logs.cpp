@@ -376,10 +376,15 @@ namespace CoreDeck {
         void DrawAutoScrollFooter(const std::string &status, bool &autoScroll, const char *id) {
             ImGui::TextDisabled("%s", status.c_str());
             const std::string visibleLabel = Tr("Auto-scroll");
-            const std::string checkboxLabel = visibleLabel + "###" + id;
-            const float checkboxWidth = ImGui::CalcTextSize(visibleLabel.c_str()).x + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x;
-            ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - checkboxWidth));
-            ImGui::Checkbox(checkboxLabel.c_str(), &autoScroll);
+            const float trackHeight = ImGui::GetFrameHeight() * 0.72F;
+            const float switchWidth = trackHeight * 1.75F;
+            const float controlWidth =
+                switchWidth + ImGui::GetStyle().ItemSpacing.x + ImGui::CalcTextSize(visibleLabel.c_str()).x;
+            ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - controlWidth));
+            Switch(id, autoScroll);
+            ImGui::SameLine();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(visibleLabel.c_str());
         }
 
         void DrawEmulatorLogPanel(Context &context, const PanelInputs &inputs) {
@@ -627,7 +632,9 @@ namespace CoreDeck {
                     state.SelectedPid = 0;
                 }
                 for (const auto &process: processes) {
-                    const std::string label = process.Name + " · " + std::to_string(process.Pid);
+                    const std::string label = process.Name.empty()
+                        ? "PID " + std::to_string(process.Pid)
+                        : process.Name + " · " + std::to_string(process.Pid);
                     if (RoundedSelectable(label.c_str(), state.SelectedPid == process.Pid)) {
                         state.SelectedPid = process.Pid;
                     }
@@ -710,9 +717,13 @@ namespace CoreDeck {
                 context.Host.Logcat.Start(context.Host.Sdk, inputs.AvdName, inputs.Serial, state.Buffer);
             }
 
-            ImGui::Spacing();
-
             const float squareButtonSize = ImGui::GetFrameHeight();
+            const float minimumTrailingWidth = squareButtonSize + Em(38.0F);
+            if (ImGui::GetContentRegionAvail().x < minimumTrailingWidth) {
+                ImGui::NewLine();
+            } else {
+                ImGui::SameLine();
+            }
             ToggleButton(".*##LogcatRegexToggle", state.UseRegex, ImVec2(squareButtonSize, squareButtonSize));
             ImGui::SameLine();
 
@@ -896,6 +907,19 @@ namespace CoreDeck {
             }
             ImGui::Separator();
         }
+
+        void DrawLogSourceSelector(Context &context) {
+            const ImVec2 buttonSize(Em(10.0F), ImGui::GetFrameHeight());
+            bool emulatorSelected = context.Logs.ActiveSource == LogSource::Emulator;
+            if (ToggleButton("Emulator###LogSourceEmulator", emulatorSelected, buttonSize)) {
+                context.Logs.ActiveSource = LogSource::Emulator;
+            }
+            ImGui::SameLine();
+            bool logcatSelected = context.Logs.ActiveSource == LogSource::Logcat;
+            if (ToggleButton("Logcat###LogSourceLogcat", logcatSelected, buttonSize)) {
+                context.Logs.ActiveSource = LogSource::Logcat;
+            }
+        }
     }
 
     void BuildAvdLogsWindow(Context &context) {
@@ -924,18 +948,12 @@ namespace CoreDeck {
         StopLogcatForInvalidTarget(context, inputs);
         DrawSelectedAvdHeader(inputs);
 
-        if (ImGui::BeginTabBar("##LogSources")) {
-            if (ImGui::BeginTabItem(Tr("Emulator"))) {
-                context.Logs.ActiveSource = LogSource::Emulator;
-                DrawEmulatorLogPanel(context, inputs);
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Logcat")) {
-                context.Logs.ActiveSource = LogSource::Logcat;
-                DrawLogcatPanel(context, inputs);
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
+        DrawLogSourceSelector(context);
+        ImGui::SameLine();
+        if (context.Logs.ActiveSource == LogSource::Emulator) {
+            DrawEmulatorLogPanel(context, inputs);
+        } else {
+            DrawLogcatPanel(context, inputs);
         }
 
         ImGui::End();

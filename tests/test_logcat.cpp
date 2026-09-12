@@ -48,6 +48,20 @@ TEST_CASE("ADB process parser sorts names and removes duplicate PIDs", "[logcat]
     CHECK(processes[1].Name == "system_server");
 }
 
+TEST_CASE("ADB process parser supports the full Android ps layout", "[logcat][process]") {
+    const auto processes = ParseAdbProcessList(
+        "USER      PID  PPID  VSZ      RSS   WCHAN            ADDR S NAME\n"
+        "root        1     0  10946836 3916  0                   0 S init\n"
+        "u0_a142  1842   623  2154324  98320 0                   0 S com.example.app\n"
+    );
+
+    REQUIRE(processes.size() == 2);
+    CHECK(processes[0].Name == "com.example.app");
+    CHECK(processes[0].Pid == 1842);
+    CHECK(processes[1].Name == "init");
+    CHECK(processes[1].Pid == 1);
+}
+
 TEST_CASE("Logcat filters combine priority PID and text", "[logcat][filter]") {
     const auto entries = SampleEntries();
     LogcatFilterOptions options;

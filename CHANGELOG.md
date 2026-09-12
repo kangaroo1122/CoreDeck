@@ -1,3 +1,9 @@
+## [v0.13.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0-beta.3) — 2026-09-12
+
+- Keep Logcat process filters populated with package or process names by refreshing Android process metadata and supporting multiple `ps` output formats
+- Align the log source selector, filters, search, and actions into a compact shared toolbar
+- Replace log auto-scroll checkboxes with theme-aware switch controls
+
 ## [v0.13.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0-beta.2) — 2026-09-12
 
 - Unify the Emulator and Logcat tabs with consistent toolbars, framed empty states, status footers, and auto-scroll controls even when the selected AVD is not running

@@ -157,6 +157,46 @@ namespace CoreDeck {
         return clicked;
     }
 
+    bool Switch(const char *id, bool &value) {
+        const float frameHeight = ImGui::GetFrameHeight();
+        const float trackHeight = frameHeight * 0.72F;
+        const float trackWidth = trackHeight * 1.75F;
+        const float trackY = ImGui::GetCursorScreenPos().y + ((frameHeight - trackHeight) * 0.5F);
+        const ImVec2 itemPosition = ImGui::GetCursorScreenPos();
+
+        ImGui::InvisibleButton(id, ImVec2(trackWidth, frameHeight));
+        const bool activated = ImGui::IsItemClicked() ||
+                               (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Space, false));
+        if (activated) {
+            value = !value;
+        }
+
+        const bool hovered = ImGui::IsItemHovered();
+        const ImVec4 trackColor = value
+            ? HexColor(hovered ? Colors::ACCENT_INFO_SOFT : Colors::ACCENT_INFO)
+            : HexColor(hovered ? Colors::BORDER_HOVER : Colors::SURFACE4);
+        const float radius = trackHeight * 0.5F;
+        const float knobRadius = radius - (2.0F * GetDpiScale());
+        const float knobX = value
+            ? itemPosition.x + trackWidth - radius
+            : itemPosition.x + radius;
+        const float knobY = trackY + radius;
+
+        ImDrawList *drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(
+            ImVec2(itemPosition.x, trackY),
+            ImVec2(itemPosition.x + trackWidth, trackY + trackHeight),
+            ImGui::GetColorU32(trackColor),
+            radius
+        );
+        drawList->AddCircleFilled(
+            ImVec2(knobX, knobY),
+            knobRadius,
+            ImGui::GetColorU32(HexColor(Colors::WHITE))
+        );
+        return activated;
+    }
+
     void StatusBadge(const char *label, const bool isActive) {
         StyleColor sc;
         StyleVar sv;

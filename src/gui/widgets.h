@@ -129,6 +129,8 @@ namespace CoreDeck {
 
     bool ToggleButton(const char *label, bool &isToggled, ImVec2 size = ImVec2(0, 0));
 
+    bool Switch(const char *id, bool &value);
+
     void StatusBadge(const char *label, bool isActive);
 
     bool SelectableItem(

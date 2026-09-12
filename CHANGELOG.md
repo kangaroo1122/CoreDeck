@@ -1,3 +1,8 @@
+## [v0.13.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0-beta.2) — 2026-09-12
+
+- Unify the Emulator and Logcat tabs with consistent toolbars, framed empty states, status footers, and auto-scroll controls even when the selected AVD is not running
+- Remove redundant running and connection status badges from the Logs workspace
+
 ## [v0.13.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0-beta.1) — 2026-09-11
 
 - Replace Output Log with a unified Logs workspace that keeps emulator process output and real-time ADB Logcat in separate tabs

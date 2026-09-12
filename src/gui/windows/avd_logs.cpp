@@ -290,6 +290,29 @@ namespace CoreDeck {
             };
         }
 
+        void DrawEmptyLogBody(const char *id, const std::string &message, const bool isError = false) {
+            const float footerHeight = ImGui::GetFrameHeightWithSpacing();
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+            if (ImGui::BeginChild(
+                    id,
+                    ImVec2(0, -footerHeight),
+                    ImGuiChildFlags_Borders,
+                    ImGuiWindowFlags_NoScrollbar
+                )) {
+                const ImVec2 available = ImGui::GetContentRegionAvail();
+                const ImVec2 textSize = ImGui::CalcTextSize(message.c_str());
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0F, (available.x - textSize.x) * 0.5F));
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::max(0.0F, (available.y - textSize.y) * 0.45F));
+                if (isError) {
+                    ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", message.c_str());
+                } else {
+                    ImGui::TextDisabled("%s", message.c_str());
+                }
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+        }
+
         bool RenderEmulatorLogBody(
             const PanelInputs &inputs,
             const Context::LogViewState &state,
@@ -299,7 +322,12 @@ namespace CoreDeck {
             const int scrollLine,
             const bool hasQuery
         ) {
-            const std::string &display = view.HasContent ? view.Filter.Joined : view.Placeholder;
+            if (!view.HasContent) {
+                DrawEmptyLogBody("##EmulatorLogEmpty", view.Placeholder);
+                return true;
+            }
+
+            const std::string &display = view.Filter.Joined;
             std::vector<char> buffer(display.begin(), display.end());
             buffer.push_back('\0');
 
@@ -322,9 +350,6 @@ namespace CoreDeck {
                 scrollApplied = ApplyScrollToLine(scrollLine, logWindow);
             }
 
-            if (!view.HasContent) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            }
             ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, HexColor(Colors::ACCENT_INFO, 0.55F));
             if (focusLog) {
                 ImGui::SetKeyboardFocusHere();
@@ -339,9 +364,6 @@ namespace CoreDeck {
                 sync.Active ? const_cast<SyncSelection *>(&sync) : nullptr // NOLINT(cppcoreguidelines-pro-type-const-cast)
             );
             ImGui::PopStyleColor();
-            if (!view.HasContent) {
-                ImGui::PopStyleColor();
-            }
 
             if (scrollLine < 0 && inputs.EmulatorLog && state.AutoScroll && !hasQuery && view.HasContent && inputs.EmulatorLog->HasNewContent()) {
                 logWindow->Scroll.y = logWindow->ScrollMax.y;
@@ -669,8 +691,12 @@ namespace CoreDeck {
             Context &context,
             const PanelInputs &inputs,
             Context::LogcatViewState &state,
-            const std::vector<LogcatProcess> &processes
+            const std::vector<LogcatProcess> &processes,
+            const bool enabled
         ) {
+            if (!enabled) {
+                ImGui::BeginDisabled();
+            }
             DrawPriorityCombo(state);
             ImGui::SameLine();
             DrawProcessCombo(state, processes);
@@ -727,6 +753,9 @@ namespace CoreDeck {
                 ExportLogcat(state, inputs, filtered);
             }
             if (!canExport) {
+                ImGui::EndDisabled();
+            }
+            if (!enabled) {
                 ImGui::EndDisabled();
             }
             return filtered;
@@ -790,7 +819,9 @@ namespace CoreDeck {
                 }
                 ImGui::EndTable();
             }
+        }
 
+        void DrawLogcatFooter(Context::LogcatViewState &state, const LogcatFilterResult &filtered) {
             const std::string status =
                 std::to_string(filtered.Indices.size()) + " " + Tr("lines") +
                 " · threadtime · " + Tr(BufferOptionLabel(state.Buffer)) +
@@ -799,41 +830,25 @@ namespace CoreDeck {
         }
 
         void DrawLogcatPanel(Context &context, const PanelInputs &inputs) {
-            if (!inputs.HasSelection) {
-                ImGui::TextDisabled("%s", Tr("Select an AVD to view logs"));
-                return;
-            }
-            if (!inputs.IsRunning || inputs.Serial.empty()) {
-                ImGui::TextDisabled(Tr("Run the \"%s\" AVD to view Logcat"), inputs.AvdName.c_str());
-                return;
-            }
-            if (context.Host.Sdk.AdbPath.empty()) {
-                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr("ADB is not available."));
-                return;
-            }
+            Context::LogcatViewState scratch{};
+            Context::LogcatViewState &state = inputs.HasSelection ? ResolveLogcatViewState(context, inputs.AvdName) : scratch;
+            const bool targetReady =
+                inputs.HasSelection &&
+                inputs.IsRunning &&
+                !inputs.Serial.empty() &&
+                !context.Host.Sdk.AdbPath.empty();
 
-            Context::LogcatViewState &state = ResolveLogcatViewState(context, inputs.AvdName);
-            EnsureLogcatStream(context, inputs, state);
-            const bool receivedNewEntries = RefreshLogcatCache(context, state);
+            if (targetReady) {
+                EnsureLogcatStream(context, inputs, state);
+            }
+            const bool receivedNewEntries = targetReady && RefreshLogcatCache(context, state);
             const LogcatStreamStatus status = context.Host.Logcat.Status();
             const std::vector<LogcatProcess> processes = BuildVisibleProcessList(
                 context.Host.Logcat.Processes(),
                 state.CachedEntries
             );
 
-            if (status.Running) {
-                StatusBadge("Connected", true);
-            } else if (status.Connecting) {
-                ImGui::TextColored(HexColor(Colors::WARNING), "%s", Tr("Connecting..."));
-            } else {
-                StatusBadge("Disconnected", false);
-                ImGui::SameLine();
-                ImGui::TextDisabled("%s", Tr("Retrying automatically..."));
-            }
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", inputs.Serial.c_str());
-
-            const LogcatFilterResult filtered = DrawLogcatToolbar(context, inputs, state, processes);
+            const LogcatFilterResult filtered = DrawLogcatToolbar(context, inputs, state, processes, targetReady);
             if (!state.ExportStatus.empty()) {
                 ImGui::TextColored(
                     HexColor(state.ExportSucceeded ? Colors::POSITIVE : Colors::NEGATIVE),
@@ -841,22 +856,36 @@ namespace CoreDeck {
                     state.ExportStatus.c_str()
                 );
             }
-            if (state.CachedEntries.empty() && status.Connecting) {
-                ImGui::TextDisabled("%s", Tr("Waiting for Logcat..."));
-                return;
+
+            std::string placeholder;
+            bool placeholderIsError = false;
+            if (!inputs.HasSelection) {
+                placeholder = Tr("Select an AVD to view logs");
+            } else if (!inputs.IsRunning || inputs.Serial.empty()) {
+                char buffer[256];
+                std::snprintf(buffer, sizeof(buffer), Tr("Run the \"%s\" AVD to view Logcat"), inputs.AvdName.c_str());
+                placeholder = buffer;
+            } else if (context.Host.Sdk.AdbPath.empty()) {
+                placeholder = Tr("ADB is not available.");
+                placeholderIsError = true;
+            } else if (state.CachedEntries.empty() && status.Connecting) {
+                placeholder = Tr("Waiting for Logcat...");
+            } else if (state.CachedEntries.empty() && !status.Error.empty()) {
+                placeholder = Tr(status.Error.c_str());
+                placeholderIsError = true;
+            } else if (state.CachedEntries.empty()) {
+                placeholder = Tr("No Logcat entries received yet.");
             }
-            if (state.CachedEntries.empty() && !status.Error.empty()) {
-                ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr(status.Error.c_str()));
-                return;
+
+            if (placeholder.empty()) {
+                DrawLogcatBody(state, filtered, receivedNewEntries);
+            } else {
+                DrawEmptyLogBody("##LogcatEmpty", placeholder, placeholderIsError);
             }
-            if (state.CachedEntries.empty()) {
-                ImGui::TextDisabled("%s", Tr("No Logcat entries received yet."));
-                return;
-            }
-            DrawLogcatBody(state, filtered, receivedNewEntries);
+            DrawLogcatFooter(state, filtered);
         }
 
-        void DrawSelectedAvdHeader(Context &context, const PanelInputs &inputs) {
+        void DrawSelectedAvdHeader(const PanelInputs &inputs) {
             if (!inputs.HasSelection) {
                 return;
             }
@@ -864,10 +893,6 @@ namespace CoreDeck {
             if (inputs.DisplayName != inputs.AvdName) {
                 ImGui::SameLine();
                 ImGui::TextDisabled("(%s)", inputs.AvdName.c_str());
-            }
-            ImGui::SameLine();
-            if (context.Logs.ActiveSource == LogSource::Emulator) {
-                StatusBadge(inputs.IsRunning ? "Running" : "Stopped", inputs.IsRunning);
             }
             ImGui::Separator();
         }
@@ -897,7 +922,7 @@ namespace CoreDeck {
 
         const PanelInputs inputs = ResolveInputs(context);
         StopLogcatForInvalidTarget(context, inputs);
-        DrawSelectedAvdHeader(context, inputs);
+        DrawSelectedAvdHeader(inputs);
 
         if (ImGui::BeginTabBar("##LogSources")) {
             if (ImGui::BeginTabItem(Tr("Emulator"))) {

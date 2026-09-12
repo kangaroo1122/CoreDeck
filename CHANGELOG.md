@@ -1,3 +1,11 @@
+## [v0.13.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0) — 2026-09-12
+
+- Introduce a unified Logs workspace with separate Emulator and real-time ADB Logcat sources, automatic reconnects, threadtime parsing, and a bounded 10,000-entry buffer
+- Add Logcat filtering by severity, package or process name, PID, buffer, text, and regular expression, together with pause, clear, export, and color-coded log levels
+- Keep process filters current as Android apps start by periodically refreshing process metadata and supporting multiple `ps` output formats
+- Refine both log sources with a consistent responsive toolbar, framed empty states, compact source and action controls, localized hover tooltips, and independent per-AVD auto-scroll switches
+- Remove the global log auto-scroll preference and redundant status badges while preserving compatibility with existing settings files, and expand Simplified Chinese localization, documentation, and automated coverage
+
 ## [v0.13.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0-beta.5) — 2026-09-12
 
 - Add localized hover tooltips to previously unlabeled log action, navigation, and regular-expression controls

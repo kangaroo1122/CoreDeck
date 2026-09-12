@@ -139,6 +139,7 @@ namespace CoreDeck {
             if (disabled) {
                 ImGui::EndDisabled();
             }
+            HoverTooltip(Tr("Clear"));
             ImGui::SameLine();
 
             const bool canCopy = inputs.EmulatorLog && hasContent;
@@ -149,6 +150,7 @@ namespace CoreDeck {
             if (!canCopy) {
                 ImGui::EndDisabled();
             }
+            HoverTooltip(Tr("Copy"));
             ImGui::SameLine();
             return copyClicked;
         }
@@ -185,6 +187,7 @@ namespace CoreDeck {
             if (ToggleButton(".*##EmulatorRegexToggle", state.UseRegex, ImVec2(squareButtonSize, squareButtonSize))) {
                 queryChanged = true;
             }
+            HoverTooltip(Tr("Use regular expressions"));
             ImGui::SameLine();
 
             char searchBuffer[256];
@@ -221,11 +224,13 @@ namespace CoreDeck {
                 state.ActiveMatchIndex = (state.ActiveMatchIndex - 1 + matchCount) % matchCount;
                 navChanged = true;
             }
+            HoverTooltip(Tr("Previous match"));
             ImGui::SameLine();
             if (ImGui::Button((std::string{Icons::CHEVRON_RIGHT} + "##EmulatorLogNext").c_str(), ImVec2(squareButtonSize, squareButtonSize))) {
                 state.ActiveMatchIndex = (state.ActiveMatchIndex + 1) % matchCount;
                 navChanged = true;
             }
+            HoverTooltip(Tr("Next match"));
             if (!canNavigate) {
                 ImGui::EndDisabled();
             }
@@ -727,6 +732,7 @@ namespace CoreDeck {
                 ImGui::SameLine();
             }
             ToggleButton(".*##LogcatRegexToggle", state.UseRegex, ImVec2(squareButtonSize, squareButtonSize));
+            HoverTooltip(Tr("Use regular expressions"));
             ImGui::SameLine();
 
             char searchBuffer[256];

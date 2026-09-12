@@ -1,3 +1,7 @@
+## [v0.13.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0-beta.5) — 2026-09-12
+
+- Add localized hover tooltips to previously unlabeled log action, navigation, and regular-expression controls
+
 ## [v0.13.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0-beta.4) — 2026-09-12
 
 - Reduce the width of the Emulator and Logcat source selectors for a more compact Logs toolbar

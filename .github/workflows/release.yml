@@ -193,6 +193,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
+          retention-days: 3
           path: |
             release/${{ matrix.asset_name }}.msi
             release/${{ matrix.asset_name }}.zip
@@ -202,6 +203,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
+          retention-days: 3
           path: release/${{ matrix.asset_name }}
 
   create-release:

@@ -105,10 +105,10 @@ jobs:
           cd release
           tar -czf ${{ matrix.asset_name }} ${{ matrix.artifact_name }}
 
-      - name: Package unsigned DMG (macOS)
+      - name: Package DMG with ad-hoc signed app (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          # Build an unsigned .dmg via CPack (DragNDrop).
+          # Sign the final staged app before CPack creates the DMG.
           # hdiutil detach can fail transiently on GitHub runners when Spotlight,
           # Finder helpers, or a leftover mount from a previous attempt keep the
           # volume busy. Force-eject any stale /Volumes/CoreDeck mount first,
@@ -132,7 +132,8 @@ jobs:
 
           attempts=0
           max_attempts=3
-          until cpack -G DragNDrop; do
+          until cpack -G DragNDrop \
+            -D "CPACK_PRE_BUILD_SCRIPTS=$PWD/cpack_strip_macos_extras.cmake;$GITHUB_WORKSPACE/cmake/cpack_adhoc_sign_macos.cmake"; do
             attempts=$((attempts + 1))
             if [ "$attempts" -ge "$max_attempts" ]; then
               echo "::error::cpack -G DragNDrop failed after $attempts attempts"

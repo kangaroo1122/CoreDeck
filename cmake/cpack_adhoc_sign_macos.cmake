@@ -1,8 +1,14 @@
 # Sign the final staged bundle after CPack has installed all of its files.
 set(_app "${CPACK_TEMPORARY_DIRECTORY}/CoreDeck.app")
+# DragNDrop stages component installs under ALL_IN_ONE when components are
+# grouped (as with CoreDeck's CPACK_COMPONENTS_ALL configuration).
 if(NOT IS_DIRECTORY "${_app}")
-    message(FATAL_ERROR "Cannot ad-hoc sign missing bundle: ${_app}")
+    set(_app "${CPACK_TEMPORARY_DIRECTORY}/ALL_IN_ONE/CoreDeck.app")
 endif()
+if(NOT IS_DIRECTORY "${_app}")
+    message(FATAL_ERROR "Cannot find CoreDeck.app in the CPack staging root or ALL_IN_ONE: ${CPACK_TEMPORARY_DIRECTORY}")
+endif()
+message(STATUS "Ad-hoc signing staged bundle: ${_app}")
 
 # Sign embedded executables and libraries first, including crashpad_handler.
 file(GLOB_RECURSE _files LIST_DIRECTORIES false "${_app}/Contents/*")

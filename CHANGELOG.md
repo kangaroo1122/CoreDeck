@@ -1,3 +1,7 @@
+## [v0.13.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.1) — 2026-10-10
+
+- Ad-hoc sign macOS application bundles and embedded executables before DMG packaging on Intel and Apple Silicon, with strict signature verification that fails packaging if validation fails
+
 ## [v0.13.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.0) — 2026-09-12
 
 - Introduce a unified Logs workspace with separate Emulator and real-time ADB Logcat sources, automatic reconnects, threadtime parsing, and a bounded 10,000-entry buffer

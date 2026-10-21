@@ -1,3 +1,12 @@
+## [v0.14.0](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0) — 2026-10-21
+
+- Add a dedicated APK Analyzer workspace with package metadata, API requirements, architectures, permissions, searchable file trees, size and alignment details, APK comparison, drag-and-drop, recent files, emulator installation, and package-based Logcat integration; fall back to ZIP file listing when needed while preserving available results
+- Add background Environment Checks for SDK, Java, ADB, emulator, licenses, system images, and disk space, with localized diagnostics and setup shortcuts; avoid false failures from valid command-line tool help output
+- Move SDK/JDK validation, first-run verification, and AVD/image list refreshes off the UI thread, preserving selections and live options while rejecting stale results and retaining existing lists on failure
+- Support newer SDK package identifiers, license messages, and progress formats; harden SDK and AVD operations with exit-status checks, timeouts, shutdown cancellation, broken-pipe protection, and Windows batch argument handling
+- Improve update downloads with network and file-write checks, cancellable checksum verification, exception handling, and a startup update-check preference; prevent cancelled updates from opening installers
+- Safely replace saved settings, SDK paths, AVD options, and shared-folder snapshots, fix storage scan failures and incorrect size totals, and support custom asset directories through `COREDECK_ASSETS_DIR`
+
 ## [v0.14.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.5) — 2026-10-21
 
 - Refine APK Analyzer with a centered file entry area, contextual toolbars, responsive device actions, and clearer empty, loading, and unavailable-device states

@@ -293,8 +293,8 @@ namespace CoreDeck {
                 const std::string fileColumn = StrConcat(" ", Tr("File"));
                 ImGui::TableSetupColumn(fileColumn.c_str(), ImGuiTableColumnFlags_WidthStretch, 3.2F);
                 ImGui::TableSetupColumn(Tr("Raw Size"), ImGuiTableColumnFlags_WidthFixed, Em(11.0F));
-                ImGui::TableSetupColumn(Tr("Download Size"), ImGuiTableColumnFlags_WidthFixed, Em(13.0F));
-                ImGui::TableSetupColumn(Tr("% of Download Size"), ImGuiTableColumnFlags_WidthFixed, Em(16.0F));
+                ImGui::TableSetupColumn(Tr(work.Report.Files.FromZip ? "ZIP compressed size" : "Download Size"), ImGuiTableColumnFlags_WidthFixed, Em(13.0F));
+                ImGui::TableSetupColumn(Tr(work.Report.Files.FromZip ? "ZIP size share" : "% of Download Size"), ImGuiTableColumnFlags_WidthFixed, Em(16.0F));
                 ImGui::TableSetupColumn(Tr("Compressed"), ImGuiTableColumnFlags_WidthFixed, Em(11.0F));
                 ImGui::TableSetupColumn(Tr("Alignment"), ImGuiTableColumnFlags_WidthFixed, Em(10.0F));
                 ImGui::TableHeadersRow();
@@ -389,6 +389,95 @@ namespace CoreDeck {
                 ImGui::EndTable();
             }
         }
+
+        float ButtonWidth(const char *label) {
+            return ImGui::CalcTextSize(Tr(label)).x + ImGui::GetStyle().FramePadding.x * 2;
+        }
+
+        void ContinueRow(float nextWidth) {
+            const float right = ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x;
+            const float availableRight = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+            if (right + nextWidth <= availableRight) ImGui::SameLine();
+        }
+
+        void DrawEntry(Context &context) {
+            auto &work = context.ApkAnalyzer;
+            const bool busy = Busy(work);
+            const ImVec2 available = ImGui::GetContentRegionAvail();
+            const float width = std::max(1.0F, std::min(Em(38), available.x));
+            const float padding = ImGui::GetStyle().WindowPadding.x;
+            const float innerWidth = std::max(1.0F, width - padding * 2);
+            const char *heading = Tr(busy ? "Analyzing APK..." : "Drop an APK here");
+            const char *hint = Tr("Inspect package contents, sizes, and permissions.");
+            const float headingHeight = ImGui::CalcTextSize(heading, nullptr, false, innerWidth).y;
+            const float hintHeight = ImGui::CalcTextSize(hint, nullptr, false, innerWidth).y;
+            const float cardHeight = Eh(5) + headingHeight + hintHeight + ImGui::GetFrameHeight();
+            const float recentHeight = busy ? 0.0F : Eh(2.5F) +
+                ImGui::GetTextLineHeightWithSpacing() * std::max(1, std::min(4, static_cast<int>(work.RecentApks.size())));
+            const float height = cardHeight + recentHeight;
+            const ImVec2 origin = ImGui::GetCursorPos();
+            ImGui::SetCursorPos(ImVec2(origin.x + std::max(0.0F, (available.x - width) * 0.5F),
+                origin.y + std::max(0.0F, (available.y - height) * 0.5F)));
+            ImGui::BeginChild("ApkEntry", ImVec2(width, std::min(height, available.y)));
+
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, HexColor(Colors::SURFACE1));
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, ImGui::GetStyle().FrameRounding);
+            ImGui::BeginChild("ApkDropZone", ImVec2(0, cardHeight), ImGuiChildFlags_Borders,
+                              ImGuiWindowFlags_NoScrollbar);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Eh(0.6F));
+            auto centeredText = [](const char *text, bool muted) {
+                const float width = ImGui::GetContentRegionAvail().x;
+                const float textWidth = ImGui::CalcTextSize(text).x;
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0F, (width - textWidth) * 0.5F));
+                ImGui::PushTextWrapPos(ImGui::GetWindowContentRegionMax().x);
+                if (muted) ImGui::TextDisabled("%s", text);
+                else ImGui::TextUnformatted(text);
+                ImGui::PopTextWrapPos();
+            };
+            centeredText(Icons::UPLOAD, true);
+            ImGui::Spacing();
+            centeredText(heading, false);
+            centeredText(hint, true);
+            ImGui::Spacing();
+            if (busy) {
+                if (work.Progress) ImGui::ProgressBar(work.Progress->load(), ImVec2(-1, 0));
+                const float buttonWidth = ButtonWidth("Cancel");
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0F, (ImGui::GetContentRegionAvail().x - buttonWidth) * 0.5F));
+                if (NegativeButton("Cancel", work.Cancel && !work.Cancel->load())) work.Cancel->store(true);
+            } else {
+                const float buttonWidth = std::min(innerWidth, std::max(Em(12), ButtonWidth("Choose APK...")));
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0F, (ImGui::GetContentRegionAvail().x - buttonWidth) * 0.5F));
+                if (PositiveButton("Choose APK...", true, ImVec2(buttonWidth, 0))) {
+                    if (auto path = ChooseApk()) StartAnalysis(context, *path);
+                }
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+
+            if (!busy) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("%s", Tr("Recent APKs"));
+                ImGui::BeginChild("RecentApkList", ImVec2(0, 0));
+                if (work.RecentApks.empty()) ImGui::TextDisabled("%s", Tr("No recent APKs"));
+                std::string picked, removed;
+                for (const auto &path: work.RecentApks) {
+                    ImGui::PushID(path.c_str());
+                    if (ImGui::Selectable(FileNameOf(path).c_str())) picked = path;
+                    HoverTooltip(path);
+                    if (ImGui::BeginPopupContextItem("RecentApkMenu")) {
+                        if (ImGui::MenuItem(Tr("Remove from recent"))) removed = path;
+                        ImGui::EndPopup();
+                    }
+                    ImGui::PopID();
+                }
+                if (!removed.empty()) { std::erase(work.RecentApks, removed); PersistAppSettings(context); }
+                if (!picked.empty()) StartAnalysis(context, picked);
+                ImGui::EndChild();
+            }
+            ImGui::EndChild();
+        }
+
         void Field(const char *label, const std::string &value) {
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
@@ -444,45 +533,48 @@ namespace CoreDeck {
             if (work.Cancel) work.Cancel->store(true);
         }
         ImGui::SameLine(); ImGui::AlignTextToFramePadding(); ImGui::TextUnformatted(Tr("APK Analyzer"));
-        ImGui::SameLine();
-        if (PrimaryButton("Choose APK...", !busy)) {
-            if (auto path = ChooseApk()) StartAnalysis(context, *path);
-        }
-        ImGui::SameLine();
-        ImGui::BeginDisabled(Busy(work));
-        ImGui::SetNextItemWidth(Em(15));
-        if (ImGui::BeginCombo("##RecentApks", Tr("Recent APKs"))) {
-            std::string picked;
-            for (const auto &path: work.RecentApks) {
-                ImGui::PushID(path.c_str());
-                if (ImGui::Selectable(FileNameOf(path).c_str())) picked = path;
-                HoverTooltip(path);
-                ImGui::PopID();
+        if ((work.Report.Files.Ok || work.Report.Summary.Ok) && !work.Report.Cancelled) {
+            ContinueRow(ButtonWidth("Choose APK..."));
+            if (PrimaryButton("Choose APK...", !busy)) {
+                if (auto path = ChooseApk()) StartAnalysis(context, *path);
             }
-            if (!picked.empty()) StartAnalysis(context, picked);
-            ImGui::EndCombo();
-        }
-        ImGui::EndDisabled();
-        busy = Busy(work);
-        ImGui::SameLine();
-        const bool ready = work.Report.Files.Ok && !work.Report.Cancelled;
-        if (PrimaryButton("Compare APK...", ready && !busy)) {
-            if (auto path = ChooseApk()) {
-                work.ComparePath = *path;
-                work.SelectComparison = true;
-                work.Compare = {};
-                work.Status.clear();
-                work.Details.clear();
-                work.Cancel = std::make_shared<std::atomic<bool>>(false);
-                work.Comparison = std::async(std::launch::async,
-                    [sdk = context.Host.Sdk, baseline = *path, current = work.Report.Path, cancel = work.Cancel] {
-                        return LoadApkCompare(sdk, baseline, current, [cancel] { return cancel->load(); });
-                    });
+            ContinueRow(Em(15));
+            ImGui::BeginDisabled(Busy(work));
+            ImGui::SetNextItemWidth(Em(15));
+            if (ImGui::BeginCombo("##RecentApks", Tr("Recent APKs"))) {
+                std::string picked;
+                for (const auto &path: work.RecentApks) {
+                    ImGui::PushID(path.c_str());
+                    if (ImGui::Selectable(FileNameOf(path).c_str())) picked = path;
+                    HoverTooltip(path);
+                    ImGui::PopID();
+                }
+                if (!picked.empty()) StartAnalysis(context, picked);
+                ImGui::EndCombo();
+            }
+            ImGui::EndDisabled();
+            busy = Busy(work);
+            ContinueRow(ButtonWidth("Compare APK..."));
+            const bool ready = (work.Report.Files.Ok || work.Report.Summary.Ok) && !work.Report.Cancelled;
+            if (PrimaryButton("Compare APK...", ready && !busy)) {
+                if (auto path = ChooseApk()) {
+                    work.ComparePath = *path;
+                    work.SelectComparison = true;
+                    work.Compare = {};
+                    work.Status.clear();
+                    work.Details.clear();
+                    work.Cancel = std::make_shared<std::atomic<bool>>(false);
+                    work.Comparison = std::async(std::launch::async,
+                        [sdk = context.Host.Sdk, baseline = *path, current = work.Report.Path, cancel = work.Cancel] {
+                            return LoadApkCompare(sdk, baseline, current, [cancel] { return cancel->load(); });
+                        });
+                }
             }
         }
+        const bool ready = (work.Report.Files.Ok || work.Report.Summary.Ok) && !work.Report.Cancelled;
         busy = Busy(work);
-        if (busy) {
-            ImGui::SameLine();
+        if (busy && ready) {
+            ContinueRow(ButtonWidth("Cancel"));
             if (NegativeButton("Cancel", !work.Cancel->load())) work.Cancel->store(true);
         }
         ImGui::Separator();
@@ -490,9 +582,9 @@ namespace CoreDeck {
             ImGui::TextDisabled("%s", FileNameOf(work.Path).c_str());
             HoverTooltip(work.Path);
         }
-        if (busy) ImGui::TextDisabled("%s", Tr(work.Analysis.valid() ? "Analyzing APK..." :
+        if (busy && ready) ImGui::TextDisabled("%s", Tr(work.Analysis.valid() ? "Analyzing APK..." :
                                                work.Comparison.valid() ? "Comparing APKs..." : "Installing APK..."));
-        if (work.Analysis.valid() && work.Progress) ImGui::ProgressBar(work.Progress->load(), ImVec2(-1, 0));
+
         if (!work.Status.empty()) ImGui::TextWrapped("%s", Tr(work.Status.c_str()));
         if (!work.Details.empty() && ImGui::CollapsingHeader(Tr("Details"))) {
             ImGui::BeginChild("ApkErrors", ImVec2(0, Eh(5)), ImGuiChildFlags_Borders);
@@ -506,6 +598,12 @@ namespace CoreDeck {
             }
         }
 
+        if (!ready) {
+            DrawEntry(context);
+            ImGui::End();
+            return;
+        }
+
         const auto &report = work.Report;
         if (ready) {
             InfoChip(std::string(Tr("Package name")) + ": " + report.PackageName);
@@ -516,15 +614,24 @@ namespace CoreDeck {
             ImGui::NewLine();
             ImGui::SetNextItemWidth(std::min(Em(32), ImGui::GetContentRegionAvail().x));
             ImGui::InputTextWithHint("##ApkFilter", Tr("Filter files or permissions..."), work.Filter, sizeof(work.Filter));
-            ImGui::SameLine();
+            ContinueRow(Em(10));
             ImGui::TextDisabled("%s: %d", Tr("Files"), CachedFiles(report, work.ContentEpoch).FileCount);
         }
 
-        ImGui::BeginChild("ApkReport", ImVec2(0, -Eh(5)), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+        const float footerWidth = ImGui::CalcTextSize(Tr("Target emulator")).x + Em(18) +
+            ButtonWidth("Install APK") + ButtonWidth("View app Logcat") + ImGui::GetStyle().ItemSpacing.x * 3;
+        const float footerHeight = Eh(footerWidth > ImGui::GetContentRegionAvail().x ? 7.0F : 4.0F);
+        ImGui::BeginChild("ApkReport", ImVec2(0, -footerHeight), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
         if (ready && ImGui::BeginTabBar("ApkTabs")) {
             if (ImGui::BeginTabItem(Tr("Files"))) {
-                auto &cache = CachedFiles(report, work.ContentEpoch);
-                DrawFileTree(context, cache);
+                if (report.Files.Ok) {
+                    if (report.Files.FromZip) ImGui::TextWrapped("%s", Tr("Using ZIP file sizes; nested archives are shown as files."));
+                    auto &cache = CachedFiles(report, work.ContentEpoch);
+                    DrawFileTree(context, cache);
+                } else {
+                    ImGui::TextWrapped("%s", Tr("File listing failed. Other APK information remains available."));
+                    ImGui::TextWrapped("%s", report.Files.Output.c_str());
+                }
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem(Tr("Application"))) {
@@ -559,32 +666,6 @@ namespace CoreDeck {
             }
             work.SelectComparison = false;
             ImGui::EndTabBar();
-        } else if (!busy && work.Path.empty()) {
-            ImGui::SetCursorPosY(std::max(Eh(2), ImGui::GetContentRegionAvail().y * 0.2F));
-            const float width = std::min(Em(42), ImGui::GetContentRegionAvail().x);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0F, (ImGui::GetContentRegionAvail().x - width) * 0.5F));
-            ImGui::BeginChild("ApkEmpty", ImVec2(width, 0));
-            ImGui::TextWrapped("%s", Tr("Drop an APK here, or choose a file to analyze."));
-            if (PrimaryButton("Choose APK...", true)) {
-                if (auto path = ChooseApk()) StartAnalysis(context, *path);
-            }
-            ImGui::Spacing();
-            ImGui::TextDisabled("%s", Tr("Recent APKs"));
-            std::string picked;
-            std::string removed;
-            for (const auto &path: work.RecentApks) {
-                ImGui::PushID(path.c_str());
-                if (ImGui::Selectable(FileNameOf(path).c_str())) picked = path;
-                HoverTooltip(path);
-                if (ImGui::BeginPopupContextItem("RecentApkMenu")) {
-                    if (ImGui::MenuItem(Tr("Remove from recent"))) removed = path;
-                    ImGui::EndPopup();
-                }
-                ImGui::PopID();
-            }
-            if (!removed.empty()) { std::erase(work.RecentApks, removed); PersistAppSettings(context); }
-            if (!picked.empty()) StartAnalysis(context, picked);
-            ImGui::EndChild();
         }
         ImGui::EndChild();
         ImGui::Separator();
@@ -592,8 +673,11 @@ namespace CoreDeck {
         std::string name;
         const int selected = context.Catalog.SelectedAvd;
         if (selected >= 0 && selected < static_cast<int>(context.Catalog.Avds.size())) name = context.Catalog.Avds[selected].Name;
-        ImGui::SetNextItemWidth(Em(24));
-        if (ImGui::BeginCombo(Tr("Target emulator"), name.empty() ? Tr("None") : name.c_str())) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(Tr("Target emulator"));
+        ContinueRow(Em(18));
+        ImGui::SetNextItemWidth(std::min(Em(18), ImGui::GetContentRegionAvail().x));
+        if (ImGui::BeginCombo("##TargetEmulator", name.empty() ? Tr("None") : name.c_str())) {
             for (int i = 0; i < static_cast<int>(context.Catalog.Avds.size()); ++i) {
                 const auto &avd = context.Catalog.Avds[i];
                 if (!context.Host.Manager.IsRunning(avd.Name)) continue;
@@ -607,7 +691,7 @@ namespace CoreDeck {
         const auto serial = name.empty() ? "" : EmulatorSerialForConsolePort(context.Host.Manager.GetConsolePort(name));
         const bool online = !name.empty() && context.Host.Manager.IsRunning(name) && !serial.empty() && HasAdb(context.Host.Sdk);
         const bool enabled = ready && !report.PackageName.empty() && online && !Busy(work);
-        ImGui::SameLine();
+        ContinueRow(ButtonWidth("Install APK"));
         if (PrimaryButton("Install APK", enabled)) {
             work.Status.clear();
             work.Details.clear();
@@ -617,7 +701,7 @@ namespace CoreDeck {
                     return InstallApk(sdk, serial, path, [cancel] { return cancel->load(); });
                 });
         }
-        ImGui::SameLine();
+        ContinueRow(ButtonWidth("View app Logcat"));
         if (PrimaryButton("View app Logcat", enabled)) {
             auto &logs = context.Logs.PerAvdLogcatView[name];
             logs.PackageFilter = work.Report.PackageName;
@@ -630,7 +714,8 @@ namespace CoreDeck {
             work.Open = false;
         }
 
-        if (!online) ImGui::TextDisabled("%s", Tr("Select a running emulator with ADB available."));
+        if (!online) ImGui::TextWrapped("%s", Tr(!HasAdb(context.Host.Sdk) ? "ADB is unavailable. Check SDK settings." :
+            name.empty() ? "Select a running emulator." : "The selected emulator is not running."));
         ImGui::End();
     }
 }

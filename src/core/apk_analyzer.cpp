@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <unordered_map>
+#include <map>
 #include <utility>
 #include <miniz.h>
 #include "paths.h"
@@ -180,7 +181,7 @@ namespace CoreDeck {
                 }
             }
             report.Cancelled = cancel && cancel();
-            if (!report.Summary.Ok || !report.Files.Ok) {
+            if (!report.Summary.Ok && !report.Files.Ok) {
                 report.Error = "Could not analyze APK.";
                 report.Details = !report.Summary.Ok ? report.Summary.Output : report.Files.Output;
             }
@@ -485,11 +486,58 @@ namespace CoreDeck {
         if (apkPath.empty()) {
             return {};
         }
-        return RunQuery<std::vector<ApkFileEntry>>(
+        auto result = RunQuery<std::vector<ApkFileEntry>>(
             sdk,
             {"files", "list", "--raw-size", "--download-size", apkPath},
             ParseApkFileList, cancel
         );
+        if (result.Ok || (cancel && cancel())) return result;
+
+        // Read only ZIP headers: nested archives remain ordinary files. Their
+        // contents need not be mounted through Java's ZIP filesystem provider.
+        mz_zip_archive zip{};
+        if (!mz_zip_reader_init_file(&zip, apkPath.c_str(), 0)) return result;
+        struct ZipCloser {
+            mz_zip_archive *Zip;
+            ~ZipCloser() { mz_zip_reader_end(Zip); }
+        } closer{&zip};
+        std::map<std::string, ApkFileEntry> entries;
+        entries["/"].Path = "/";
+        for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&zip); ++i) {
+            if (cancel && cancel()) return result;
+            mz_zip_archive_file_stat stat{};
+            if (!mz_zip_reader_file_stat(&zip, i, &stat)) return result;
+            const auto length = mz_zip_reader_get_filename(&zip, i, nullptr, 0);
+            if (!length) return result;
+            std::string name(length, '\0');
+            mz_zip_reader_get_filename(&zip, i, name.data(), length);
+            name.resize(length - 1);
+            if (name.empty()) continue;
+            if (name.front() != '/') name.insert(name.begin(), '/');
+            if (stat.m_is_directory) {
+                if (name.back() != '/') name += '/';
+                entries[name].Path = name;
+                continue;
+            }
+            auto &entry = entries[name];
+            entry.Path = name;
+            entry.RawSize = static_cast<std::int64_t>(stat.m_uncomp_size);
+            entry.DownloadSize = static_cast<std::int64_t>(stat.m_comp_size);
+            entry.Stored = stat.m_method == 0;
+            for (size_t slash = 0; slash != std::string::npos; slash = name.find('/', slash + 1)) {
+                const auto directory = name.substr(0, slash + 1);
+                auto &parent = entries[directory];
+                parent.Path = directory;
+                parent.RawSize += entry.RawSize;
+                parent.DownloadSize += entry.DownloadSize;
+            }
+        }
+        result.Value.clear();
+        for (auto &[path, entry]: entries) result.Value.push_back(std::move(entry));
+        result.Ok = true;
+        result.ToolMissing = false;
+        result.FromZip = true;
+        return result;
     }
 
     std::uint32_t ZipDataAlignment(const std::uint64_t dataOffset) {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <miniz.h>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -366,6 +367,25 @@ TEST_CASE("APK analyzer reports missing tools and honors cancellation", "[apk_an
     CHECK(InstallApk(sdk, "emulator-5554", apk.string(), {}).Succeeded);
     CHECK(InstallApk(sdk, "emulator-5554", apk.string(), [] { return true; }).Cancelled);
 #endif
+}
+
+TEST_CASE("APK file listing falls back to ZIP headers", "[apk-analyzer]") {
+    const auto root = MakeTempDir("coredeck_apk_zip_fallback");
+    const auto path = root / "nested.apk";
+    mz_zip_archive zip{};
+    REQUIRE(mz_zip_writer_init_file(&zip, path.string().c_str(), 0));
+    REQUIRE(mz_zip_writer_add_mem(&zip, "assets/inner.jar", "not a jar", 9, MZ_NO_COMPRESSION));
+    REQUIRE(mz_zip_writer_finalize_archive(&zip));
+    mz_zip_writer_end(&zip);
+    const auto files = QueryApkFiles(SdkInfo{}, path.string());
+    REQUIRE(files.Ok);
+    CHECK(files.FromZip);
+    REQUIRE(files.Value.size() == 3);
+    CHECK(files.Value.front().Path == "/");
+    CHECK(files.Value.front().RawSize == 9);
+    CHECK(files.Value.front().DownloadSize == 9);
+    CHECK_FALSE(QueryApkFiles(SdkInfo{}, path.string(), [] { return true; }).Ok);
+    std::filesystem::remove_all(root);
 }
 
 TEST_CASE("APK analyzer integrates with a local Android SDK", "[.apk-sdk]") {

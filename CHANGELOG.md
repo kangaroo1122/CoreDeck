@@ -1,3 +1,8 @@
+## [v0.14.0-beta.5](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.5) — 2026-10-21
+
+- Refine APK Analyzer with a centered file entry area, contextual toolbars, responsive device actions, and clearer empty, loading, and unavailable-device states
+- Fall back to ZIP directory reading when APK file listing fails, distinguish compressed sizes from download estimates, and keep successfully analyzed package information available
+
 ## [v0.14.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.4) — 2026-10-21
 
 - Expand APK Analyzer into a dedicated workspace using upstream analysis support, with searchable file trees, size breakdowns, compression and alignment details, APK comparison, drag-and-drop, and recent files; retain installation and package-based Logcat integration

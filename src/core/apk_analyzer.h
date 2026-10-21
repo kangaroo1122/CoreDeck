@@ -39,6 +39,7 @@ namespace CoreDeck {
     struct ApkAnalyzerQuery {
         bool ToolMissing = false;
         bool Ok = false;
+        bool FromZip = false;
         std::string Output;
         T Value{};
     };

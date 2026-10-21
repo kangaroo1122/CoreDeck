@@ -1,3 +1,4 @@
+#include "../async_work.h"
 //
 // Created by AbdulMuaz Aqeel on 18/04/2026.
 //
@@ -21,6 +22,8 @@
 #include "../localization.h"
 #include "../theme.h"
 #include "../application.h"
+#include "../avd_catalog.h"
+#include "../environment_probe.h"
 #include "update.h"
 #include "../../core/jdk.h"
 #include "../../core/paths.h"
@@ -32,6 +35,15 @@
 #include "../../core/utilities.h"
 
 namespace CoreDeck {
+    void ShutdownSdkPreferencesWork(Context &context) {
+        ConsumeFuture(context.SdkManagerWork.DetectionFuture);
+        ConsumeFuture(context.SdkManagerWork.List.Future);
+        ConsumeFuture(context.SdkManagerWork.OperationFuture);
+        ConsumeFuture(context.SdkManagerWork.LicenseCheckFuture);
+        ConsumeFuture(context.SdkManagerWork.LicenseAcceptFuture);
+        ConsumeFuture(context.SdkManagerWork.BootstrapFuture);
+    }
+
     namespace {
         enum class PrefsSection : uint8_t {
             Appearance,
@@ -191,7 +203,7 @@ namespace CoreDeck {
             work.Error.clear();
         }
 
-        void ApplySdkRoot(Context &context, const std::string &sdkRoot, char *, const size_t) {
+        void ApplySdkRoot(Context &context, const std::string &sdkRoot) {
             Paths::Onboarding::SaveSdkPathOverride(sdkRoot);
             RequestSdkDetection(context);
         }
@@ -299,7 +311,8 @@ namespace CoreDeck {
                     RefreshAvds(context);
                     RefreshSdkPackageList(context);
                     PersistAppSettings(context);
-                } catch (...) {
+                } catch (const std::exception &e) {
+                    Log::Error("SDK discovery failed: ", e.what());
                     work.Error = "SDK discovery failed. Check directory permissions and try again.";
                 }
             }
@@ -424,7 +437,7 @@ namespace CoreDeck {
                 work.BootstrapBusy = false;
                 if (result.Succeeded) {
                     work.Error.clear();
-                    ApplySdkRoot(context, work.BootstrapSdkRoot, sdkPathBuffer, sdkBufferSize);
+                    ApplySdkRoot(context, work.BootstrapSdkRoot);
                     RefreshSdkPackageList(context);
                 } else if (result.Cancelled) {
                     work.Error.clear();
@@ -434,17 +447,6 @@ namespace CoreDeck {
                                      : result.Error;
                 }
             }
-        }
-
-        void RequestSdkOperationCancel(const std::shared_ptr<SdkOperationProgress> &progress) {
-            if (!progress) {
-                return;
-            }
-
-            progress->CancelRequested.store(true);
-            std::lock_guard lock(progress->Mutex);
-            progress->StatusText = "Cancelling...";
-            progress->DetailText.clear();
         }
 
         void RequestFontReload(Context &context) {
@@ -991,8 +993,8 @@ namespace CoreDeck {
                 work.Error.clear();
                 work.LicenseBusy = true;
                 const SdkInfo sdk = work.PendingSdk;
-                work.LicenseCheckFuture = std::async(std::launch::async, [sdk] {
-                    return CheckSdkLicenses(sdk);
+                work.LicenseCheckFuture = std::async(std::launch::async, [sdk, cancel = context.ShutdownRequested] {
+                    return CheckSdkLicenses(sdk, [cancel] { return cancel->load(); });
                 });
             }
             ImGui::SameLine();
@@ -1011,7 +1013,7 @@ namespace CoreDeck {
             const bool canCancelOperation = operationBusy && work.Progress && !work.Progress->CancelRequested.load();
             if (operationBusy) {
                 if (NegativeButton("Cancel", canCancelOperation, ImVec2(thirdWidth, 0))) {
-                    RequestSdkOperationCancel(work.Progress);
+                    RequestProgressCancel(work.Progress);
                 }
             } else if (PrimaryButton("Clear Status", work.Progress != nullptr && !busy, ImVec2(thirdWidth, 0))) {
                 work.Progress.reset();
@@ -1034,8 +1036,8 @@ namespace CoreDeck {
                 if (PositiveButton("Agree & Install", !work.LicenseBusy.load(), ImVec2(halfWidth, 0))) {
                     work.LicenseBusy = true;
                     const SdkInfo sdk = work.PendingSdk;
-                    work.LicenseAcceptFuture = std::async(std::launch::async, [sdk] {
-                        return AcceptSdkLicenses(sdk);
+                    work.LicenseAcceptFuture = std::async(std::launch::async, [sdk, cancel = context.ShutdownRequested] {
+                        return AcceptSdkLicenses(sdk, [cancel] { return cancel->load(); });
                     });
                 }
                 ImGui::SameLine();
@@ -1113,7 +1115,7 @@ namespace CoreDeck {
 
             const bool canApplySdkPath = (pathOk || hasSdkManager) && !sdkManagerBusy;
             if (PrimaryButton("Apply SDK Path", canApplySdkPath)) {
-                ApplySdkRoot(context, pathStr, sdkPathBuffer, sdkBufferSize);
+                ApplySdkRoot(context, pathStr);
                 RefreshSdkPackageList(context);
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !canApplySdkPath) {
@@ -1164,7 +1166,7 @@ namespace CoreDeck {
                 ImGui::PopStyleColor();
 
                 if (bootstrapBusy && NegativeButton("Cancel", !cancelRequested)) {
-                    RequestSdkOperationCancel(context.SdkManagerWork.Progress);
+                    RequestProgressCancel(context.SdkManagerWork.Progress);
                 }
             }
 
@@ -1286,7 +1288,8 @@ namespace CoreDeck {
                     work.Results.clear();
                     work.Error = "Environment check cancelled.";
                 }
-            } catch (const std::exception &) {
+            } catch (const std::exception &e) {
+                Log::Error("Environment check failed: ", e.what());
                 work.Error = "Environment check failed. Check permissions and try again.";
             }
             work.Busy = false;

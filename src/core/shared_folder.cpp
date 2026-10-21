@@ -1080,9 +1080,7 @@ namespace CoreDeck {
                 return false;
             }
 
-            std::filesystem::remove(path, ec);
-            ec.clear();
-            std::filesystem::rename(tempPath, path, ec);
+            Paths::ReplaceFile(tempPath, path, ec);
             if (ec) {
                 if (error != nullptr) {
                     *error = ec.message();
@@ -1150,9 +1148,7 @@ namespace CoreDeck {
                 return false;
             }
 
-            std::filesystem::remove(path, ec);
-            ec.clear();
-            std::filesystem::rename(tempPath, path, ec);
+            Paths::ReplaceFile(tempPath, path, ec);
             if (ec) {
                 if (error != nullptr) {
                     *error = ec.message();

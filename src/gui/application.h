@@ -84,15 +84,7 @@ namespace CoreDeck {
 
     void PersistAppSettings(Context &context);
 
-    void RefreshAvds(Context &context);
-    void PollAvdRefresh(Context &context);
-    bool RefreshSdkPathStatusAsync(Context &context, const std::string &path);
 
-    void LoadAvdOptions(Context &context, const std::string &avdName);
-
-    void SaveAvdOptions(Context &context, const std::string &avdName);
-
-    std::vector<EmulatorOption> &GetDefaultAvdOptions(Context &context);
 }
 
 #endif // EMU_LAUNCHER_RENDERER_H

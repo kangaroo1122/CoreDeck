@@ -7,6 +7,7 @@
 #include "avd_options.h"
 #include <cstddef>
 #include "../application.h"
+#include "../avd_catalog.h"
 #include "../localization.h"
 #include "../widgets.h"
 

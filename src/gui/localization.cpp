@@ -9,6 +9,13 @@ namespace CoreDeck {
         AppLanguage currentLanguage = AppLanguage::English;
 
         const std::unordered_map<std::string_view, const char *> ZH_CN = {
+            {"sdkmanager was not found. Install SDK command-line tools.", "未找到 sdkmanager，请安装 SDK 命令行工具。"},
+            {"avdmanager was not found. Install SDK command-line tools.", "未找到 avdmanager，请安装 SDK 命令行工具。"},
+            {"sdkmanager returned an unrecognized version response.", "无法识别 sdkmanager 返回的版本信息。"},
+            {"sdkmanager version check timed out.", "sdkmanager 版本检查超时。"},
+            {"sdkmanager could not run. Check the configured JDK and SDK permissions.", "sdkmanager 无法运行，请检查 JDK 配置及 SDK 访问权限。"},
+            {"avdmanager help check timed out.", "avdmanager 帮助信息检查超时。"},
+            {"avdmanager did not return valid help. Check the configured JDK and SDK permissions.", "avdmanager 未返回有效帮助信息，请检查 JDK 配置及 SDK 访问权限。"},
             {"Checking SDK path...", "正在检查 SDK 路径……"},
             {"Checking Java environment...", "正在检查 Java 环境……"},
             {"SDK discovery failed. Check directory permissions and try again.", "SDK 检测失败，请检查目录权限后重试。"},
@@ -298,6 +305,10 @@ namespace CoreDeck {
             {"Could not delete snapshot.", "无法删除快照。"},
             {"Could not load AVD creation data.", "无法加载 AVD 创建数据。"},
             {"Could not load system images.", "无法加载系统镜像。"},
+            {"Could not load system images. The command failed or timed out.", "无法加载系统镜像，命令执行失败或超时。"},
+            {"Could not load device profiles. The command failed or timed out.", "无法加载设备模板，命令执行失败或超时。"},
+            {"Could not install system image. Check the SDK Manager and try again.", "无法安装系统镜像，请检查 SDK 管理器后重试。"},
+            {"Could not remove system image. Check the SDK Manager and try again.", "无法卸载系统镜像，请检查 SDK 管理器后重试。"},
             {"Could not create AVD.", "无法创建 AVD。"},
             {"Could not delete AVD.", "无法删除 AVD。"},
             {"Could not wipe AVD data.", "无法擦除 AVD 数据。"},

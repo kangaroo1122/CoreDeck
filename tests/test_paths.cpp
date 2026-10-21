@@ -1,8 +1,34 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/paths.h"
+#include <chrono>
+#include <fstream>
 
 using namespace CoreDeck::Paths;
+
+TEST_CASE("Text file replacement preserves the destination on failure", "[paths][write]") {
+    const auto root = std::filesystem::temp_directory_path() /
+        ("coredeck_write_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct Cleanup {
+        std::filesystem::path Path;
+        ~Cleanup() { std::error_code ignored; std::filesystem::remove_all(Path, ignored); }
+    } cleanup{root};
+    const auto path = root / "settings.json";
+    std::error_code error;
+    REQUIRE(WriteTextFile(path, "old", error));
+    REQUIRE(WriteTextFile(path, "new", error));
+    REQUIRE_FALSE(ReplaceFile(root / "missing", path, error));
+    std::ifstream file(path);
+    std::string text;
+    file >> text;
+    CHECK(text == "new");
+    CHECK_FALSE(std::filesystem::exists(root / "settings.json.tmp"));
+    std::filesystem::create_directory(root / "settings.json.tmp");
+    CHECK_FALSE(WriteTextFile(path, "broken", error));
+    std::ifstream preserved(path);
+    preserved >> text;
+    CHECK(text == "new");
+}
 
 TEST_CASE("JoinPaths joins components with the platform separator", "[paths][join]") {
     const std::string joined = JoinPaths({"a", "b", "c"});

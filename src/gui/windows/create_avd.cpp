@@ -12,6 +12,7 @@
 #include "install_image.h"
 #include "skin.h"
 #include "../application.h"
+#include "../avd_catalog.h"
 #include "../localization.h"
 #include "../widgets.h"
 #include "../theme.h"
@@ -61,25 +62,7 @@ namespace CoreDeck {
             context.ImageInstallationWork.Prefetch.Loading = true;
             context.UI.ShowInstallImageDialog = true;
 
-            const SdkInfo sdk = context.Host.Sdk;
-            context.ImageInstallationWork.Prefetch.Future = std::async(std::launch::async, [sdk, selectedPackagePath] {
-                SystemImagePrefetchResult result;
-                try {
-                    result.LocalImages = ListSystemImages(sdk);
-                    result.RemoteImages = ListRemoteSystemImages(sdk, result.LocalImages);
-                    for (int i = 0; i < static_cast<int>(result.RemoteImages.size()); i++) {
-                        if (result.RemoteImages[i].PackagePath == selectedPackagePath) {
-                            result.SelectedImage = i;
-                            break;
-                        }
-                    }
-                } catch (const std::exception &e) {
-                    result.Error = e.what();
-                } catch (...) {
-                    result.Error = "Could not load system images.";
-                }
-                return result;
-            });
+            RefreshSystemImageLists(context, selectedPackagePath);
         }
 
 

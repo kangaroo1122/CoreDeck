@@ -11,7 +11,9 @@
 #include "context.h"
 
 namespace CoreDeck {
-    bool RefreshJavaHomeStatusAsync(Context &context, JavaHomeStatus &state, const std::string &path);
+    // Call after cancellation has been requested for all modules.
+    void ShutdownJdkDownloadWork(Context &context);
+
     bool IsJdkDownloadBusy(const Context &context);
 
     bool ShouldOfferManagedJdkDownload(const JavaHomeStatus &versionState);

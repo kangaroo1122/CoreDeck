@@ -1,3 +1,4 @@
+#include "../async_work.h"
 //
 // Created by AbdulMuaz Aqeel on 15/04/2026.
 //
@@ -15,6 +16,8 @@
 
 #include "onboarding.h"
 #include "../application.h"
+#include "../avd_catalog.h"
+#include "../environment_probe.h"
 #include "../jdk_download_panel.h"
 #include "../localization.h"
 #include "../widgets.h"
@@ -50,17 +53,6 @@ namespace CoreDeck {
             SdkInstallSession InstallSession;
             std::string Error;
         };
-
-        template <typename T>
-        void ConsumeFuture(std::future<T> &future) {
-            if (!future.valid()) {
-                return;
-            }
-            try {
-                (void)future.get();
-            } catch (...) {
-            }
-        }
 
         OnboardingSdkBootstrapWork &OnboardingBootstrapWork() {
             static OnboardingSdkBootstrapWork bootstrap;
@@ -233,8 +225,8 @@ namespace CoreDeck {
             SetSdkProgressRange(work.Progress, OnboardingSdkProgress::Licenses.Start, OnboardingSdkProgress::Licenses.End);
             SetOnboardingProgress(work.Progress, 0.0F, "Checking licenses...");
             work.Busy = true;
-            work.LicenseCheckFuture = std::async(std::launch::async, [sdk] {
-                return CheckSdkLicensesDetailed(sdk);
+            work.LicenseCheckFuture = std::async(std::launch::async, [sdk, progress = work.Progress] {
+                return CheckSdkLicensesDetailed(sdk, [progress] { return progress && progress->CancelRequested.load(); });
             });
         }
 
@@ -262,7 +254,11 @@ namespace CoreDeck {
                 std::string error;
                 try {
                     error = work.FinalizeFuture.get();
+                } catch (const std::exception &e) {
+                    Log::Error("SDK verification failed: ", e.what());
+                    error = "Android SDK verification failed: required tools are missing.";
                 } catch (...) {
+                    Log::Error("SDK verification failed with an unknown exception.");
                     error = "Android SDK verification failed: required tools are missing.";
                 }
                 if (!error.empty()) {
@@ -484,8 +480,8 @@ namespace CoreDeck {
                 work.Busy = true;
                 work.Error.clear();
                 SetOnboardingProgress(work.Progress, 0.02F, "Recording acceptance with the SDK Manager...");
-                work.LicenseAcceptFuture = std::async(std::launch::async, [sdk] {
-                    return AcceptSdkLicenses(sdk);
+                work.LicenseAcceptFuture = std::async(std::launch::async, [sdk, progress = work.Progress] {
+                    return AcceptSdkLicenses(sdk, [progress] { return progress && progress->CancelRequested.load(); });
                 });
             }
             ImGui::SameLine();

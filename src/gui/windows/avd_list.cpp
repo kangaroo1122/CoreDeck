@@ -11,6 +11,7 @@
 #include "delete_avd.h"
 #include "rename_avd.h"
 #include "../application.h"
+#include "../avd_catalog.h"
 #include "../localization.h"
 #include "../shared_folder_sync.h"
 #include "../widgets.h"
@@ -217,11 +218,11 @@ namespace CoreDeck {
         context.UI.ShowCreateAvdDialog = true;
 
         const SdkInfo sdk = context.Host.Sdk;
-        work.Prefetch.Future = std::async(std::launch::async, [sdk] {
+        work.Prefetch.Future = std::async(std::launch::async, [sdk, cancel = context.ShutdownRequested] {
             AvdCreationPrefetchResult result;
             try {
                 result.SystemImages = ListSystemImages(sdk);
-                result.DeviceProfiles = ListDeviceProfiles(sdk);
+                result.DeviceProfiles = ListDeviceProfiles(sdk, [cancel] { return cancel->load(); });
                 result.Skins = ListSkins(sdk);
             } catch (const std::exception &e) {
                 result.Error = e.what();

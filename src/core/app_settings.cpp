@@ -50,21 +50,11 @@ namespace CoreDeck {
                 return;
             }
 
-            std::filesystem::path fsPath(path);
             std::error_code ec;
-            std::filesystem::create_directories(fsPath.parent_path(), ec);
-            if (ec) {
-                Log::Error("Failed to create app config directory: ", ec.message());
-                return;
-            }
-
             const auto json = rfl::json::write(settings);
-            std::ofstream file(path);
-            if (!file.is_open()) {
-                Log::Error("Failed to save app settings to: ", path);
-                return;
+            if (!Paths::WriteTextFile(path, json, ec)) {
+                Log::Error("Failed to save app settings to: ", path, ": ", ec.message());
             }
-            file << json;
         } catch (const std::exception &e) {
             Log::Error("Failed to save app settings: ", e.what());
         }

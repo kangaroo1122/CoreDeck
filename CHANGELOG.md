@@ -1,3 +1,11 @@
+## [v0.14.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.2) — 2026-10-21
+
+- Fix false SDK command-line tool failures in Environment Check when `avdmanager --help` returns valid output with a nonzero exit code, and provide more specific, localized diagnostics
+- Improve SDK and system image task reliability with command timeouts, shutdown cancellation, exception handling, and exit-status checks; refresh image lists in the background after installation or removal, preserve existing lists on refresh failure, and restore selections by package name
+- Harden update downloads with network timeouts, cancellable checksum retrieval, HTTP status validation on Windows, and checks for file write failures
+- Save application settings, SDK path overrides, AVD options, and shared-folder sync snapshots without deleting or truncating the previous destination before replacement
+- Separate environment probing and AVD catalog management from unrelated UI code, delegate SDK/JDK/image task cleanup to their modules, consolidate repeated cancellation logic, and avoid rereading cached AVD options while preserving live edits
+
 ## [v0.14.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.1) — 2026-10-21
 
 - Add an Environment Check page in Preferences for the SDK directory, Java runtime, ADB, emulator, command-line tools, licenses, compatible system images, and available disk space, with background checks, cancellation, command timeouts, and links to existing setup actions

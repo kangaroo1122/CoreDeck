@@ -358,14 +358,14 @@ namespace CoreDeck {
 #endif
     }
 
-    void StreamCommandArgsWithEnv(
+    bool StreamCommandArgsWithEnv(
         const std::string &path,
         const std::vector<std::string> &args,
         const std::string &stdinData,
         const ProcessEnvironment &environment,
         const std::function<void(const std::string &)> &onLine
     ) {
-        (void) StreamCommandArgsWithEnvCancelable(
+        return StreamCommandArgsWithEnvCancelable(
             path,
             args,
             stdinData,
@@ -375,13 +375,13 @@ namespace CoreDeck {
         );
     }
 
-    void StreamCommandArgs(
+    bool StreamCommandArgs(
         const std::string &path,
         const std::vector<std::string> &args,
         const std::string &stdinData,
         const std::function<void(const std::string &)> &onLine
     ) {
-        StreamCommandArgsWithEnv(path, args, stdinData, {}, onLine);
+        return StreamCommandArgsWithEnv(path, args, stdinData, {}, onLine);
     }
 
     std::string RunCommandArgsWithEnv(

@@ -32,6 +32,10 @@
 #endif
 
 #include "application.h"
+#include "avd_catalog.h"
+#include "async_work.h"
+#include "jdk_download_panel.h"
+#include "../core/log.h"
 #include "fonts.h"
 #include "localization.h"
 #include "shared_folder_sync.h"
@@ -563,30 +567,6 @@ namespace CoreDeck {
             return NormalizeUiFontSize(context.Prefs.UiFontSize) * scale;
         }
 
-        template <typename T>
-        void ConsumeFuture(std::future<T> &future) {
-            if (!future.valid()) {
-                return;
-            }
-            try {
-                (void)future.get();
-            } catch (...) {
-            }
-        }
-
-        void RequestProgressCancel(const std::shared_ptr<SdkOperationProgress> &progress) {
-            if (!progress) {
-                return;
-            }
-
-            progress->CancelRequested.store(true);
-            std::lock_guard lock(progress->Mutex);
-            if (!progress->Finished) {
-                progress->StatusText = "Cancelling...";
-            }
-            progress->DetailText.clear();
-        }
-
         void ApplyImGuiFontSizeBase(const Context &context, const float fontPixelScale) {
             const float fontSize = ResolveUiFontPixelSize(context, fontPixelScale);
             auto &style = ImGui::GetStyle();
@@ -1052,10 +1032,14 @@ namespace CoreDeck {
     }
 
     void Application::m_DrainAsyncWork() {
+        m_Context.ShutdownRequested->store(true);
         if (m_Context.Catalog.RefreshCancel) m_Context.Catalog.RefreshCancel->store(true);
         if (m_Context.EnvironmentCheck.Cancel) m_Context.EnvironmentCheck.Cancel->store(true);
         RequestProgressCancel(m_Context.SdkManagerWork.Progress);
         RequestProgressCancel(m_Context.JdkDownloadWork.Progress);
+        if (m_Context.ImageInstallationWork.Progress) {
+            m_Context.ImageInstallationWork.Progress->CancelRequested.store(true);
+        }
         if (m_Context.Updates.DownloadProgress) {
             m_Context.Updates.DownloadProgress->CancelRequested.store(true);
         }
@@ -1063,28 +1047,18 @@ namespace CoreDeck {
         ShutdownOnboardingSdkBootstrapWork();
         CancelDeviceExplorerWork(m_Context);
 
+        ShutdownSdkPreferencesWork(m_Context);
+        ShutdownJdkDownloadWork(m_Context);
+        ShutdownImageInstallationWork(m_Context);
         ConsumeFuture(m_UpdateCheckFuture);
         ConsumeFuture(m_Context.JavaProbe.Future);
         ConsumeFuture(m_Context.SdkPathProbe.Future);
-        ConsumeFuture(m_Context.SdkManagerWork.DetectionFuture);
         ConsumeFuture(m_Context.Catalog.RefreshFuture);
         ConsumeFuture(m_Context.EnvironmentCheck.Future);
         ConsumeFuture(m_Context.Updates.DownloadFuture);
         ConsumeFuture(m_Context.AvdCreationWork.Prefetch.Future);
-        ConsumeFuture(m_Context.AvdCreationWork.SystemImageRemoval.Future);
         ConsumeFuture(m_Context.AvdSnapshotWork.ListFuture);
         ConsumeFuture(m_Context.AvdSnapshotWork.DeleteFuture);
-        ConsumeFuture(m_Context.ImageInstallationWork.Prefetch.Future);
-        ConsumeFuture(m_Context.ImageInstallationWork.InstallFuture);
-        ConsumeFuture(m_Context.ImageInstallationWork.LicenseCheckFuture);
-        ConsumeFuture(m_Context.ImageInstallationWork.LicenseAcceptFuture);
-        ConsumeFuture(m_Context.SdkManagerWork.List.Future);
-        ConsumeFuture(m_Context.SdkManagerWork.OperationFuture);
-        ConsumeFuture(m_Context.SdkManagerWork.LicenseCheckFuture);
-        ConsumeFuture(m_Context.SdkManagerWork.LicenseAcceptFuture);
-        ConsumeFuture(m_Context.SdkManagerWork.BootstrapFuture);
-        ConsumeFuture(m_Context.JdkDownloadWork.List.Future);
-        ConsumeFuture(m_Context.JdkDownloadWork.InstallFuture);
         ConsumeFuture(m_Context.Jobs.AvdCreation.Future);
         ConsumeFuture(m_Context.Jobs.AvdDeletion.Future);
         ConsumeFuture(m_Context.Jobs.AvdWipe.Future);
@@ -1354,138 +1328,4 @@ namespace CoreDeck {
         SaveAppSettings(CaptureAppSettingsFromContext(context));
     }
 
-    void RefreshAvds(Context &context) {
-        auto &catalog = context.Catalog;
-        catalog.RefreshPending = true;
-        catalog.RefreshError.clear();
-        // Supersede old work without destroying a running future on the UI thread.
-        if (catalog.RefreshFuture.valid()) {
-            catalog.RefreshCancel->store(true);
-            return;
-        }
-        catalog.RefreshPending = false;
-        catalog.RefreshCancel = std::make_shared<std::atomic<bool>>(false);
-        const auto cancel = catalog.RefreshCancel;
-        const SdkInfo sdk = context.Host.Sdk;
-        catalog.RefreshFuture = std::async(std::launch::async, [sdk, cancel] {
-            AvdCatalogResult result;
-            result.Names = ListAvdNames(sdk, [cancel] { return cancel->load(); });
-            if (cancel->load()) return result;
-            result.Avds = LoadAvds(result.Names);
-            for (const auto &name : result.Names) {
-                if (cancel->load()) break;
-                result.Options.emplace(name, LoadOptionsFromFile(GetOptionsConfigPath(name)));
-            }
-            return result;
-        });
-    }
-
-    bool RefreshSdkPathStatusAsync(Context &context, const std::string &path) {
-        auto &probe = context.SdkPathProbe;
-        if (probe.Future.valid() && probe.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            try {
-                auto result = probe.Future.get();
-                if (probe.RequestedPath == path) {
-                    probe.Value = std::move(result);
-                    probe.ReadyPath = path;
-                    probe.Ready = true;
-                }
-            } catch (...) {
-                if (probe.RequestedPath == path) {
-                    probe.Value = {};
-                    probe.ReadyPath = path;
-                    probe.Ready = true;
-                    probe.Error = "SDK discovery failed. Check directory permissions and try again.";
-                }
-            }
-        }
-        if (!probe.Future.valid() && (!probe.Ready || probe.ReadyPath != path)) {
-            probe.RequestedPath = path;
-            probe.Error.clear();
-            probe.Future = std::async(std::launch::async, [path] {
-                Context::SdkPathProbeWork::Result result;
-                if (!path.empty()) {
-                    result.Valid = Paths::Onboarding::ValidateSdkPath(path);
-                    result.HasManager = HasSdkManager(path);
-                    result.CanInstall = CanInstallAndroidSdkIntoDirectory(path);
-                    result.Sdk = BuildSdkInfoFromSdkRoot(path, "");
-                }
-                return result;
-            });
-        }
-        return probe.Ready && probe.ReadyPath == path && !probe.Future.valid();
-    }
-
-    void PollAvdRefresh(Context &context) {
-        auto &catalog = context.Catalog;
-        if (!catalog.RefreshFuture.valid() ||
-            catalog.RefreshFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
-        try {
-            auto result = catalog.RefreshFuture.get();
-            if (!catalog.RefreshCancel->load() && !catalog.RefreshPending) {
-                // Read selection at completion, so navigation during a refresh is preserved.
-                std::string selectedName;
-                if (catalog.SelectedAvd >= 0 && catalog.SelectedAvd < static_cast<int>(catalog.Avds.size())) {
-                    selectedName = catalog.Avds[catalog.SelectedAvd].Name;
-                }
-                catalog.AvdNames = std::move(result.Names);
-                catalog.Avds = std::move(result.Avds);
-                // Existing options may have been edited while the worker was reading files.
-                for (auto &[name, options] : result.Options) {
-                    catalog.PerAvdOptions.try_emplace(name, std::move(options));
-                }
-                std::erase_if(catalog.PerAvdOptions, [&](const auto &entry) {
-                    return std::ranges::find(catalog.AvdNames, entry.first) == catalog.AvdNames.end();
-                });
-                catalog.SelectedAvd = catalog.Avds.empty() ? -1 : 0;
-                for (int i = 0; i < static_cast<int>(catalog.Avds.size()); ++i) {
-                    if (catalog.Avds[i].Name == selectedName) {
-                        catalog.SelectedAvd = i;
-                        break;
-                    }
-                }
-                catalog.PreviousSelectedAvd = -1;
-                catalog.FilteredIndices.clear();
-                context.DiskUsage.PerAvdCache.clear();
-                if (!context.DiskUsage.Loading.load()) {
-                    context.DiskUsage.LastScan = {};
-                    context.DiskUsage.Ready = false;
-                }
-            }
-        } catch (...) {
-            if (!catalog.RefreshCancel->load() && !catalog.RefreshPending) {
-                catalog.RefreshError = "Could not refresh AVDs. The emulator command failed or timed out.";
-            }
-        }
-        if (catalog.RefreshPending) RefreshAvds(context);
-    }
-
-    void LoadAvdOptions(Context &context, const std::string &avdName) {
-        const std::string configPath = GetOptionsConfigPath(avdName);
-        context.Catalog.PerAvdOptions[avdName] = LoadOptionsFromFile(configPath);
-    }
-
-    void SaveAvdOptions(Context &context, const std::string &avdName) {
-        if (!context.Catalog.PerAvdOptions.contains(avdName)) {
-            return;
-        }
-
-        const std::string configPath = GetOptionsConfigPath(avdName);
-        SaveOptionsToFile(configPath, context.Catalog.PerAvdOptions[avdName]);
-    }
-
-    std::vector<EmulatorOption> &GetDefaultAvdOptions(Context &context) {
-        if (context.Catalog.SelectedAvd >= 0 && context.Catalog.SelectedAvd < context.Catalog.Avds.size()) {
-            const std::string &avdName = context.Catalog.Avds[context.Catalog.SelectedAvd].Name;
-
-            if (!context.Catalog.PerAvdOptions.contains(avdName)) {
-                LoadAvdOptions(context, avdName);
-            }
-            return context.Catalog.PerAvdOptions[avdName];
-        }
-
-        // Fallback
-        static std::vector<EmulatorOption> defaultOptions = GetEmulatorOptions();
-        return defaultOptions;
-    }
 }

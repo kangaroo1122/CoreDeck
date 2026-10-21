@@ -8,6 +8,7 @@
 #include "sdk.h"
 
 namespace CoreDeck {
+    bool IsAvdManagerHelpOutput(const std::string &output);
     enum class HealthStatus { Passed, Warning, Failed, Skipped };
     enum class HealthFix { None, Sdk, Jdk, Images };
     struct HealthCheckResult {

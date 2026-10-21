@@ -1,3 +1,4 @@
+#include "async_work.h"
 //
 // Created by kangaroo. on 26/07/2026.
 //
@@ -22,6 +23,11 @@
 #include "../core/utilities.h"
 
 namespace CoreDeck {
+    void ShutdownJdkDownloadWork(Context &context) {
+        ConsumeFuture(context.JdkDownloadWork.List.Future);
+        ConsumeFuture(context.JdkDownloadWork.InstallFuture);
+    }
+
     namespace {
         constexpr JdkVendor JDK_VENDORS[] = {
             JdkVendor::EclipseTemurin,
@@ -180,25 +186,6 @@ namespace CoreDeck {
         return work.Installing.load();
     }
 
-    bool RefreshJavaHomeStatusAsync(Context &context, JavaHomeStatus &state, const std::string &path) {
-        auto &work = context.JavaProbe;
-        if (work.Future.valid() && work.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            try {
-                auto result = work.Future.get();
-                if (work.RequestedPath == path) state = std::move(result);
-            } catch (...) {
-                if (work.RequestedPath == path) state = {.Path = path, .Text = "Unable to read Java version."};
-            }
-        }
-        // The input may be a macOS bundle whose normalized Path differs from the text field.
-        if (!work.Future.valid() && work.RequestedPath == path && !state.Text.empty()) return true;
-        if (!work.Future.valid()) {
-            work.RequestedPath = path;
-            state = {};
-            work.Future = std::async(std::launch::async, [path] { return ReadJavaHomeStatus(path); });
-        }
-        return false;
-    }
 
     bool ShouldOfferManagedJdkDownload(const JavaHomeStatus &versionState) {
         return !versionState.HasJava ||

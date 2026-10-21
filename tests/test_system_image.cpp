@@ -12,6 +12,13 @@
 
 using namespace CoreDeck;
 
+TEST_CASE("AVD manager health check recognizes help rather than diagnostic mentions", "[system_image]") {
+    CHECK(IsAvdManagerHelpOutput("Usage:\n avdmanager [global options] [action]\n- list avd\n- create avd\n"));
+    CHECK_FALSE(IsAvdManagerHelpOutput("Error: avdmanager could not start"));
+    CHECK_FALSE(IsAvdManagerHelpOutput("Usage:\n avdmanager [global options]"));
+    CHECK_FALSE(IsAvdManagerHelpOutput(""));
+}
+
 TEST_CASE("environment check honours cancellation before launching tools", "[system_image]") {
     const auto cancel = std::make_shared<std::atomic<bool>>(true);
     CHECK(RunEnvironmentHealthCheck({}, cancel).empty());
@@ -132,6 +139,48 @@ namespace {
         std::filesystem::create_directories(imageDir);
         std::ofstream(imageDir / "system.img") << "system image";
     }
+}
+
+TEST_CASE("failed image installation does not succeed because an old image exists", "[system_image][install]") {
+    const auto root = MakeTempDir("coredeck_failed_image_install");
+    struct Cleanup {
+        std::filesystem::path Path;
+        ~Cleanup() { std::error_code ignored; std::filesystem::remove_all(Path, ignored); }
+    } cleanup{root};
+    CreateInstalledSystemImage(root, "35", "google_apis");
+    const auto manager = WriteFakeSdkManager(root);
+    {
+        std::ofstream script(manager);
+#ifdef _WIN32
+        script << "@echo off\nexit /b 1\n";
+#else
+        script << "#!/bin/sh\nexit 1\n";
+#endif
+    }
+    SdkInfo sdk;
+    sdk.SdkPath = root.string();
+    sdk.SdkManagerPath = manager.string();
+    const auto progress = std::make_shared<InstallProgressData>();
+    CHECK_FALSE(InstallSystemImage(sdk, "system-images;android-35;google_apis;" + TestAbi(), progress));
+    CHECK(progress->Finished);
+    CHECK_FALSE(progress->Succeeded);
+    // A failed uninstall is not successful merely because the target was already absent.
+    CHECK_FALSE(UninstallSystemImage(sdk, "system-images;android-99;google_apis;" + TestAbi()));
+
+    progress->CancelRequested.store(true);
+    CHECK_FALSE(InstallSystemImage(sdk, "system-images;android-35;google_apis;" + TestAbi(), progress));
+    CHECK(progress->Finished);
+    CHECK_FALSE(progress->Succeeded);
+    CHECK(progress->StatusText == "Cancelled.");
+    const auto cancelled = [] { return true; };
+    CHECK(CheckSdkLicenses(sdk, cancelled) == LicenseStatus::CheckFailed);
+    CHECK_FALSE(AcceptSdkLicenses(sdk, cancelled));
+    CHECK_FALSE(UninstallSystemImage(sdk, "system-images;android-35;google_apis;" + TestAbi(), cancelled));
+    CHECK(ListRemoteSystemImages(sdk, {}, cancelled).empty());
+    sdk.AvdManagerPath = manager.string();
+    CHECK(ListDeviceProfiles(sdk, cancelled).empty());
+    CHECK_THROWS_AS(ListRemoteSystemImages(sdk, {}), std::runtime_error);
+    CHECK_THROWS_AS(ListDeviceProfiles(sdk), std::runtime_error);
 }
 
 TEST_CASE("remote system image names use sdkmanager descriptions", "[system_image][list]") {

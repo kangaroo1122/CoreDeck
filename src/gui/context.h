@@ -122,6 +122,8 @@ namespace CoreDeck {
     };
 
     struct Context {
+        // Shared by short-lived SDK maintenance commands; set before joining any worker on exit.
+        std::shared_ptr<std::atomic<bool>> ShutdownRequested = std::make_shared<std::atomic<bool>>(false);
         struct JavaProbeWork {
             std::future<JavaHomeStatus> Future;
             std::string RequestedPath;

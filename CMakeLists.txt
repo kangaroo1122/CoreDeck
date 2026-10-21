@@ -255,6 +255,8 @@ add_executable(${PROJECT_NAME}
     src/gui/application.cpp
     src/gui/fonts.cpp
     src/gui/jdk_download_panel.cpp
+    src/gui/environment_probe.cpp
+    src/gui/avd_catalog.cpp
     src/gui/localization.cpp
     src/gui/shared_folder_sync.cpp
     src/gui/theme.cpp

@@ -3,6 +3,8 @@
 //
 
 #include <algorithm>
+#include <chrono>
+#include <stdexcept>
 #include <cstddef>
 #include <cctype>
 #include <cstdlib>
@@ -17,6 +19,7 @@
 #include "process.h"
 #include "sdk_progress.h"
 #include "utilities.h"
+#include "log.h"
 
 namespace CoreDeck {
     namespace {
@@ -63,6 +66,29 @@ namespace CoreDeck {
             }
             result.insert(result.end(), args.begin(), args.end());
             return result;
+        }
+
+        bool RunSdkMaintenanceCommand(const SdkInfo &sdk, const std::vector<std::string> &args,
+                                      const std::string &input, std::string &output,
+                                      const std::function<bool()> &shouldCancel) {
+            if (shouldCancel && shouldCancel()) {
+                return false;
+            }
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+            bool timedOut = false;
+            const bool succeeded = StreamCommandArgsWithEnvCancelable(
+                sdk.SdkManagerPath, BuildSdkManagerArgs(sdk, args), input, BuildAndroidToolEnvironment(sdk),
+                [&output](const std::string &line) { output += line + '\n'; },
+                [&] {
+                    timedOut = std::chrono::steady_clock::now() >= deadline;
+                    return timedOut || (shouldCancel && shouldCancel());
+                });
+            if (timedOut) {
+                Log::Error("SDK command timed out: ", args.front());
+            } else if (!succeeded && !(shouldCancel && shouldCancel())) {
+                Log::Error("SDK command failed: ", args.front(), ": ", output);
+            }
+            return succeeded;
         }
 
         std::string Trim(std::string value) {
@@ -185,19 +211,33 @@ namespace CoreDeck {
         }
     }
 
-    std::vector<DeviceProfile> ListDeviceProfiles(const SdkInfo &sdk) {
+    std::vector<DeviceProfile> ListDeviceProfiles(const SdkInfo &sdk, const std::function<bool()> &shouldCancel) {
         std::vector<DeviceProfile> devices;
 
         if (sdk.AvdManagerPath.empty()) {
             return devices;
         }
 
-        const std::string output = RunCommandArgsWithEnv(
+        if (shouldCancel && shouldCancel()) {
+            return devices;
+        }
+        std::string output;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        const bool ok = StreamCommandArgsWithEnvCancelable(
             sdk.AvdManagerPath,
             {"list", "device", "-c"},
             "",
-            BuildAndroidToolEnvironment(sdk)
+            BuildAndroidToolEnvironment(sdk),
+            [&output](const std::string &line) { output += line + '\n'; },
+            [&] { return std::chrono::steady_clock::now() >= deadline || (shouldCancel && shouldCancel()); }
         );
+        if (!ok) {
+            if (shouldCancel && shouldCancel()) {
+                return devices;
+            }
+            Log::Error("Device profile query failed: ", output);
+            throw std::runtime_error("Could not load device profiles. The command failed or timed out.");
+        }
         std::istringstream stream(output);
         std::string line;
         while (std::getline(stream, line)) {
@@ -309,19 +349,21 @@ namespace CoreDeck {
 
     std::vector<RemoteSystemImage> ListRemoteSystemImages(
         const SdkInfo &sdk,
-        const std::vector<SystemImage> &installedImages
+        const std::vector<SystemImage> &installedImages,
+        const std::function<bool()> &shouldCancel
     ) {
         std::vector<RemoteSystemImage> results;
         if (sdk.SdkManagerPath.empty()) {
             return results;
         }
 
-        const std::string output = RunCommandArgsWithEnv(
-            sdk.SdkManagerPath,
-            BuildSdkManagerArgs(sdk, {"--list"}),
-            "",
-            BuildAndroidToolEnvironment(sdk)
-        );
+        std::string output;
+        if (!RunSdkMaintenanceCommand(sdk, {"--list"}, "", output, shouldCancel)) {
+            if (shouldCancel && shouldCancel()) {
+                return results;
+            }
+            throw std::runtime_error("Could not load system images. The command failed or timed out.");
+        }
 
         std::unordered_map<std::string, bool> installedSet;
         for (const auto &img: installedImages) {
@@ -415,13 +457,16 @@ namespace CoreDeck {
             progress->Percent = 0.0F;
         }
 
-        StreamCommandArgsWithEnv(
+        const bool installed = !(progress && progress->CancelRequested.load()) && StreamCommandArgsWithEnvCancelable(
             sdk.SdkManagerPath,
             BuildSdkManagerArgs(sdk, {"--install", CanonicalImagePackagePath(packagePath)}),
             "",
             BuildAndroidToolEnvironment(sdk),
             [&progress](const std::string &line) {
                 ParseProgressLine(line, progress);
+            },
+            [progress] {
+                return progress && progress->CancelRequested.load();
             }
         );
 
@@ -429,50 +474,47 @@ namespace CoreDeck {
         std::string fsPath = packagePath;
         std::ranges::replace(fsPath, ';', '/');
         const std::string sysImg = Paths::JoinPaths({sdk.SdkPath, fsPath, "system.img"});
-        const bool ok = std::filesystem::exists(sysImg);
+        std::error_code error;
+        const bool cancelled = progress && progress->CancelRequested.load();
+        const bool ok = installed && !cancelled && std::filesystem::exists(sysImg, error);
 
         if (progress) {
             std::lock_guard lock(progress->Mutex);
             progress->Finished = true;
             progress->Succeeded = ok;
             progress->Percent = ok ? 1.0F : progress->Percent;
-            progress->StatusText = ok ? "Installation Completed!" : "Installation Failed!";
+            progress->StatusText = cancelled ? "Cancelled." : ok ? "Installation Completed!" : "Installation Failed!";
         }
 
         return ok;
     }
 
-    bool UninstallSystemImage(const SdkInfo &sdk, const std::string &packagePath) {
+    bool UninstallSystemImage(const SdkInfo &sdk, const std::string &packagePath,
+                              const std::function<bool()> &shouldCancel) {
         if (sdk.SdkManagerPath.empty() || packagePath.empty()) {
             return false;
         }
 
-        RunCommandArgsWithEnv(
-            sdk.SdkManagerPath,
-            BuildSdkManagerArgs(sdk, {"--uninstall", CanonicalImagePackagePath(packagePath)}),
-            "y\n",
-            BuildAndroidToolEnvironment(sdk)
-        );
+        std::string output;
+        const bool removed = RunSdkMaintenanceCommand(
+            sdk, {"--uninstall", CanonicalImagePackagePath(packagePath)}, "y\n", output, shouldCancel);
 
         std::string fsPath = packagePath;
         std::ranges::replace(fsPath, ';', '/');
         const std::string sysImg = Paths::JoinPaths({sdk.SdkPath, fsPath, "system.img"});
-        return !std::filesystem::exists(sysImg);
+        std::error_code error;
+        const bool exists = std::filesystem::exists(sysImg, error);
+        return removed && !error && !exists;
     }
 
-    LicenseCheckResult CheckSdkLicensesDetailed(const SdkInfo &sdk) {
+    LicenseCheckResult CheckSdkLicensesDetailed(const SdkInfo &sdk, const std::function<bool()> &shouldCancel) {
         if (sdk.SdkManagerPath.empty()) {
             return {.Status = LicenseStatus::CheckFailed, .Output = "SDK Manager was not found."};
         }
 
-        const std::string output = RunCommandArgsWithEnv(
-            sdk.SdkManagerPath,
-            BuildSdkManagerArgs(sdk, {"--licenses"}),
-            "N\n",
-            BuildAndroidToolEnvironment(sdk)
-        );
-
-        return {.Status = InterpretSdkLicenseOutput(output), .Output = output};
+        std::string output;
+        const bool ok = RunSdkMaintenanceCommand(sdk, {"--licenses"}, "N\n", output, shouldCancel);
+        return {.Status = ok ? InterpretSdkLicenseOutput(output) : LicenseStatus::CheckFailed, .Output = output};
     }
 
     LicenseStatus InterpretSdkLicenseOutput(const std::string &output) {
@@ -488,11 +530,11 @@ namespace CoreDeck {
         return LicenseStatus::CheckFailed;
     }
 
-    LicenseStatus CheckSdkLicenses(const SdkInfo &sdk) {
-        return CheckSdkLicensesDetailed(sdk).Status;
+    LicenseStatus CheckSdkLicenses(const SdkInfo &sdk, const std::function<bool()> &shouldCancel) {
+        return CheckSdkLicensesDetailed(sdk, shouldCancel).Status;
     }
 
-    bool AcceptSdkLicenses(const SdkInfo &sdk) {
+    bool AcceptSdkLicenses(const SdkInfo &sdk, const std::function<bool()> &shouldCancel) {
         if (sdk.SdkManagerPath.empty()) {
             return false;
         }
@@ -503,12 +545,8 @@ namespace CoreDeck {
             yes += "y\n";
         }
 
-        const std::string output = RunCommandArgsWithEnv(
-            sdk.SdkManagerPath,
-            BuildSdkManagerArgs(sdk, {"--licenses"}),
-            yes,
-            BuildAndroidToolEnvironment(sdk)
-        );
-        return InterpretSdkLicenseOutput(output) == LicenseStatus::AllAccepted;
+        std::string output;
+        const bool ok = RunSdkMaintenanceCommand(sdk, {"--licenses"}, yes, output, shouldCancel);
+        return ok && InterpretSdkLicenseOutput(output) == LicenseStatus::AllAccepted;
     }
 }

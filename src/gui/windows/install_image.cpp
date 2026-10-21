@@ -1,3 +1,4 @@
+#include "../async_work.h"
 //
 // Created by AbdulMuaz Aqeel on 18/04/2026.
 //
@@ -15,9 +16,31 @@
 #include "../widgets.h"
 #include "../theme.h"
 #include "../../core/utilities.h"
+#include "../../core/log.h"
 
 namespace CoreDeck {
+    void ShutdownImageInstallationWork(Context &context) {
+        ConsumeFuture(context.AvdCreationWork.SystemImageRemoval.Future);
+        ConsumeFuture(context.ImageInstallationWork.Prefetch.Future);
+        ConsumeFuture(context.ImageInstallationWork.InstallFuture);
+        ConsumeFuture(context.ImageInstallationWork.LicenseCheckFuture);
+        ConsumeFuture(context.ImageInstallationWork.LicenseAcceptFuture);
+    }
+
     namespace {
+        // Call only after readiness was checked; a worker failure must not escape the UI loop.
+        template <typename T>
+        T TakeImageTaskResult(std::future<T> &future, T failureValue) {
+            try {
+                return future.get();
+            } catch (const std::exception &e) {
+                Log::Error("System image task failed: ", e.what());
+            } catch (...) {
+                Log::Error("System image task failed with an unknown exception.");
+            }
+            return failureValue;
+        }
+
         struct ImageCategoryOption {
             ImageCategory Category;
             const char *Label;
@@ -91,10 +114,25 @@ namespace CoreDeck {
 
             try {
                 SystemImagePrefetchResult result = prefetch.Future.get();
-                context.AvdCreationWork.SystemImages = std::move(result.LocalImages);
-                work.RemoteImages = std::move(result.RemoteImages);
-                work.SelectedImage = result.SelectedImage;
                 work.Error = std::move(result.Error);
+                if (work.Error.empty()) {
+                    auto &creation = context.AvdCreationWork;
+                    std::string selected;
+                    if (creation.SelectedSystemImage >= 0 &&
+                        creation.SelectedSystemImage < static_cast<int>(creation.SystemImages.size())) {
+                        selected = creation.SystemImages[creation.SelectedSystemImage].PackagePath;
+                    }
+                    creation.SystemImages = std::move(result.LocalImages);
+                    creation.SelectedSystemImage = 0;
+                    for (int i = 0; i < static_cast<int>(creation.SystemImages.size()); ++i) {
+                        if (creation.SystemImages[i].PackagePath == selected) {
+                            creation.SelectedSystemImage = i;
+                            break;
+                        }
+                    }
+                    work.RemoteImages = std::move(result.RemoteImages);
+                    work.SelectedImage = result.SelectedImage;
+                }
             } catch (const std::exception &e) {
                 work.Error = e.what();
             } catch (...) {
@@ -106,6 +144,7 @@ namespace CoreDeck {
 
         void StartInstall(Context &context, const std::string &pkgPath) {
             auto &work = context.ImageInstallationWork;
+            work.Error.clear();
             work.Progress = std::make_shared<InstallProgressData>();
             work.Installing = true;
             auto progress = work.Progress;
@@ -138,21 +177,40 @@ namespace CoreDeck {
             return false;
         }
 
-        void RefreshSystemImageLists(Context &context) {
-            auto &images = context.AvdCreationWork.SystemImages;
-            images = ListSystemImages(context.Host.Sdk);
-            if (images.empty()) {
-                context.AvdCreationWork.SelectedSystemImage = 0;
-            } else {
-                context.AvdCreationWork.SelectedSystemImage = std::clamp(
-                    context.AvdCreationWork.SelectedSystemImage,
-                    0,
-                    static_cast<int>(images.size()) - 1
-                );
-            }
 
-            context.ImageInstallationWork.RemoteImages = ListRemoteSystemImages(context.Host.Sdk, images);
+    }
+
+    void RefreshSystemImageLists(Context &context, const std::string &selectedPackagePath) {
+        auto &work = context.ImageInstallationWork;
+        if (work.Prefetch.Future.valid()) {
+            return;
         }
+        work.Prefetch.Loading = true;
+        work.Prefetch.Ready = false;
+        work.Error.clear();
+        const SdkInfo sdk = context.Host.Sdk;
+        std::string selection = selectedPackagePath;
+        if (selection.empty() && work.SelectedImage >= 0 && work.SelectedImage < static_cast<int>(work.RemoteImages.size())) {
+            selection = work.RemoteImages[work.SelectedImage].PackagePath;
+        }
+        work.Prefetch.Future = std::async(std::launch::async, [sdk, selection, cancel = context.ShutdownRequested] {
+            SystemImagePrefetchResult result;
+            try {
+                result.LocalImages = ListSystemImages(sdk);
+                result.RemoteImages = ListRemoteSystemImages(sdk, result.LocalImages, [cancel] { return cancel->load(); });
+                for (int i = 0; i < static_cast<int>(result.RemoteImages.size()); i++) {
+                    if (result.RemoteImages[i].PackagePath == selection) {
+                        result.SelectedImage = i;
+                        break;
+                    }
+                }
+            } catch (const std::exception &e) {
+                result.Error = e.what();
+            } catch (...) {
+                result.Error = "Could not load system images.";
+            }
+            return result;
+        });
     }
 
     LabeledIconStyle SystemImageTypeStyleForVariant(const std::string &variant) {
@@ -244,7 +302,7 @@ namespace CoreDeck {
 
                 if (work.LicenseCheckFuture.valid() &&
                     work.LicenseCheckFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                    const LicenseStatus status = work.LicenseCheckFuture.get();
+                    const LicenseStatus status = TakeImageTaskResult(work.LicenseCheckFuture, LicenseStatus::CheckFailed);
                     work.LicenseBusy = false;
                     if (status == LicenseStatus::AllAccepted) {
                         StartInstall(context, work.PendingPackagePath);
@@ -259,7 +317,7 @@ namespace CoreDeck {
 
                 if (work.LicenseAcceptFuture.valid() &&
                     work.LicenseAcceptFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                    const bool ok = work.LicenseAcceptFuture.get();
+                    const bool ok = TakeImageTaskResult(work.LicenseAcceptFuture, false);
                     work.LicenseBusy = false;
                     work.AwaitingLicenseConsent = false;
                     if (ok && !work.PendingPackagePath.empty()) {
@@ -305,8 +363,8 @@ namespace CoreDeck {
                     if (PositiveButton("Agree & Install", !licenseBusy, ImVec2(halfWidth2, 0))) {
                         work.LicenseBusy = true;
                         const SdkInfo sdk = context.Host.Sdk;
-                        work.LicenseAcceptFuture = std::async(std::launch::async, [sdk] {
-                            return AcceptSdkLicenses(sdk);
+                        work.LicenseAcceptFuture = std::async(std::launch::async, [sdk, cancel = context.ShutdownRequested] {
+                            return AcceptSdkLicenses(sdk, [cancel] { return cancel->load(); });
                         });
                     }
                     ImGui::SameLine();
@@ -321,19 +379,23 @@ namespace CoreDeck {
 
                 if (work.InstallFuture.valid() &&
                     work.InstallFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                    const bool installed = work.InstallFuture.get();
+                    const bool installed = TakeImageTaskResult(work.InstallFuture, false);
                     work.Installing = false;
                     if (installed) {
                         RefreshSystemImageLists(context);
+                    } else {
+                        work.Error = "Could not install system image. Check the SDK Manager and try again.";
                     }
                 }
 
                 if (removalBusy && removal.Future.valid()) {
                     if (removal.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                        const bool removed = removal.Future.get();
+                        const bool removed = TakeImageTaskResult(removal.Future, false);
                         removal.Busy = false;
                         if (removed) {
                             RefreshSystemImageLists(context);
+                        } else {
+                            work.Error = "Could not remove system image. Check the SDK Manager and try again.";
                         }
                     }
                 }
@@ -584,12 +646,8 @@ namespace CoreDeck {
                         const std::string pkg = work.RemoteImages[work.SelectedImage].PackagePath;
                         removal.Busy = true;
                         const SdkInfo sdk = context.Host.Sdk;
-                        removal.Future = std::async(std::launch::async, [sdk, pkg] {
-                            try {
-                                return UninstallSystemImage(sdk, pkg);
-                            } catch (...) {
-                                return false;
-                            }
+                        removal.Future = std::async(std::launch::async, [sdk, pkg, cancel = context.ShutdownRequested] {
+                            return UninstallSystemImage(sdk, pkg, [cancel] { return cancel->load(); });
                         });
                     }
 
@@ -623,8 +681,8 @@ namespace CoreDeck {
                         work.LicenseError.clear();
                         work.LicenseBusy = true;
                         const SdkInfo sdk = context.Host.Sdk;
-                        work.LicenseCheckFuture = std::async(std::launch::async, [sdk] {
-                            return CheckSdkLicenses(sdk);
+                        work.LicenseCheckFuture = std::async(std::launch::async, [sdk, cancel = context.ShutdownRequested] {
+                            return CheckSdkLicenses(sdk, [cancel] { return cancel->load(); });
                         });
                     }
 

@@ -52,6 +52,7 @@ namespace CoreDeck {
             if (components.dwExtraInfoLength > 0) target.append(components.lpszExtraInfo, components.dwExtraInfoLength);
             HINTERNET session = WinHttpOpen(L"CoreDeck Update", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+            if (session) WinHttpSetTimeouts(session, 20000, 20000, 20000, 20000);
             HINTERNET connect = session ? WinHttpConnect(session, host.c_str(), components.nPort, 0) : nullptr;
             HINTERNET request = connect ? WinHttpOpenRequest(connect, L"GET", target.c_str(), nullptr,
                 WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
@@ -59,6 +60,11 @@ namespace CoreDeck {
             bool ok = request && WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
                                                     WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
                       WinHttpReceiveResponse(request, nullptr);
+            DWORD status = 0;
+            DWORD statusSize = sizeof(status);
+            ok = ok && WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX) &&
+                status >= 200 && status < 300;
             std::ofstream file(path, std::ios::binary | std::ios::trunc);
             std::uint64_t downloaded = 0;
             while (ok && file) {
@@ -80,6 +86,8 @@ namespace CoreDeck {
             if (request) WinHttpCloseHandle(request);
             if (connect) WinHttpCloseHandle(connect);
             if (session) WinHttpCloseHandle(session);
+            file.close();
+            if (!file && error.empty()) error = "Could not write update download.";
             return ok && file.good();
         }
 #else
@@ -115,6 +123,11 @@ namespace CoreDeck {
             curl_easy_setopt(curl, CURLOPT_USERAGENT, "CoreDeck Update");
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+            curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 20L);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 900L);
+            curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+            curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 20L);
+            curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlWriteFile);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -126,6 +139,8 @@ namespace CoreDeck {
                 error = result == CURLE_ABORTED_BY_CALLBACK ? "Cancelled" : curl_easy_strerror(result);
                 return false;
             }
+            file.close();
+            if (!file) error = "Could not write update download.";
             return file.good();
         }
 #endif
@@ -157,6 +172,10 @@ namespace CoreDeck {
         const std::shared_ptr<UpdateDownloadProgress> &progress
     ) {
         UpdateDownloadResult result;
+        if (progress && progress->CancelRequested.load()) {
+            result.Cancelled = true;
+            return result;
+        }
         const std::string packageName = std::filesystem::path(package.Name).filename().string();
         if (packageName.empty() || packageName != package.Name || checksum.DownloadUrl.empty()) {
             result.Error = "The release does not contain a valid update package and checksum.";
@@ -174,8 +193,9 @@ namespace CoreDeck {
 
         SetProgressStatus(progress, "Downloading checksum...");
         std::string error;
-        if (!DownloadFile(checksum.DownloadUrl, checksumPartialPath, nullptr, error)) {
-            result.Error = error;
+        if (!DownloadFile(checksum.DownloadUrl, checksumPartialPath, progress, error)) {
+            result.Cancelled = progress && progress->CancelRequested.load();
+            result.Error = result.Cancelled ? "" : error;
             std::filesystem::remove(checksumPartialPath, ec);
             return result;
         }

@@ -6,9 +6,16 @@
 #define EMU_LAUNCHER_PATHS_H
 
 #include <string>
+#include <filesystem>
 #include <vector>
 
 namespace CoreDeck::Paths {
+    // Replace without deleting the destination first; both paths must be on the same filesystem.
+    bool ReplaceFile(const std::filesystem::path &source, const std::filesystem::path &destination,
+                     std::error_code &error);
+
+    bool WriteTextFile(const std::filesystem::path &path, const std::string &text, std::error_code &error);
+
     enum class Platform : uint8_t {
         Windows,
         MacOS,

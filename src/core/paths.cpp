@@ -5,6 +5,7 @@
 #include "paths.h"
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -18,6 +19,49 @@
 #include "log.h"
 
 namespace CoreDeck::Paths {
+    bool ReplaceFile(const std::filesystem::path &source, const std::filesystem::path &destination,
+                     std::error_code &error) {
+#ifdef _WIN32
+        error.clear();
+        if (!MoveFileExW(source.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            error = std::error_code(static_cast<int>(GetLastError()), std::system_category());
+        }
+#else
+        std::filesystem::rename(source, destination, error);
+#endif
+        return !error;
+    }
+
+    bool WriteTextFile(const std::filesystem::path &path, const std::string &text, std::error_code &error) {
+        // Settings can be saved by multiple workers; serialize writes to their sibling temporary files.
+        static std::mutex writeMutex;
+        std::lock_guard lock(writeMutex);
+        error.clear();
+        if (!path.parent_path().empty()) {
+            std::filesystem::create_directories(path.parent_path(), error);
+            if (error) return false;
+        }
+        auto temporary = path;
+        temporary += ".tmp";
+        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        if (!file.is_open()) {
+            error = std::make_error_code(std::errc::io_error);
+            return false;
+        }
+        file << text;
+        file.close();
+        if (!file) {
+            error = std::make_error_code(std::errc::io_error);
+        } else {
+            ReplaceFile(temporary, path, error);
+        }
+        if (error) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+        }
+        return !error;
+    }
+
     Platform GetCurrentPlatform() {
 #if defined(_WIN32)
         return Platform::Windows;
@@ -294,8 +338,10 @@ namespace CoreDeck::Paths {
 
         void SaveSdkPathOverride(const std::string &path) {
             const std::string file = Paths::GetAppConfigPath(SDK_OVERRIDE_PATH);
-            std::ofstream out(file);
-            out << path;
+            std::error_code error;
+            if (!WriteTextFile(file, path, error)) {
+                Log::Error("Failed to save SDK path override: ", error.message());
+            }
         }
 
         void ClearSdkPathOverride() {

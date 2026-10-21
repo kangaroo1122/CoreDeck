@@ -9,6 +9,9 @@
 #include "gui/widgets.h"
 
 namespace CoreDeck {
+    // Call after cancellation has been requested for all modules.
+    void ShutdownImageInstallationWork(Context &context);
+
     LabeledIconStyle SystemImageTypeStyleForVariant(const std::string &variant);
 
     LabeledIconStyle SystemImageTypeStyleFor(const SystemImage &img);
@@ -20,6 +23,7 @@ namespace CoreDeck {
     std::string SystemImagePreviewLabel(const SystemImage &img);
 
     void BuildInstallImageWindow(Context &context);
+    void RefreshSystemImageLists(Context &context, const std::string &selectedPackagePath = "");
 }
 
 #endif // COREDECK_INSTALL_IMAGE_H

@@ -615,13 +615,10 @@ namespace CoreDeck {
     void SaveOptionsToFile(const std::string &filePath, const std::vector<EmulatorOption> &options) {
         try {
             const auto json = rfl::json::write(options);
-            std::ofstream file(filePath);
-            if (!file.is_open()) {
-                Log::Error("Failed to save options to: ", filePath);
-                return;
+            std::error_code ec;
+            if (!Paths::WriteTextFile(filePath, json, ec)) {
+                Log::Error("Failed to save options to: ", filePath, ": ", ec.message());
             }
-            file << json;
-            file.close();
         } catch (const std::exception &e) {
             Log::Error("Failed to serialize options: ", e.what());
         }

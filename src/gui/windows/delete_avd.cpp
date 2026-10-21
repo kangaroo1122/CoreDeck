@@ -6,6 +6,7 @@
 
 #include "delete_avd.h"
 #include "../application.h"
+#include "../avd_catalog.h"
 #include "../localization.h"
 #include "../widgets.h"
 #include "../../core/avd.h"

@@ -8,6 +8,7 @@
 
 #include "rename_avd.h"
 #include "../application.h"
+#include "../avd_catalog.h"
 #include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"

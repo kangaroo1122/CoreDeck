@@ -8,6 +8,9 @@
 #include "../context.h"
 
 namespace CoreDeck {
+    // Call after cancellation has been requested for all modules.
+    void ShutdownSdkPreferencesWork(Context &context);
+
     bool BuildPreferencesWindow(Context &context);
 }
 

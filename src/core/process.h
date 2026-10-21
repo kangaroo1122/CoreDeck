@@ -34,14 +34,14 @@ namespace CoreDeck {
         const ProcessEnvironment &environment
     );
 
-    void StreamCommandArgs(
+    bool StreamCommandArgs(
         const std::string &path,
         const std::vector<std::string> &args,
         const std::string &stdinData,
         const std::function<void(const std::string &)> &onLine
     );
 
-    void StreamCommandArgsWithEnv(
+    bool StreamCommandArgsWithEnv(
         const std::string &path,
         const std::vector<std::string> &args,
         const std::string &stdinData,

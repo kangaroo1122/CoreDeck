@@ -6,6 +6,8 @@
 #define COREDECK_SYSTEM_IMAGE_H
 
 #include <memory>
+#include <atomic>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -36,6 +38,7 @@ namespace CoreDeck {
     };
 
     struct InstallProgressData {
+        std::atomic<bool> CancelRequested{false};
         std::mutex Mutex;
         float Percent = 0.0F;
         std::string StatusText;
@@ -44,7 +47,7 @@ namespace CoreDeck {
         bool Succeeded = false;
     };
 
-    std::vector<DeviceProfile> ListDeviceProfiles(const SdkInfo &sdk);
+    std::vector<DeviceProfile> ListDeviceProfiles(const SdkInfo &sdk, const std::function<bool()> &shouldCancel = {});
 
     std::vector<std::string> SupportedSystemImageAbis();
 
@@ -54,7 +57,8 @@ namespace CoreDeck {
 
     std::vector<RemoteSystemImage> ListRemoteSystemImages(
         const SdkInfo &sdk,
-        const std::vector<SystemImage> &installedImages
+        const std::vector<SystemImage> &installedImages,
+        const std::function<bool()> &shouldCancel = {}
     );
 
     bool InstallSystemImage(
@@ -63,7 +67,8 @@ namespace CoreDeck {
         const std::shared_ptr<InstallProgressData> &progress = nullptr
     );
 
-    bool UninstallSystemImage(const SdkInfo &sdk, const std::string &packagePath);
+    bool UninstallSystemImage(const SdkInfo &sdk, const std::string &packagePath,
+                              const std::function<bool()> &shouldCancel = {});
 
     enum class LicenseStatus : uint8_t {
         AllAccepted,
@@ -76,13 +81,13 @@ namespace CoreDeck {
         std::string Output;
     };
 
-    LicenseCheckResult CheckSdkLicensesDetailed(const SdkInfo &sdk);
+    LicenseCheckResult CheckSdkLicensesDetailed(const SdkInfo &sdk, const std::function<bool()> &shouldCancel = {});
 
     LicenseStatus InterpretSdkLicenseOutput(const std::string &output);
 
-    LicenseStatus CheckSdkLicenses(const SdkInfo &sdk);
+    LicenseStatus CheckSdkLicenses(const SdkInfo &sdk, const std::function<bool()> &shouldCancel = {});
 
-    bool AcceptSdkLicenses(const SdkInfo &sdk);
+    bool AcceptSdkLicenses(const SdkInfo &sdk, const std::function<bool()> &shouldCancel = {});
 }
 
 #endif // COREDECK_SYSTEM_IMAGE_H

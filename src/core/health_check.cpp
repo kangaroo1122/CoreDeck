@@ -9,6 +9,13 @@
 #include "system_image.h"
 
 namespace CoreDeck {
+    bool IsAvdManagerHelpOutput(const std::string &output) {
+        return output.find("Usage:") != std::string::npos &&
+               output.find("avdmanager [global options]") != std::string::npos &&
+               output.find("list avd") != std::string::npos &&
+               output.find("create avd") != std::string::npos;
+    }
+
     std::vector<HealthCheckResult> RunEnvironmentHealthCheck(
         const SdkInfo &sdk, const std::shared_ptr<std::atomic<bool>> &cancel
     ) {
@@ -19,14 +26,19 @@ namespace CoreDeck {
             std::error_code error;
             return !path.empty() && std::filesystem::is_regular_file(path, error);
         };
+        bool timedOut = false;
         const auto run = [&](const std::string &path, const std::vector<std::string> &args,
                              std::string &output, const std::string &input = "") {
+            timedOut = false;
             if (path.empty() || cancel->load()) return false;
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
             return StreamCommandArgsWithEnvCancelable(path, args, input, environment,
                 [&](const std::string &line) {
                     if (output.size() < 65536) output += line + "\n";
-                }, [&] { return cancel->load() || std::chrono::steady_clock::now() >= deadline; });
+                }, [&] {
+                    timedOut = std::chrono::steady_clock::now() >= deadline;
+                    return cancel->load() || timedOut;
+                });
         };
         const auto add = [&](const char *label, HealthStatus status, const std::string &detail, HealthFix fix) {
             results.push_back({label, status, detail, status == HealthStatus::Passed ? HealthFix::None : fix});
@@ -67,6 +79,10 @@ namespace CoreDeck {
 
         output.clear();
         bool toolsOk = false;
+        std::string toolsDetail;
+        if (!rootOk) toolsDetail = "Select an existing Android SDK directory.";
+        else if (!exists(sdk.SdkManagerPath)) toolsDetail = "sdkmanager was not found. Install SDK command-line tools.";
+        else if (!exists(sdk.AvdManagerPath)) toolsDetail = "avdmanager was not found. Install SDK command-line tools.";
         if (rootOk && javaOk && exists(sdk.SdkManagerPath) && exists(sdk.AvdManagerPath) &&
             run(sdk.SdkManagerPath, {"--sdk_root=" + sdk.SdkPath, "--version"}, output)) {
             // Ignore warning lines rather than mistaking numbers in diagnostics for a version.
@@ -75,16 +91,23 @@ namespace CoreDeck {
             while (std::getline(versions, line)) {
                 if (std::regex_match(line, versionPattern)) toolsOk = true;
             }
+            if (!toolsOk) toolsDetail = "sdkmanager returned an unrecognized version response.";
+        } else if (toolsDetail.empty()) {
+            toolsDetail = timedOut ? "sdkmanager version check timed out." : "sdkmanager could not run. Check the configured JDK and SDK permissions.";
         }
         if (toolsOk) {
             std::string help;
-            toolsOk = run(sdk.AvdManagerPath, {"--help"}, help) &&
-                help.find("avdmanager") != std::string::npos;
+            // Google's avdmanager can print valid help and exit with code 1.
+            // Accept the complete help signature, but never a timeout or cancellation.
+            (void)run(sdk.AvdManagerPath, {"--help"}, help);
+            toolsOk = !timedOut && !cancel->load() && IsAvdManagerHelpOutput(help);
+            if (!toolsOk) toolsDetail = timedOut ? "avdmanager help check timed out." :
+                "avdmanager did not return valid help. Check the configured JDK and SDK permissions.";
         }
         add("SDK command-line tools", !javaOk ? HealthStatus::Skipped :
             (toolsOk ? HealthStatus::Passed : HealthStatus::Failed),
             !javaOk ? "Configure Java before checking SDK tools." :
-            (toolsOk ? sdk.SdkManagerPath : "Tool missing, failed to run, or timed out. Check SDK configuration."),
+            (toolsOk ? sdk.SdkManagerPath : toolsDetail),
             !javaOk ? HealthFix::Jdk : HealthFix::Sdk);
         if (cancel->load()) return results;
 

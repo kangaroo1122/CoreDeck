@@ -59,9 +59,9 @@ namespace CoreDeck {
 
     std::vector<std::string> ListAvdNames(const SdkInfo &sdk, const std::function<bool()> &shouldCancel = {});
 
-    bool CreateAvd(const SdkInfo &sdk, const AvdCreationData &data);
+    bool CreateAvd(const SdkInfo &sdk, const AvdCreationData &data, const std::function<bool()> &shouldCancel = {});
 
-    bool DeleteAvd(const SdkInfo &sdk, const std::string &avdName);
+    bool DeleteAvd(const SdkInfo &sdk, const std::string &avdName, const std::function<bool()> &shouldCancel = {});
 
     std::vector<AvdSnapshotInfo> ListAvdSnapshots(const std::string &avdPath, std::string *error = nullptr);
 

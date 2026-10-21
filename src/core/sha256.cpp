@@ -142,7 +142,7 @@ namespace CoreDeck {
         return hash.Finalize();
     }
 
-    std::string Sha256File(const std::string &path) {
+    std::string Sha256File(const std::string &path, const std::function<bool()> &shouldCancel) {
         std::ifstream input(path, std::ios::binary);
         if (!input) {
             return {};
@@ -151,6 +151,7 @@ namespace CoreDeck {
         Sha256 hash;
         std::array<char, 64 * 1024> buffer{};
         while (input) {
+            if (shouldCancel && shouldCancel()) return {};
             input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
             const std::streamsize read = input.gcount();
             if (read > 0) {

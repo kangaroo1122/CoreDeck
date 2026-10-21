@@ -339,7 +339,7 @@ namespace CoreDeck {
         return avds;
     }
 
-    bool CreateAvd(const SdkInfo &sdk, const AvdCreationData &data) {
+    bool CreateAvd(const SdkInfo &sdk, const AvdCreationData &data, const std::function<bool()> &shouldCancel) {
         if (sdk.AvdManagerPath.empty()) {
             return false;
         }
@@ -359,10 +359,14 @@ namespace CoreDeck {
             args.emplace_back("-d");
             args.push_back(data.DeviceId);
         }
-        RunCommandArgsWithEnv(sdk.AvdManagerPath, args, "no\n", BuildAndroidToolEnvironment(sdk));
-
         const std::string avdDir = Paths::GetAvdDirectory();
         const std::string configPath = Paths::JoinPaths({avdDir, data.Name + ".avd", "config.ini"});
+        const std::string avdFolder = Paths::JoinPaths({avdDir, data.Name + ".avd"});
+        if (std::filesystem::exists(avdFolder) || (shouldCancel && shouldCancel())) return false;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+        if (!StreamCommandArgsWithEnvCancelable(sdk.AvdManagerPath, args, "no\n", BuildAndroidToolEnvironment(sdk), {}, [&] {
+            return (shouldCancel && shouldCancel()) || std::chrono::steady_clock::now() >= deadline;
+        })) return false;
 
         if (std::filesystem::exists(configPath)) {
             std::ofstream file(configPath, std::ios::app);
@@ -386,24 +390,31 @@ namespace CoreDeck {
                         file << "skin.path=" << data.SkinPath << "\n";
                     }
                 }
+                file.close();
+                if (!file) return false;
+            } else {
+                return false;
             }
         }
 
-        const std::string avdFolder = Paths::JoinPaths({avdDir, data.Name + ".avd"});
-        return std::filesystem::exists(avdFolder);
+        return std::filesystem::exists(configPath);
     }
 
-    bool DeleteAvd(const SdkInfo &sdk, const std::string &avdName) {
+    bool DeleteAvd(const SdkInfo &sdk, const std::string &avdName, const std::function<bool()> &shouldCancel) {
         if (sdk.AvdManagerPath.empty()) {
             return false;
         }
 
-        RunCommandArgsWithEnv(
+        if (shouldCancel && shouldCancel()) return false;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+        if (!StreamCommandArgsWithEnvCancelable(
             sdk.AvdManagerPath,
             {"delete", "avd", "-n", avdName},
             "",
-            BuildAndroidToolEnvironment(sdk)
-        );
+            BuildAndroidToolEnvironment(sdk), {}, [&] {
+                return (shouldCancel && shouldCancel()) || std::chrono::steady_clock::now() >= deadline;
+            }
+        )) return false;
 
         const std::string avdDir = Paths::GetAvdDirectory();
         const std::string avdFolder = Paths::JoinPaths({avdDir, avdName + ".avd"});

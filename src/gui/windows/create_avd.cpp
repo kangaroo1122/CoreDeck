@@ -358,8 +358,9 @@ namespace CoreDeck {
                     context.Jobs.AvdCreation.Error.clear();
                     context.Jobs.AvdCreation.Busy = true;
                     const SdkInfo sdk = context.Host.Sdk;
-                    context.Jobs.AvdCreation.Future = std::async(std::launch::async, [sdk, creationData] {
-                        return CreateAvd(sdk, creationData);
+                    const auto shutdown = context.ShutdownRequested;
+                    context.Jobs.AvdCreation.Future = std::async(std::launch::async, [sdk, creationData, shutdown] {
+                        return CreateAvd(sdk, creationData, [shutdown] { return shutdown->load(); });
                     });
                 }
             }

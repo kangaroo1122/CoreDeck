@@ -216,7 +216,14 @@ namespace CoreDeck {
             return result;
         }
 
-        if (std::filesystem::exists(packagePath) && detail::Sha256File(packagePath.string()) == *expectedHash) {
+        const auto cancelled = [&] { return progress && progress->CancelRequested.load(); };
+        const bool cached = std::filesystem::exists(packagePath) &&
+                            CoreDeck::Sha256File(packagePath.string(), cancelled) == *expectedHash;
+        if (cancelled()) {
+            result.Cancelled = true;
+            return result;
+        }
+        if (cached) {
             result.Succeeded = true;
             result.PackagePath = packagePath.string();
             SetProgressStatus(progress, "Update ready to install.");
@@ -237,7 +244,13 @@ namespace CoreDeck {
         }
 
         SetProgressStatus(progress, "Verifying update...");
-        if (detail::Sha256File(partialPath.string()) != *expectedHash) {
+        const auto hash = CoreDeck::Sha256File(partialPath.string(), cancelled);
+        if (cancelled()) {
+            std::filesystem::remove(partialPath, ec);
+            result.Cancelled = true;
+            return result;
+        }
+        if (hash != *expectedHash) {
             std::filesystem::remove(partialPath, ec);
             result.Error = "The downloaded update failed SHA-256 verification.";
             return result;

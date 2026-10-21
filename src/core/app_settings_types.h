@@ -6,6 +6,7 @@
 #define COREDECK_APP_SETTINGS_TYPES_H
 
 #include <string>
+#include <vector>
 
 namespace CoreDeck {
     struct AppSettings {
@@ -35,6 +36,7 @@ namespace CoreDeck {
         std::string JavaHomePath;
         bool IncludeBetaUpdates = false;
         bool CheckForUpdatesOnLaunch = true;
+        std::vector<std::string> RecentApks;
     };
 }
 

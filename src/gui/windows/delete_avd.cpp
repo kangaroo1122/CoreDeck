@@ -21,8 +21,9 @@ namespace CoreDeck {
         context.Jobs.AvdDeletion.TargetName = avdName;
         context.Jobs.AvdDeletion.Busy = true;
         const SdkInfo sdk = context.Host.Sdk;
-        context.Jobs.AvdDeletion.Future = std::async(std::launch::async, [sdk, avdName]() {
-            return DeleteAvd(sdk, avdName);
+        const auto shutdown = context.ShutdownRequested;
+        context.Jobs.AvdDeletion.Future = std::async(std::launch::async, [sdk, avdName, shutdown]() {
+            return DeleteAvd(sdk, avdName, [shutdown] { return shutdown->load(); });
         });
     }
 

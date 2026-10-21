@@ -6,12 +6,13 @@
 #define COREDECK_SHA256_H
 
 #include <string>
+#include <functional>
 #include <string_view>
 
 namespace CoreDeck {
     std::string Sha256Hex(std::string_view input);
 
-    std::string Sha256File(const std::string &path);
+    std::string Sha256File(const std::string &path, const std::function<bool()> &shouldCancel = {});
 
     bool EqualsIgnoreCaseHex(std::string_view left, std::string_view right);
 }

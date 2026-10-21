@@ -19,6 +19,34 @@ TEST_CASE("AVD enumeration reports command failures", "[avd][list]") {
     CHECK_THROWS(ListAvdNames(sdk));
 }
 
+#if !defined(_WIN32)
+TEST_CASE("AVD mutations respect command failure and cancellation", "[avd][process]") {
+    const auto directory = fs::temp_directory_path() /
+        ("coredeck-avd-command-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(directory);
+    const auto script = directory / "avdmanager";
+    { std::ofstream file(script); file << "#!/bin/sh\nexit 1\n"; }
+    fs::permissions(script, fs::perms::owner_all);
+    SdkInfo sdk;
+    sdk.AvdManagerPath = script.string();
+    AvdCreationData data;
+    data.Name = directory.filename().string();
+    data.SystemImagePackagePath = "system-images;android-36;google_apis;arm64-v8a";
+    CHECK_FALSE(CreateAvd(sdk, data));
+    // Absence of the directory alone must not turn a failed delete into success.
+    CHECK_FALSE(DeleteAvd(sdk, data.Name));
+    CHECK_FALSE(CreateAvd(sdk, data, [] { return true; }));
+    CHECK_FALSE(DeleteAvd(sdk, data.Name, [] { return true; }));
+    { std::ofstream file(script); file << "#!/bin/sh\nsleep 30\n"; }
+    const auto started = std::chrono::steady_clock::now();
+    CHECK_FALSE(DeleteAvd(sdk, data.Name, [&] {
+        return std::chrono::steady_clock::now() - started > std::chrono::milliseconds(100);
+    }));
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(5));
+    fs::remove_all(directory);
+}
+#endif
+
 namespace {
     fs::path UniqueTempDir(const std::string &prefix) {
         std::random_device rd;

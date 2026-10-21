@@ -15,6 +15,7 @@ namespace CoreDeck {
         std::string AdbPath;
         std::string AvdManagerPath;
         std::string SdkManagerPath;
+        std::string ApkAnalyzerPath;
         std::string JavaHomePath;
         bool IsFound = false;
     };

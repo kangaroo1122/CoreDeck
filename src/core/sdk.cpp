@@ -78,6 +78,7 @@ namespace CoreDeck {
         if (!sdk.AvdManagerPath.empty()) {
             const std::filesystem::path avdMgrPath(sdk.AvdManagerPath);
             sdk.SdkManagerPath = FindCmdlineTool(avdMgrPath.parent_path().string(), "sdkmanager");
+            sdk.ApkAnalyzerPath = FindCmdlineTool(avdMgrPath.parent_path().string(), "apkanalyzer");
         }
 
         if (std::filesystem::exists(sdk.EmulatorPath)) {

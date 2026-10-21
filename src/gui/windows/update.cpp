@@ -12,6 +12,7 @@
 #include "update.h"
 #include "../../core/utilities.h"
 #include "../../core/update_download.h"
+#include "../../core/log.h"
 #include "../localization.h"
 #include "../theme.h"
 #include "../widgets.h"
@@ -31,9 +32,22 @@ namespace CoreDeck {
             if (!updates.DownloadFuture.valid() || updates.DownloadFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
                 return;
             }
-            const UpdateDownloadResult result = updates.DownloadFuture.get();
+            UpdateDownloadResult result;
+            try {
+                result = updates.DownloadFuture.get();
+            } catch (const std::exception &e) {
+                Log::Error("Update download failed: ", e.what());
+                result.Error = "Update download failed.";
+            } catch (...) {
+                result.Error = "Update download failed.";
+            }
+            const bool cancelled = updates.DownloadProgress && updates.DownloadProgress->CancelRequested.load();
             updates.DownloadInFlight = false;
             updates.DownloadProgress.reset();
+            if (cancelled || result.Cancelled) {
+                updates.DownloadError.clear();
+                return;
+            }
             if (!result.Succeeded) {
                 updates.DownloadError = result.Error;
                 return;

@@ -1404,6 +1404,10 @@ namespace CoreDeck {
             }
 
             PollSdkManagerWork(context, sdkPathBuffer, sizeof(sdkPathBuffer));
+            if (context.UI.OpenSdkPreferences) {
+                activeSection = PrefsSection::AndroidSdk;
+                context.UI.OpenSdkPreferences = false;
+            }
             if (IsJdkDownloadBusy(context)) {
                 activeSection = PrefsSection::JavaJdk;
             } else if (IsSdkManagerBusy(context.SdkManagerWork)) {

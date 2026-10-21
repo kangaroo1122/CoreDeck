@@ -42,14 +42,15 @@ namespace CoreDeck {
     std::uintmax_t GetDirectorySize(const std::string &path) {
         std::uintmax_t total = 0;
         std::error_code ec;
-        for (const auto &entry: std::filesystem::recursive_directory_iterator(
-                 path,
-                 std::filesystem::directory_options::skip_permission_denied,
-                 ec
-             )) {
+        std::filesystem::recursive_directory_iterator it(path, std::filesystem::directory_options::skip_permission_denied, ec), end;
+        while (!ec && it != end) {
+            const auto &entry = *it;
             if (entry.is_regular_file(ec)) {
-                total += entry.file_size(ec);
+                const auto size = entry.file_size(ec);
+                if (!ec) total += size;
             }
+            ec.clear();
+            it.increment(ec);
         }
         return total;
     }

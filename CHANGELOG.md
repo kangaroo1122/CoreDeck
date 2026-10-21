@@ -1,3 +1,9 @@
+## [v0.14.0-beta.4](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.4) — 2026-10-21
+
+- Expand APK Analyzer into a dedicated workspace using upstream analysis support, with searchable file trees, size breakdowns, compression and alignment details, APK comparison, drag-and-drop, and recent files; retain installation and package-based Logcat integration
+- Harden Android tool execution with broken-pipe protection, Windows batch argument handling, and reliable AVD creation/deletion checks, timeouts, and shutdown cancellation
+- Handle background update and storage scan failures, correct storage size calculations after file errors, and honor update cancellation during checksum verification and before opening installers
+
 ## [v0.14.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.3) — 2026-10-21
 
 - Add APK analysis with package metadata, API requirements, architectures, and permissions, plus background installation and package-based Logcat filtering

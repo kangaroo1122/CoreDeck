@@ -14,6 +14,7 @@
 #include "../theme.h"
 #include "gui/context.h"
 #include "../../core/utilities.h"
+#include "../../core/log.h"
 
 namespace CoreDeck {
     namespace {
@@ -43,6 +44,7 @@ namespace CoreDeck {
             auto &disk = context.DiskUsage;
             disk.Loading = true;
             disk.Ready = false;
+            disk.Error.clear();
 
             const auto avds = context.Catalog.Avds;
             const std::string sdkPath = context.Host.Sdk.SdkPath;
@@ -105,18 +107,26 @@ namespace CoreDeck {
         if (RoundedBeginPopupModal("Storage Overview###StorageDialog", &context.UI.ShowStorageDialog, WINDOW_AUTO_RESIZE_FLAGS)) {
             auto &disk = context.DiskUsage;
 
-            if (!disk.Ready && !disk.Loading.load() && !disk.Future.valid()) {
+            if (!disk.Ready && disk.Error.empty() && !disk.Loading.load() && !disk.Future.valid()) {
                 StartStorageScan(context);
             }
 
             if (disk.Loading.load() && disk.Future.valid() &&
                 disk.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                disk.LastScan = disk.Future.get();
-                disk.Ready = true;
+                try {
+                    disk.LastScan = disk.Future.get();
+                    disk.Ready = true;
+                } catch (const std::exception &e) {
+                    Log::Error("Storage scan failed: ", e.what());
+                    disk.Error = "Could not calculate storage usage.";
+                } catch (...) {
+                    disk.Error = "Could not calculate storage usage.";
+                }
                 disk.Loading = false;
             }
 
             const bool isLoading = disk.Loading.load();
+            if (!disk.Error.empty()) ImGui::TextWrapped("%s", Tr(disk.Error.c_str()));
             const auto &[TotalAvdSize, SystemImagesSize] = disk.LastScan;
             const std::uintmax_t grandTotal = TotalAvdSize + SystemImagesSize;
 

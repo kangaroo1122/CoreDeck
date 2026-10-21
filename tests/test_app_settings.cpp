@@ -70,6 +70,8 @@ TEST_CASE("AppSettings preserves a saved UI font size", "[app_settings][font]") 
 TEST_CASE("AppSettings preserves disabled startup update checks", "[app_settings][updates]") {
     AppSettings settings;
     settings.CheckForUpdatesOnLaunch = false;
+    settings.RecentApks = {"/tmp/demo app.apk", "/tmp/另一个.apk"};
     const auto restored = rfl::json::read<AppSettings, rfl::DefaultIfMissing>(rfl::json::write(settings)).value();
     CHECK_FALSE(restored.CheckForUpdatesOnLaunch);
+    CHECK(restored.RecentApks == settings.RecentApks);
 }

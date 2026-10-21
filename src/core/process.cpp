@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
+#include <cerrno>
 #include <string>
 #include <thread>
 
@@ -20,6 +21,7 @@
 #include <process.h>
 #else
 #include <csignal>
+#include <pthread.h>
 #include <unistd.h>
 #include <sys/fcntl.h>
 #include <sys/wait.h>
@@ -67,13 +69,36 @@ namespace CoreDeck {
         return ext == ".bat" || ext == ".cmd";
     }
 
-    static std::string BuildCommandLine(const std::string &path, const std::vector<std::string> &args) {
+    static std::string BuildCommandLine(const std::string &path, const std::vector<std::string> &args,
+                                        ProcessEnvironment &environment) {
+        if (IsBatchFile(path)) {
+            // Expand values once, inside quotes, with delayed expansion disabled.
+            // CRT quoting alone does not protect cmd.exe metacharacters.
+            std::string command = "cmd.exe /D /V:OFF /S /C \"";
+            auto append = [&](const std::string &value, const size_t index) {
+                if (value.find_first_of("\"\r\n") != std::string::npos) return false;
+                if (value.empty()) {
+                    command += "\"\" ";
+                    return true;
+                }
+                const std::string key = "COREDECK_BATCH_ARG_" + std::to_string(index);
+                std::erase_if(environment, [&](const auto &entry) { return EnvKeyEquals(entry.first, key); });
+                environment.emplace_back(key, value);
+                command += "\"%" + key + "%\" ";
+                return true;
+            };
+            if (!append(path, 0)) return {};
+            for (size_t i = 0; i < args.size(); ++i) {
+                if (!append(args[i], i + 1)) return {};
+            }
+            command.pop_back();
+            return command + "\"";
+        }
         std::string cmd = QuoteArg(path);
         for (const auto &arg: args) {
             cmd.push_back(' ');
             cmd += QuoteArg(arg);
         }
-        if (IsBatchFile(path)) return "cmd.exe /S /C \"" + cmd + "\"";
         return cmd;
     }
 
@@ -168,8 +193,9 @@ namespace CoreDeck {
         }
         SetHandleInformation(hInW, HANDLE_FLAG_INHERIT, 0);
 
-        std::string cmdLine = BuildCommandLine(path, args);
-        std::vector<char> environmentBlock = BuildEnvironmentBlock(environment);
+        auto commandEnvironment = environment;
+        std::string cmdLine = BuildCommandLine(path, args, commandEnvironment);
+        std::vector<char> environmentBlock = BuildEnvironmentBlock(commandEnvironment);
 
         STARTUPINFOA si = {};
         si.cb = sizeof(si);
@@ -179,7 +205,7 @@ namespace CoreDeck {
         si.hStdError = hOutW;
 
         PROCESS_INFORMATION pi = {};
-        if (!CreateProcessA(
+        if (cmdLine.empty() || !CreateProcessA(
                 nullptr,
                 const_cast<char *>(cmdLine.c_str()),
                 nullptr,
@@ -305,7 +331,32 @@ namespace CoreDeck {
         }
 
         if (!stdinData.empty()) {
-            [[maybe_unused]] ssize_t w = write(inPipe[1], stdinData.data(), stdinData.size());
+            // Block SIGPIPE only on this worker; do not change the application's
+            // signal disposition or consume a signal that was already pending.
+            sigset_t blocked, previous, pending;
+            sigemptyset(&blocked);
+            sigaddset(&blocked, SIGPIPE);
+            if (pthread_sigmask(SIG_BLOCK, &blocked, &previous) == 0) {
+                sigpending(&pending);
+                const bool wasPending = sigismember(&pending, SIGPIPE) == 1;
+                size_t offset = 0;
+                while (offset < stdinData.size()) {
+                    const ssize_t written = write(inPipe[1], stdinData.data() + offset, stdinData.size() - offset);
+                    if (written > 0) offset += static_cast<size_t>(written);
+                    else if (written < 0 && errno == EINTR) continue;
+                    else {
+                        if (written < 0 && errno == EPIPE && !wasPending) {
+                            sigpending(&pending);
+                            if (sigismember(&pending, SIGPIPE) == 1) {
+                                int signal = 0;
+                                sigwait(&blocked, &signal);
+                            }
+                        }
+                        break;
+                    }
+                }
+                pthread_sigmask(SIG_SETMASK, &previous, nullptr);
+            }
         }
         close(inPipe[1]);
 
@@ -419,7 +470,9 @@ namespace CoreDeck {
             return 0;
         }
 
-        std::string cmdLine = BuildCommandLine(path, args);
+        ProcessEnvironment commandEnvironment;
+        std::string cmdLine = BuildCommandLine(path, args, commandEnvironment);
+        auto environmentBlock = BuildEnvironmentBlock(commandEnvironment);
 
         STARTUPINFOA si = {};
         si.cb = sizeof(si);
@@ -429,7 +482,8 @@ namespace CoreDeck {
 
         PROCESS_INFORMATION pi = {};
 
-        if (!CreateProcessA(nullptr, const_cast<char *>(cmdLine.c_str()), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        if (cmdLine.empty() || !CreateProcessA(nullptr, const_cast<char *>(cmdLine.c_str()), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+                            environmentBlock.empty() ? nullptr : environmentBlock.data(), nullptr, &si, &pi)) {
             CloseHandle(hReadPipe);
             CloseHandle(hWritePipe);
             return 0;

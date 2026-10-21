@@ -649,21 +649,23 @@ namespace CoreDeck {
         const ImGuiID dockSpaceId = ImGui::DockSpaceOverViewport(
             0,
             ImGui::GetMainViewport(),
-            ImGuiDockNodeFlags_NoUndocking
+            ImGuiDockNodeFlags_NoUndocking | (m_Context.ApkAnalyzer.Open ? ImGuiDockNodeFlags_KeepAliveOnly : 0)
         );
 
 #if !defined(__APPLE__)
         BuildMainMenuBar(m_Context);
 #endif
 
-        BuildDockLayout(m_Context, dockSpaceId);
+        if (!m_Context.ApkAnalyzer.Open) {
+            BuildDockLayout(m_Context, dockSpaceId);
 
-        BuildSdkMissingBanner(m_Context);
-        BuildAvdOptionsWindow(m_Context);
-        BuildAvdListWindow(m_Context);
-        BuildAvdInfoWindow(m_Context);
-        BuildAvdLogsWindow(m_Context);
-        BuildDeviceExplorerWindow(m_Context);
+            BuildSdkMissingBanner(m_Context);
+            BuildAvdOptionsWindow(m_Context);
+            BuildAvdListWindow(m_Context);
+            BuildAvdInfoWindow(m_Context);
+            BuildAvdLogsWindow(m_Context);
+            BuildDeviceExplorerWindow(m_Context);
+        }
 
         if (m_Context.UI.ShowQuitDialog) {
             BuildQuitConfirmWindow(m_Context);
@@ -905,6 +907,17 @@ namespace CoreDeck {
 
     void Application::m_SetupCallbacks() {
         glfwSetWindowUserPointer(m_Window, this);
+        glfwSetDropCallback(m_Window, [](GLFWwindow *window, int count, const char **paths) {
+            auto *app = static_cast<Application *>(glfwGetWindowUserPointer(window));
+            if (!app || count < 1) return;
+            std::string path = paths[0];
+            auto extension = std::filesystem::path(path).extension().string();
+            std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (extension == ".apk") {
+                app->m_Context.ApkAnalyzer.PendingDrop = std::move(path);
+                app->m_Context.ApkAnalyzer.Open = true;
+            }
+        });
 
         glfwSetScrollCallback(m_Window, [](GLFWwindow *, const double x, const double y) {
             ImGuiIO &imGuiIO = ImGui::GetIO();
@@ -1271,6 +1284,7 @@ namespace CoreDeck {
         s.JavaHomePath = context.Prefs.JavaHomePath;
         s.IncludeBetaUpdates = context.Prefs.IncludeBetaUpdates;
         s.CheckForUpdatesOnLaunch = context.Prefs.CheckForUpdatesOnLaunch;
+        s.RecentApks = context.ApkAnalyzer.RecentApks;
         s.WindowWidth = context.UI.WindowWidth;
         s.WindowHeight = context.UI.WindowHeight;
         s.WindowMaximized = context.UI.WindowMaximized;
@@ -1303,6 +1317,7 @@ namespace CoreDeck {
         context.Prefs.JavaHomePath = settings.JavaHomePath;
         context.Prefs.IncludeBetaUpdates = settings.IncludeBetaUpdates;
         context.Prefs.CheckForUpdatesOnLaunch = settings.CheckForUpdatesOnLaunch;
+        context.ApkAnalyzer.RecentApks = settings.RecentApks;
         context.Host.Sdk.JavaHomePath = settings.JavaHomePath;
         context.Host.Manager.SetSdk(context.Host.Sdk);
         context.UI.WindowWidth = NormalizeWindowDimension(settings.WindowWidth, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_WIDTH);

@@ -33,6 +33,14 @@ TEST_CASE("SHA-256 hashes file contents", "[sha256][file]") {
     }
 
     REQUIRE(Sha256File(path.string()) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    CHECK(Sha256File(path.string(), [] { return true; }).empty());
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << std::string(200000, 'a');
+    }
+    int checks = 0;
+    CHECK(Sha256File(path.string(), [&] { return ++checks == 2; }).empty());
+    CHECK(checks == 2);
 
     std::filesystem::remove(path);
 }

@@ -132,6 +132,15 @@ namespace CoreDeck {
             std::future<ApkReport> Analysis;
             std::future<ApkInstallResult> Installation;
             std::shared_ptr<std::atomic<bool>> Cancel;
+            std::future<ApkAnalyzerQuery<std::vector<ApkCompareEntry>>> Comparison;
+            ApkAnalyzerQuery<std::vector<ApkCompareEntry>> Compare;
+            std::string ComparePath;
+            bool SelectComparison = false;
+            std::string PendingDrop;
+            std::vector<std::string> RecentApks;
+            char Filter[256] = {};
+            std::uint32_t ContentEpoch = 0;
+            std::shared_ptr<std::atomic<float>> Progress;
         } ApkAnalyzer;
         // Shared by short-lived SDK maintenance commands; set before joining any worker on exit.
         std::shared_ptr<std::atomic<bool>> ShutdownRequested = std::make_shared<std::atomic<bool>>(false);
@@ -259,6 +268,7 @@ namespace CoreDeck {
             bool ShowInstallImageDialog = false;
             bool ReopenCreateAvdOnInstallClose = false;
             bool ShowPreferences = false;
+            bool OpenSdkPreferences = false;
             bool ShowStorageDialog = false;
             bool ShowWipeDataDialog = false;
             bool ShowQuitDialog = false;
@@ -493,6 +503,7 @@ namespace CoreDeck {
         } Jobs;
 
         struct DiskUsage {
+            std::string Error;
             std::unordered_map<std::string, std::uintmax_t> PerAvdCache;
             StorageScanResult LastScan;
             std::atomic<bool> Loading{false};

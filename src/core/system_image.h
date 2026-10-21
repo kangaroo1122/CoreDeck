@@ -78,6 +78,8 @@ namespace CoreDeck {
 
     LicenseCheckResult CheckSdkLicensesDetailed(const SdkInfo &sdk);
 
+    LicenseStatus InterpretSdkLicenseOutput(const std::string &output);
+
     LicenseStatus CheckSdkLicenses(const SdkInfo &sdk);
 
     bool AcceptSdkLicenses(const SdkInfo &sdk);

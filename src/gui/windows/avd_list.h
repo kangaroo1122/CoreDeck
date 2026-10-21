@@ -8,6 +8,7 @@
 #include "../context.h"
 
 namespace CoreDeck {
+    void OpenCreateAvdDialog(Context &context);
     void BuildAvdListWindow(Context &context);
 }
 

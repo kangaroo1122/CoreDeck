@@ -8,8 +8,24 @@
 #include <vector>
 
 #include "core/system_image.h"
+#include "core/health_check.h"
 
 using namespace CoreDeck;
+
+TEST_CASE("environment check honours cancellation before launching tools", "[system_image]") {
+    const auto cancel = std::make_shared<std::atomic<bool>>(true);
+    CHECK(RunEnvironmentHealthCheck({}, cancel).empty());
+}
+
+TEST_CASE("SDK license interpretation supports old and new tools", "[system_image][licenses]") {
+    CHECK(InterpretSdkLicenseOutput("All SDK package licenses accepted.") == LicenseStatus::AllAccepted);
+    CHECK(InterpretSdkLicenseOutput("1 license not accepted\nAll SDK package licenses accepted.") == LicenseStatus::AllAccepted);
+    CHECK(InterpretSdkLicenseOutput("The --licenses option is no longer needed.") == LicenseStatus::AllAccepted);
+    CHECK(InterpretSdkLicenseOutput("1 of 1 SDK package license not accepted") == LicenseStatus::SomeUnaccepted);
+    CHECK(InterpretSdkLicenseOutput("2 of 7 SDK package licenses not accepted") == LicenseStatus::SomeUnaccepted);
+    CHECK(InterpretSdkLicenseOutput("Error: Java could not start") == LicenseStatus::CheckFailed);
+    CHECK(InterpretSdkLicenseOutput("") == LicenseStatus::CheckFailed);
+}
 
 namespace {
     std::string TestAbi() {
@@ -77,6 +93,7 @@ namespace {
         out << "echo Available Packages:\n";
         out << "echo   Path ^| Version ^| Description\n";
         out << "echo   ------- ^| ------- ^| -------\n";
+        out << "echo   system-images/android-35/google_apis_playstore_tablet/" << abi << " ^| 9 ^| Google Play Tablet " << abiLabel << " System Image\n";
         out << "echo   system-images;android-37.0;google_apis_playstore;" << abi << " ^| 5 ^| Google Play " << abiLabel << " System Image\n";
         out << "echo   system-images;android-37.0;google_apis_playstore_ps16k;" << abi << " ^| 6 ^| 16 KB Page Size Google Play " << abiLabel << " System Image\n";
         out << "echo   system-images;android-35;google_apis_playstore_tablet;" << abi << " ^| 9 ^| Google Play Tablet " << abiLabel << " System Image\n";
@@ -89,6 +106,7 @@ namespace {
         out << "Available Packages:\n";
         out << "  Path                                                            | Version | Description\n";
         out << "  -------                                                         | ------- | -------\n";
+        out << "  system-images/android-35/google_apis_playstore_tablet/" << abi << " | 9 | Google Play Tablet " << abiLabel << " System Image\n";
         out << "  system-images;android-37.0;google_apis_playstore;" << abi << "      | 5       | Google Play " << abiLabel << " System Image\n";
         out << "  system-images;android-37.0;google_apis_playstore_ps16k;" << abi << " | 6       | 16 KB Page Size Google Play " << abiLabel << " System Image\n";
         out << "  system-images;android-35;google_apis_playstore_tablet;" << abi << " | 9       | Google Play Tablet " << abiLabel << " System Image\n";
@@ -128,9 +146,10 @@ TEST_CASE("remote system image names use sdkmanager descriptions", "[system_imag
     sdk.SdkManagerPath = sdkManager.string();
 
     SystemImage installed;
-    installed.PackagePath = "system-images;android-35;google_apis_playstore_tablet;" + abi;
+    installed.PackagePath = "system-images/android-35/google_apis_playstore_tablet/" + abi;
 
     const auto images = ListRemoteSystemImages(sdk, {installed});
+    REQUIRE(images.size() == 3);
 
     const auto *play = FindRemoteImage(images, "system-images;android-37.0;google_apis_playstore;" + abi);
     const auto *pageSize16k = FindRemoteImage(images, "system-images;android-37.0;google_apis_playstore_ps16k;" + abi);

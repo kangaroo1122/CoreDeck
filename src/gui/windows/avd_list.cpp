@@ -193,6 +193,45 @@ namespace CoreDeck {
         }
     }
 
+    void OpenCreateAvdDialog(Context &context) {
+        if (context.AvdCreationWork.Prefetch.Loading || context.Jobs.AvdCreation.Busy.load()) return;
+        auto &work = context.AvdCreationWork;
+        work.CreationData = {};
+        work.SelectedSystemImage = 0;
+        work.SelectedDevice = 0;
+        work.SelectedGpuMode = 0;
+        work.NameAutoFilled = true;
+        work.DisplayNameAutoFilled = true;
+        work.SkinAutoFilled = true;
+        work.SelectedSkin = 0;
+        work.PendingSelectedSkin = 0;
+        work.LastDeviceForSkinAuto = -1;
+        work.SkinSearchFilter[0] = '\0';
+        work.SystemImages.clear();
+        work.DeviceProfiles.clear();
+        work.Skins.clear();
+        work.Error.clear();
+        context.Jobs.AvdCreation.Error.clear();
+        work.Prefetch.Ready = false;
+        work.Prefetch.Loading = true;
+        context.UI.ShowCreateAvdDialog = true;
+
+        const SdkInfo sdk = context.Host.Sdk;
+        work.Prefetch.Future = std::async(std::launch::async, [sdk] {
+            AvdCreationPrefetchResult result;
+            try {
+                result.SystemImages = ListSystemImages(sdk);
+                result.DeviceProfiles = ListDeviceProfiles(sdk);
+                result.Skins = ListSkins(sdk);
+            } catch (const std::exception &e) {
+                result.Error = e.what();
+            } catch (...) {
+                result.Error = "Could not load AVD creation data.";
+            }
+            return result;
+        });
+    }
+
     // NOLINTNEXTLINE(readability-function-size)
     void BuildAvdListWindow(Context &context) {
         if (!context.UI.ShowAvdListPanel) {
@@ -203,45 +242,7 @@ namespace CoreDeck {
         const std::string windowTitle = TrLabel("Available AVDs (Android Virtual Device)###AVDs");
         ImGui::Begin(windowTitle.c_str(), nullptr, FLAGS);
 
-        auto openCreateAvdDialog = [&context] {
-            auto &work = context.AvdCreationWork;
-            context.AvdCreationWork.CreationData = {};
-            context.AvdCreationWork.SelectedSystemImage = 0;
-            context.AvdCreationWork.SelectedDevice = 0;
-            context.AvdCreationWork.SelectedGpuMode = 0;
-            context.AvdCreationWork.NameAutoFilled = true;
-            context.AvdCreationWork.DisplayNameAutoFilled = true;
-            context.AvdCreationWork.SkinAutoFilled = true;
-            context.AvdCreationWork.SelectedSkin = 0;
-            context.AvdCreationWork.PendingSelectedSkin = 0;
-            context.AvdCreationWork.LastDeviceForSkinAuto = -1;
-            context.AvdCreationWork.SkinSearchFilter[0] = '\0';
-            work.SystemImages.clear();
-            work.DeviceProfiles.clear();
-            work.Skins.clear();
-            work.Error.clear();
-            context.Jobs.AvdCreation.Error.clear();
-            context.AvdCreationWork.Prefetch.Ready = false;
-            context.AvdCreationWork.Prefetch.Loading = true;
-            context.UI.ShowCreateAvdDialog = true;
-
-            const SdkInfo sdk = context.Host.Sdk;
-            context.AvdCreationWork.Prefetch.Future = std::async(std::launch::async, [sdk] {
-                AvdCreationPrefetchResult result;
-                try {
-                    result.SystemImages = ListSystemImages(sdk);
-                    result.DeviceProfiles = ListDeviceProfiles(sdk);
-                    result.Skins = ListSkins(sdk);
-                } catch (const std::exception &e) {
-                    result.Error = e.what();
-                } catch (...) {
-                    result.Error = "Could not load AVD creation data.";
-                }
-                return result;
-            });
-        };
-
-        if (PrimaryButton(Icons::REFRESH)) {
+        if (PrimaryButton(Icons::REFRESH, !context.Catalog.RefreshFuture.valid())) {
             RefreshAvds(context);
         }
         if (ImGui::IsItemHovered()) {
@@ -251,7 +252,7 @@ namespace CoreDeck {
         ImGui::SameLine();
 
         if (PrimaryButton(Icons::PLUS)) {
-            openCreateAvdDialog();
+            OpenCreateAvdDialog(context);
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", Tr("Create new AVD"));
@@ -304,8 +305,17 @@ namespace CoreDeck {
 
         ImGui::Separator();
 
+        if (context.Catalog.RefreshFuture.valid()) {
+            ImGui::TextDisabled("%s", Tr("Refreshing AVDs..."));
+        }
+        if (!context.Catalog.RefreshError.empty()) {
+            ImGui::TextWrapped("%s", Tr(context.Catalog.RefreshError.c_str()));
+        }
+
         if (context.Catalog.Avds.empty()) {
-            ImGui::TextDisabled("%s", Tr("No AVDs found"));
+            if (!context.Catalog.RefreshFuture.valid() && context.Catalog.RefreshError.empty()) {
+                ImGui::TextDisabled("%s", Tr("No AVDs found"));
+            }
             ImGui::End();
             return;
         }

@@ -5,6 +5,7 @@
 #include "jdk.h"
 
 #include <filesystem>
+#include <chrono>
 #include <sstream>
 
 #include "paths.h"
@@ -12,6 +13,16 @@
 
 namespace CoreDeck {
     namespace {
+        std::string RunJavaProbe(const std::string &path, const std::vector<std::string> &args) {
+            std::string output;
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            const bool ok = StreamCommandArgsWithEnvCancelable(path, args, "", {},
+                [&](const std::string &line) {
+                    if (output.size() < 65536) output += line + "\n";
+                }, [&] { return std::chrono::steady_clock::now() >= deadline; });
+            return ok ? output : "";
+        }
+
         std::string FirstNonEmptyLine(const std::string &text) {
             std::istringstream stream(text);
             std::string line;
@@ -82,10 +93,10 @@ namespace CoreDeck {
 
         if (status.Path.empty()) {
 #if defined(__APPLE__)
-            const std::string javaHome = FirstNonEmptyLine(RunCommandArgs("/usr/libexec/java_home", {}));
-            const std::string output = javaHome.empty() ? "" : RunCommandArgs(JavaExecutablePath(javaHome), {"-version"});
+            const std::string javaHome = FirstNonEmptyLine(RunJavaProbe("/usr/libexec/java_home", {}));
+            const std::string output = javaHome.empty() ? "" : RunJavaProbe(JavaExecutablePath(javaHome), {"-version"});
 #else
-            const std::string output = RunCommandArgs("java", {"-version"});
+            const std::string output = RunJavaProbe("java", {"-version"});
 #endif
             const std::string firstLine = FirstNonEmptyLine(output);
             if (firstLine.empty()) {
@@ -104,9 +115,9 @@ namespace CoreDeck {
             return status;
         }
 
-        status.HasJava = true;
-        const std::string output = RunCommandArgs(javaPath, {"-version"});
+        const std::string output = RunJavaProbe(javaPath, {"-version"});
         const std::string firstLine = FirstNonEmptyLine(output);
+        status.HasJava = !firstLine.empty();
         status.Text = firstLine.empty() ? "Unable to read Java version." : firstLine;
         status.MajorVersion = JavaMajorVersionFromText(status.Text);
         return status;

@@ -15,6 +15,7 @@
 #include "system_image.h"
 #include "paths.h"
 #include "process.h"
+#include "sdk_progress.h"
 #include "utilities.h"
 
 namespace CoreDeck {
@@ -24,9 +25,8 @@ namespace CoreDeck {
                 return;
             }
 
-            const auto bracket = line.find('[');
-            const auto closeBracket = line.find(']', bracket);
-            if (bracket == std::string::npos || closeBracket == std::string::npos) {
+            const auto parsed = ParseSdkManagerProgressLine(line);
+            if (parsed.Percent < 0) {
                 if (!line.empty()) {
                     std::lock_guard lock(progress->Mutex);
                     progress->DetailText = line;
@@ -34,32 +34,10 @@ namespace CoreDeck {
                 return;
             }
 
-            auto afterBracket = line.substr(closeBracket + 1);
-            const auto start = afterBracket.find_first_not_of(" \t");
-            if (start == std::string::npos) {
-                return;
-            }
-            afterBracket = afterBracket.substr(start);
-
-            const auto pctEnd = afterBracket.find('%');
-            if (pctEnd == std::string::npos) {
-                return;
-            }
-
-            const int pct = static_cast<int>(std::strtol(afterBracket.substr(0, pctEnd).c_str(), nullptr, 10));
-
-            std::string description;
-            if (pctEnd + 1 < afterBracket.size()) {
-                description = afterBracket.substr(pctEnd + 1);
-                if (const auto ds = description.find_first_not_of(" \t"); ds != std::string::npos) {
-                    description = description.substr(ds);
-                }
-            }
-
             std::lock_guard lock(progress->Mutex);
-            progress->Percent = static_cast<float>(pct) / 100.0F;
-            if (!description.empty()) {
-                progress->StatusText = description;
+            progress->Percent = static_cast<float>(parsed.Percent) / 100.0F;
+            if (!parsed.Status.empty()) {
+                progress->StatusText = parsed.Status;
             }
             progress->DetailText = line;
         }
@@ -68,6 +46,13 @@ namespace CoreDeck {
             return !line.empty() && std::ranges::all_of(line, [](const char c) {
                        return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.';
                    });
+        }
+
+        std::string CanonicalImagePackagePath(std::string path) {
+            if (path.starts_with("system-images/")) {
+                std::ranges::replace(path, '/', ';');
+            }
+            return path;
         }
 
         std::vector<std::string> BuildSdkManagerArgs(const SdkInfo &sdk, const std::vector<std::string> &args) {
@@ -340,7 +325,7 @@ namespace CoreDeck {
 
         std::unordered_map<std::string, bool> installedSet;
         for (const auto &img: installedImages) {
-            installedSet[img.PackagePath] = true;
+            installedSet[CanonicalImagePackagePath(img.PackagePath)] = true;
         }
 
         std::unordered_set<std::string> seenPackages;
@@ -357,12 +342,12 @@ namespace CoreDeck {
             }
             line = line.substr(start);
 
-            if (!line.starts_with("system-images;")) {
+            if (!line.starts_with("system-images;") && !line.starts_with("system-images/")) {
                 continue;
             }
 
             const std::vector<std::string> columns = SplitColumns(line);
-            const std::string packagePath = columns.empty() ? "" : columns[0];
+            const std::string packagePath = CanonicalImagePackagePath(line.substr(0, line.find_first_of(" \t|")));
             if (packagePath.empty() || !seenPackages.insert(packagePath).second) {
                 continue;
             }
@@ -373,7 +358,7 @@ namespace CoreDeck {
             while (std::getline(partStream, part, ';')) {
                 parts.push_back(part);
             }
-            if (parts.size() < 4) {
+            if (parts.size() != 4 || parts[1].size() <= 8 || parts[2].empty() || parts[3].empty()) {
                 continue;
             }
 
@@ -432,7 +417,7 @@ namespace CoreDeck {
 
         StreamCommandArgsWithEnv(
             sdk.SdkManagerPath,
-            BuildSdkManagerArgs(sdk, {"--install", packagePath}),
+            BuildSdkManagerArgs(sdk, {"--install", CanonicalImagePackagePath(packagePath)}),
             "",
             BuildAndroidToolEnvironment(sdk),
             [&progress](const std::string &line) {
@@ -464,7 +449,7 @@ namespace CoreDeck {
 
         RunCommandArgsWithEnv(
             sdk.SdkManagerPath,
-            BuildSdkManagerArgs(sdk, {"--uninstall", packagePath}),
+            BuildSdkManagerArgs(sdk, {"--uninstall", CanonicalImagePackagePath(packagePath)}),
             "y\n",
             BuildAndroidToolEnvironment(sdk)
         );
@@ -487,13 +472,20 @@ namespace CoreDeck {
             BuildAndroidToolEnvironment(sdk)
         );
 
-        if (output.find("All SDK package licenses accepted") != std::string::npos) {
-            return {.Status = LicenseStatus::AllAccepted, .Output = output};
+        return {.Status = InterpretSdkLicenseOutput(output), .Output = output};
+    }
+
+    LicenseStatus InterpretSdkLicenseOutput(const std::string &output) {
+        // Acceptance output can include the initial prompt before the final success.
+        if (output.find("All SDK package licenses accepted") != std::string::npos ||
+            output.find("The --licenses option is no longer needed") != std::string::npos) {
+            return LicenseStatus::AllAccepted;
         }
-        if (output.find("licenses not accepted") != std::string::npos) {
-            return {.Status = LicenseStatus::SomeUnaccepted, .Output = output};
+        if (output.find("licenses not accepted") != std::string::npos ||
+            output.find("license not accepted") != std::string::npos) {
+            return LicenseStatus::SomeUnaccepted;
         }
-        return {.Status = LicenseStatus::CheckFailed, .Output = output};
+        return LicenseStatus::CheckFailed;
     }
 
     LicenseStatus CheckSdkLicenses(const SdkInfo &sdk) {
@@ -517,6 +509,6 @@ namespace CoreDeck {
             yes,
             BuildAndroidToolEnvironment(sdk)
         );
-        return output.find("All SDK package licenses accepted") != std::string::npos;
+        return InterpretSdkLicenseOutput(output) == LicenseStatus::AllAccepted;
     }
 }

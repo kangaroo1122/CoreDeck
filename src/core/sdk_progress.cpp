@@ -3,6 +3,39 @@
 #include <algorithm>
 
 namespace CoreDeck {
+    SdkManagerProgressLine ParseSdkManagerProgressLine(const std::string &line) {
+        const auto trim = [](const std::string &text) {
+            const auto start = text.find_first_not_of(" \t\r\n");
+            return start == std::string::npos ? std::string{} :
+                text.substr(start, text.find_last_not_of(" \t\r\n") - start + 1);
+        };
+        // Both legacy progress bars and cmdline-tools 23's plain percentage output.
+        for (size_t pos = 0; pos < line.size(); ++pos) {
+            if (line[pos] != '%') continue;
+            if (pos + 1 < line.size() && line[pos + 1] != ' ' &&
+                line[pos + 1] != '\t' && line[pos + 1] != '(' && line[pos + 1] != '\r') continue;
+            size_t start = pos;
+            while (start > 0 && line[start - 1] >= '0' && line[start - 1] <= '9') --start;
+            if (start == pos || pos - start > 3) continue;
+            if (start > 0 && line[start - 1] != ' ' && line[start - 1] != '\t' && line[start - 1] != ']') continue;
+            int percent = 0;
+            for (size_t digit = start; digit < pos; ++digit) percent = percent * 10 + line[digit] - '0';
+            if (percent > 100) continue;
+
+            std::string status = trim(line.substr(pos + 1));
+            const bool unzipping = line.find("Unzipping") != std::string::npos;
+            const auto open = line.find('(', pos);
+            const auto close = open == std::string::npos ? std::string::npos : line.find(')', open);
+            if (close != std::string::npos) {
+                status = (unzipping ? "Unzipping " : "Downloading ") + line.substr(open + 1, close - open - 1);
+            } else if (status.empty() || status.starts_with("ETA:")) {
+                status = unzipping ? "Unzipping..." : "Downloading...";
+            }
+            return {percent, status};
+        }
+        return {};
+    }
+
     void SetSdkProgressRange(
         const std::shared_ptr<SdkOperationProgress> &progress,
         const float start,

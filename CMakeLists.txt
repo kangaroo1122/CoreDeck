@@ -188,6 +188,7 @@ add_library(coredeck_core STATIC
     src/core/shared_folder.cpp
     src/core/sha256.cpp
     src/core/sdk.cpp
+    src/core/health_check.cpp
     src/core/skin.cpp
     src/core/system_image.cpp
     src/core/utilities.cpp

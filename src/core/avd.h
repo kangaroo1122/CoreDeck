@@ -6,6 +6,7 @@
 #define EMU_LAUNCHER_AVD_INFO_H
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -56,7 +57,7 @@ namespace CoreDeck {
 
     std::vector<AvdInfo> LoadAvds(const std::vector<std::string> &avdNames);
 
-    std::vector<std::string> ListAvdNames(const SdkInfo &sdk);
+    std::vector<std::string> ListAvdNames(const SdkInfo &sdk, const std::function<bool()> &shouldCancel = {});
 
     bool CreateAvd(const SdkInfo &sdk, const AvdCreationData &data);
 

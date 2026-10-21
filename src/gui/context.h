@@ -16,10 +16,12 @@
 #include <vector>
 
 #include "../core/adb.h"
+#include "../core/health_check.h"
 #include "../core/avd.h"
 #include "../core/device_file.h"
 #include "../core/emulator.h"
 #include "../core/jdk_download.h"
+#include "../core/jdk.h"
 #include "../core/logcat.h"
 #include "../core/options.h"
 #include "../core/sdk.h"
@@ -113,7 +115,41 @@ namespace CoreDeck {
         std::string Error;
     };
 
+    struct AvdCatalogResult {
+        std::vector<std::string> Names;
+        std::vector<AvdInfo> Avds;
+        std::unordered_map<std::string, std::vector<EmulatorOption>> Options;
+    };
+
     struct Context {
+        struct JavaProbeWork {
+            std::future<JavaHomeStatus> Future;
+            std::string RequestedPath;
+        } JavaProbe;
+
+        struct SdkPathProbeWork {
+            struct Result {
+                bool Valid = false;
+                bool HasManager = false;
+                bool CanInstall = false;
+                SdkInfo Sdk;
+            } Value;
+            std::future<Result> Future;
+            std::string RequestedPath;
+            std::string ReadyPath;
+            bool Ready = false;
+            std::string Error;
+        } SdkPathProbe;
+        struct EnvironmentCheckWork {
+            std::future<std::vector<HealthCheckResult>> Future;
+            std::shared_ptr<std::atomic<bool>> Cancel;
+            std::vector<HealthCheckResult> Results;
+            SdkInfo CheckedSdk;
+            bool Started = false;
+            bool Busy = false;
+            std::string Error;
+        } EnvironmentCheck;
+
         struct Host {
             SdkInfo Sdk;
             EmulatorManager Manager;
@@ -128,6 +164,10 @@ namespace CoreDeck {
         } Flow;
 
         struct Catalog {
+            std::future<AvdCatalogResult> RefreshFuture;
+            std::shared_ptr<std::atomic<bool>> RefreshCancel;
+            bool RefreshPending = false;
+            std::string RefreshError;
             std::vector<std::string> AvdNames;
             std::vector<AvdInfo> Avds;
             int SelectedAvd = -1;
@@ -308,6 +348,8 @@ namespace CoreDeck {
         } ImageInstallationWork;
 
         struct SdkManagerWork {
+            std::future<SdkInfo> DetectionFuture;
+            bool Detecting = false;
             std::vector<SdkPackage> Packages;
             SdkPackageListResult LastListResult;
             SdkManagerTab ActiveTab = SdkManagerTab::Platforms;

@@ -7,6 +7,19 @@
 
 using namespace CoreDeck;
 
+TEST_CASE("SDK manager progress supports legacy and current output", "[sdk_progress]") {
+    const auto legacy = ParseSdkManagerProgressLine("[====== ] 42% Installing emulator");
+    CHECK(legacy.Percent == 42);
+    CHECK(legacy.Status == "Installing emulator");
+    const auto modern = ParseSdkManagerProgressLine("Downloading 75% (75 MB / 100 MB) ETA: 1s");
+    CHECK(modern.Percent == 75);
+    CHECK(modern.Status == "Downloading 75 MB / 100 MB");
+    CHECK(ParseSdkManagerProgressLine("Unzipping 100% (12 / 12)").Status == "Unzipping 12 / 12");
+    for (const auto *invalid : {"Warning: failed", "101%", "-1%", "1.5%", "abc42%", "42%invalid"}) {
+        CHECK(ParseSdkManagerProgressLine(invalid).Percent == -1);
+    }
+}
+
 TEST_CASE("SDK progress maps local values into the active phase", "[sdk_progress]") {
     const auto progress = std::make_shared<SdkOperationProgress>();
     SetSdkProgressRange(progress, 0.42F, 0.48F);

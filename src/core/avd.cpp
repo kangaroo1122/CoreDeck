@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_map>
 
 #include "avd.h"
@@ -309,19 +310,30 @@ namespace CoreDeck {
         return avds;
     }
 
-    std::vector<std::string> ListAvdNames(const SdkInfo &sdk) {
+    std::vector<std::string> ListAvdNames(const SdkInfo &sdk, const std::function<bool()> &shouldCancel) {
         std::vector<std::string> avds;
         if (!sdk.IsFound) {
             return avds;
         }
 
-        const std::string output = RunCommandArgs(sdk.EmulatorPath, {"-list-avds"});
-        std::istringstream stream(output);
-        std::string line;
-        while (std::getline(stream, line)) {
-            if (!line.empty()) {
-                avds.emplace_back(line);
-            }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        const bool ok = StreamCommandArgsWithEnvCancelable(
+            sdk.EmulatorPath, {"-list-avds"}, "", BuildAndroidToolEnvironment(sdk),
+            [&](const std::string &raw) {
+                std::string line = raw;
+                const auto end = line.find_last_not_of(" \t\r\n");
+                if (end == std::string::npos) return;
+                line.resize(end + 1);
+                // AVD identifiers cannot contain whitespace or diagnostic punctuation.
+                if (std::ranges::all_of(line, [](const unsigned char c) {
+                    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                           (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+                }) && std::ranges::find(avds, line) == avds.end()) avds.push_back(std::move(line));
+            }, [&] {
+                return (shouldCancel && shouldCancel()) || std::chrono::steady_clock::now() >= deadline;
+            });
+        if (!ok) {
+            throw std::runtime_error("Could not refresh AVDs. The emulator command failed or timed out.");
         }
 
         return avds;

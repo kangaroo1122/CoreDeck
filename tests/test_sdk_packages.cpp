@@ -54,7 +54,8 @@ namespace {
         out << "echo   Path ^| Version ^| Description\n";
         out << "echo   ------- ^| ------- ^| -------\n";
         out << "echo   platforms;android-36 ^| 1 ^| Android SDK Platform 36\n";
-        out << "echo   platforms;android-36.1 ^| 1 ^| Android SDK Platform 36.1\n";
+        out << "echo   platforms/android-36 ^| 1 ^| Android SDK Platform 36\n";
+        out << "echo   platforms/android-36.1 ^| 1 ^| Android SDK Platform 36.1\n";
 #else
         const std::filesystem::path script = dir / "sdkmanager";
         std::ofstream out(script);
@@ -73,7 +74,8 @@ namespace {
         out << "  Path                   | Version | Description\n";
         out << "  -------                | ------- | -------\n";
         out << "  platforms;android-36   | 1       | Android SDK Platform 36\n";
-        out << "  platforms;android-36.1 | 1       | Android SDK Platform 36.1\n";
+        out << "  platforms/android-36   | 1       | Android SDK Platform 36\n";
+        out << "  platforms/android-36.1 | 1       | Android SDK Platform 36.1\n";
         out << "SDKMANAGER_OUTPUT\n";
         out.close();
         std::filesystem::permissions(

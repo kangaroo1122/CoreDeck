@@ -11,6 +11,7 @@
 #include "context.h"
 
 namespace CoreDeck {
+    bool RefreshJavaHomeStatusAsync(Context &context, JavaHomeStatus &state, const std::string &path);
     bool IsJdkDownloadBusy(const Context &context);
 
     bool ShouldOfferManagedJdkDownload(const JavaHomeStatus &versionState);

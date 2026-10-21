@@ -7,6 +7,13 @@
 #include <string>
 
 namespace CoreDeck {
+    struct SdkManagerProgressLine {
+        int Percent = -1;
+        std::string Status;
+    };
+
+    SdkManagerProgressLine ParseSdkManagerProgressLine(const std::string &line);
+
     struct SdkProgressRange {
         float Start = 0.0F;
         float End = 1.0F;

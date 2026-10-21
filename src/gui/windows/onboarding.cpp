@@ -45,6 +45,7 @@ namespace CoreDeck {
             std::future<LicenseCheckResult> LicenseCheckFuture;
             std::future<bool> LicenseAcceptFuture;
             std::future<SdkBootstrapResult> PackagesFuture;
+            std::future<std::string> FinalizeFuture;
             std::shared_ptr<SdkOperationProgress> Progress;
             SdkInstallSession InstallSession;
             std::string Error;
@@ -142,9 +143,9 @@ namespace CoreDeck {
             }
         }
 
-        void ApplyOnboardingSdkPath(Context &context, const std::string &sdkRoot) {
-            Paths::Onboarding::SaveSdkPathOverride(sdkRoot);
-            context.Host.Sdk = DetectAndroidSdk();
+        void ApplyOnboardingSdkPath(Context &context, const SdkInfo &sdk) {
+            Paths::Onboarding::SaveSdkPathOverride(sdk.SdkPath);
+            context.Host.Sdk = sdk;
             context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
             context.Host.Manager.SetSdk(context.Host.Sdk);
             context.UI.HideInvalidSdkPathBanner = false;
@@ -256,6 +257,27 @@ namespace CoreDeck {
         }
 
         void PollOnboardingSdkBootstrap(Context &context, OnboardingSdkBootstrapWork &work) {
+            if (work.FinalizeFuture.valid() &&
+                work.FinalizeFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                std::string error;
+                try {
+                    error = work.FinalizeFuture.get();
+                } catch (...) {
+                    error = "Android SDK verification failed: required tools are missing.";
+                }
+                if (!error.empty()) {
+                    FailOnboardingSdkBootstrap(work, error);
+                    return;
+                }
+                work.Busy = false;
+                // Discard any snapshot read while installation was still in progress.
+                context.SdkPathProbe.Ready = false;
+                context.SdkPathProbe.RequestedPath.clear();
+                SetOnboardingProgress(work.Progress, 1.0F, "Android SDK setup completed.");
+                std::lock_guard lock(work.Progress->Mutex);
+                work.Progress->Finished = true;
+                work.Progress->Succeeded = true;
+            }
             if (work.ToolsFuture.valid() &&
                 work.ToolsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 SdkBootstrapResult result;
@@ -366,31 +388,26 @@ namespace CoreDeck {
                 work.Error.clear();
                 SetSdkProgressRange(work.Progress, OnboardingSdkProgress::Finalize.Start, OnboardingSdkProgress::Finalize.End);
                 SetOnboardingProgress(work.Progress, 0.0F, "Verifying Android SDK installation...");
-                const std::string targetRoot = work.InstallSession.TargetRoot().string();
-                const SdkInfo installed = BuildSdkInfoFromSdkRoot(
-                    work.InstallSession.ActiveRoot().string(),
-                    context.Prefs.JavaHomePath
-                );
-                if (installed.SdkManagerPath.empty() || installed.AvdManagerPath.empty() ||
-                    installed.AdbPath.empty() || installed.EmulatorPath.empty()) {
-                    FailOnboardingSdkBootstrap(work, "Android SDK verification failed: required tools are missing.");
-                    return;
-                }
-                if (work.InstallSession.IsTransactional()) {
-                    SetOnboardingProgress(work.Progress, 0.6F, "Switching Android SDK into place...");
-                    std::string error;
-                    if (!work.InstallSession.Commit(error)) {
-                        FailOnboardingSdkBootstrap(work, error.empty() ? "Could not switch the installed Android SDK into place." : error);
-                        return;
+                work.Busy = true;
+                const auto javaHome = context.Prefs.JavaHomePath;
+                // The static onboarding work outlives this task; shutdown joins it before Reset.
+                work.FinalizeFuture = std::async(std::launch::async, [&work, javaHome]() -> std::string {
+                    const SdkInfo installed = BuildSdkInfoFromSdkRoot(work.InstallSession.ActiveRoot().string(), javaHome);
+                    std::error_code ec;
+                    if (installed.SdkManagerPath.empty() || installed.AvdManagerPath.empty() ||
+                        !std::filesystem::is_regular_file(installed.AdbPath, ec) ||
+                        !std::filesystem::is_regular_file(installed.EmulatorPath, ec)) {
+                        return "Android SDK verification failed: required tools are missing.";
                     }
-                }
-                ApplyOnboardingSdkPath(context, targetRoot);
-                SetOnboardingProgress(work.Progress, 1.0F, "Android SDK setup completed.");
-                {
-                    std::lock_guard lock(work.Progress->Mutex);
-                    work.Progress->Finished = true;
-                    work.Progress->Succeeded = true;
-                }
+                    if (work.InstallSession.IsTransactional()) {
+                        SetOnboardingProgress(work.Progress, 0.6F, "Switching Android SDK into place...");
+                        std::string error;
+                        if (!work.InstallSession.Commit(error)) {
+                            return error.empty() ? "Could not switch the installed Android SDK into place." : error;
+                        }
+                    }
+                    return {};
+                });
             }
         }
 
@@ -501,27 +518,28 @@ namespace CoreDeck {
             if (PrimaryButton("Browse...###OnboardingJdkBrowse", true, ImVec2(browseWidth, 0))) {
                 const auto picked = FileDialog::PickFolder(Tr("Select JDK home directory"), javaHomeBuffer);
                 if (picked.has_value()) {
-                    const std::string normalized = NormalizeJavaHomePath(*picked);
-                    strncpy(javaHomeBuffer, normalized.c_str(), javaHomeBufferSize - 1);
+                    strncpy(javaHomeBuffer, picked->c_str(), javaHomeBufferSize - 1);
                     javaHomeBuffer[javaHomeBufferSize - 1] = '\0';
                 }
             }
 
-            const std::string javaHomePath = NormalizeJavaHomePath(javaHomeBuffer);
-            if (javaHomePath.empty()) {
+            const bool javaReady = RefreshJavaHomeStatusAsync(context, versionState, javaHomeBuffer);
+            const std::string javaHomePath = javaReady ? versionState.Path : std::string(javaHomeBuffer);
+            if (!javaReady) {
+                ImGui::TextDisabled("%s", Tr("Checking Java environment..."));
+            } else if (javaHomePath.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_SUBTLE));
                 ImGui::TextWrapped("%s", Tr("Leave empty to use the system default Java environment."));
                 ImGui::PopStyleColor();
-            } else if (LooksLikeJavaHome(javaHomePath)) {
+            } else if (versionState.HasJava) {
                 ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("Java executable found under this JDK home."));
             } else {
                 ImGui::TextColored(HexColor(Colors::NEGATIVE), "%s", Tr("No java executable found under bin."));
             }
 
-            RefreshJavaHomeStatus(versionState, javaHomePath);
-            if (javaHomePath.empty()) {
+            if (javaReady && javaHomePath.empty()) {
                 ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "%s", Tr(versionState.Text.c_str()));
-            } else {
+            } else if (javaReady) {
                 ImGui::TextColored(
                     versionState.HasJava ? HexColor(Colors::TEXT_SUBTLE) : HexColor(Colors::TEXT_MUTED),
                     Tr("Version: %s"),
@@ -532,12 +550,12 @@ namespace CoreDeck {
             if (!javaHomePath.empty()) {
                 if (PrimaryButton("Use System Java", true)) {
                     javaHomeBuffer[0] = '\0';
-                    RefreshJavaHomeStatus(versionState, "");
+                    versionState = {};
                     ApplyOnboardingJavaHome(context, "");
                 }
             }
 
-            if (versionState.HasJava && versionState.MajorVersion > 0 && versionState.MajorVersion < 17) {
+            if (javaReady && versionState.HasJava && versionState.MajorVersion > 0 && versionState.MajorVersion < 17) {
                 WrappedColoredText(
                     HexColor(Colors::WARNING),
                     width,
@@ -545,7 +563,7 @@ namespace CoreDeck {
                 );
             }
 
-            if (ShouldOfferManagedJdkDownload(versionState)) {
+            if (IsJdkDownloadBusy(context) || (javaReady && ShouldOfferManagedJdkDownload(versionState))) {
                 DrawJdkDownloadPanel(
                     context,
                     javaHomeBuffer,
@@ -560,7 +578,7 @@ namespace CoreDeck {
                 ImGui::EndDisabled();
             }
 
-            return NormalizeJavaHomePath(javaHomeBuffer);
+            return versionState.Path;
         }
 
         void BuildJdkSetupStep(
@@ -570,7 +588,6 @@ namespace CoreDeck {
             const size_t javaHomeBufferSize,
             JavaHomeStatus &javaVersionState
         ) {
-            RefreshJavaHomeStatus(javaVersionState, NormalizeJavaHomePath(javaHomeBuffer));
             VerticalCenter(EstimateJdkSetupHeight(javaVersionState), Eh(3.0F));
 
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
@@ -603,7 +620,8 @@ namespace CoreDeck {
                 formWidth,
                 true
             );
-            const bool javaHomeOk = javaVersionState.HasJava;
+            const bool javaHomeOk = !context.JavaProbe.Future.valid() &&
+                context.JavaProbe.RequestedPath == javaHomeBuffer && javaVersionState.HasJava;
             const bool jdkBusy = IsJdkDownloadBusy(context);
 
             ImGui::EndGroup();
@@ -671,9 +689,11 @@ namespace CoreDeck {
                 pathBuffer[pathBufferSize - 1] = '\0';
             }
             const std::string currentPath = pathBuffer;
-            const bool isValid = Paths::Onboarding::ValidateSdkPath(currentPath);
-            const bool hasSdkManager = HasSdkManager(currentPath);
-            const bool canInstallSdkHere = CanInstallAndroidSdkIntoDirectory(currentPath);
+            const bool pathReady = !bootstrap.Busy && RefreshSdkPathStatusAsync(context, currentPath);
+            const auto &probe = context.SdkPathProbe;
+            const bool isValid = pathReady && probe.Value.Valid;
+            const bool hasSdkManager = pathReady && probe.Value.HasManager;
+            const bool canInstallSdkHere = pathReady && probe.Value.CanInstall;
 
             VerticalCenter(EstimateSdkSetupHeight(isValid, hasSdkManager, bootstrap), Eh(3.0F));
 
@@ -717,7 +737,13 @@ namespace CoreDeck {
             }
 
             ImGui::Spacing();
-            if (!currentPath.empty()) {
+            const bool inputMatches = currentPath == pathBuffer;
+            if (!pathReady || !inputMatches) {
+                ImGui::TextDisabled("%s", Tr("Checking SDK path..."));
+            } else if (!probe.Error.empty()) {
+                WrappedColoredText(HexColor(Colors::WARNING), formWidth, probe.Error.c_str());
+                if (PrimaryButton("Check Again")) context.SdkPathProbe.Ready = false;
+            } else if (!currentPath.empty()) {
                 if (isValid) {
                     WrappedColoredText(
                         HexColor(Colors::POSITIVE),
@@ -757,7 +783,7 @@ namespace CoreDeck {
                 DrawOnboardingSdkProgress(bootstrap, formWidth);
             }
             DrawOnboardingLicenseConsent(context, bootstrap, formWidth);
-            if (bootstrap.Busy && !bootstrap.AwaitingLicenseConsent && bootstrap.Progress) {
+            if (bootstrap.Busy && !bootstrap.FinalizeFuture.valid() && !bootstrap.AwaitingLicenseConsent && bootstrap.Progress) {
                 ImGui::Spacing();
                 if (NegativeButton("Cancel", !bootstrap.Progress->CancelRequested.load(), ImVec2(formWidth, 0))) {
                     CancelOnboardingSdkBootstrap(bootstrap);
@@ -766,7 +792,7 @@ namespace CoreDeck {
 
             ImGui::Spacing();
             if (!isValid) {
-                const bool canAct = canEditPaths && !currentPath.empty() && canInstallSdkHere;
+                const bool canAct = inputMatches && pathReady && canEditPaths && !currentPath.empty() && canInstallSdkHere;
 
                 if (!hasSdkManager) {
                     if (PositiveButton("Install Android SDK Tools", canAct, ImVec2(formWidth, 0))) {
@@ -801,10 +827,10 @@ namespace CoreDeck {
             ImGui::SameLine();
             if (PositiveButton(
                     "Continue",
-                    (isValid || hasSdkManager) && canEditPaths,
+                    inputMatches && pathReady && (isValid || hasSdkManager) && canEditPaths,
                     ImVec2(footerButtonWidth, 0)
                 )) {
-                ApplyOnboardingSdkPath(context, currentPath);
+                ApplyOnboardingSdkPath(context, probe.Value.Sdk);
                 Paths::Onboarding::MarkFirstRunComplete();
 
                 RefreshAvds(context);
@@ -893,6 +919,7 @@ namespace CoreDeck {
         ConsumeFuture(bootstrap.LicenseCheckFuture);
         ConsumeFuture(bootstrap.LicenseAcceptFuture);
         ConsumeFuture(bootstrap.PackagesFuture);
+        ConsumeFuture(bootstrap.FinalizeFuture);
 
         bootstrap.Busy = false;
         bootstrap.AwaitingLicenseConsent = false;

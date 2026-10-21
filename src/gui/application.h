@@ -85,6 +85,8 @@ namespace CoreDeck {
     void PersistAppSettings(Context &context);
 
     void RefreshAvds(Context &context);
+    void PollAvdRefresh(Context &context);
+    bool RefreshSdkPathStatusAsync(Context &context, const std::string &path);
 
     void LoadAvdOptions(Context &context, const std::string &avdName);
 

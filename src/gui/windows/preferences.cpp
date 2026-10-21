@@ -14,6 +14,7 @@
 #include "imgui_internal.h"
 
 #include "preferences.h"
+#include "avd_list.h"
 #include "../jdk_download_panel.h"
 #include "../widgets.h"
 #include "../fonts.h"
@@ -38,6 +39,7 @@ namespace CoreDeck {
             SystemUpdates,
             AndroidSdk,
             JavaJdk,
+            EnvironmentCheck,
         };
 
         struct SidebarItem {
@@ -51,6 +53,7 @@ namespace CoreDeck {
             {.Section = PrefsSection::General, .Icon = Icons::GEAR, .Label = "General"},
             {.Section = PrefsSection::AndroidSdk, .Icon = Icons::MOBILE, .Label = "Android SDK"},
             {.Section = PrefsSection::JavaJdk, .Icon = Icons::JAVA, .Label = "Java (JDK)"},
+            {.Section = PrefsSection::EnvironmentCheck, .Icon = Icons::GEAR, .Label = "Environment Check"},
             {.Section = PrefsSection::SystemUpdates, .Icon = Icons::REFRESH, .Label = "System Updates"},
         };
 
@@ -153,11 +156,11 @@ namespace CoreDeck {
         }
 
         bool CanUseSdkManager(const Context &context) {
-            return !context.Host.Sdk.SdkManagerPath.empty();
+            return !context.SdkManagerWork.Detecting && !context.Host.Sdk.SdkManagerPath.empty();
         }
 
         bool IsSdkManagerBusy(const auto &work) {
-            return work.List.Loading.load() ||
+            return work.Detecting || work.List.Loading.load() ||
                    work.OperationBusy.load() ||
                    work.LicenseBusy.load() ||
                    work.BootstrapBusy.load() ||
@@ -180,16 +183,17 @@ namespace CoreDeck {
             });
         }
 
-        void ApplySdkRoot(Context &context, const std::string &sdkRoot, char *sdkPathBuffer, const size_t sdkBufferSize) {
+        void RequestSdkDetection(Context &context) {
+            auto &work = context.SdkManagerWork;
+            if (work.Detecting) return;
+            work.DetectionFuture = std::async(std::launch::async, [] { return DetectAndroidSdk(); });
+            work.Detecting = true;
+            work.Error.clear();
+        }
+
+        void ApplySdkRoot(Context &context, const std::string &sdkRoot, char *, const size_t) {
             Paths::Onboarding::SaveSdkPathOverride(sdkRoot);
-            context.Host.Sdk = DetectAndroidSdk();
-            context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
-            context.Host.Manager.SetSdk(context.Host.Sdk);
-            RefreshAvds(context);
-            context.UI.HideInvalidSdkPathBanner = false;
-            strncpy(sdkPathBuffer, context.Host.Sdk.SdkPath.c_str(), sdkBufferSize - 1);
-            sdkPathBuffer[sdkBufferSize - 1] = '\0';
-            PersistAppSettings(context);
+            RequestSdkDetection(context);
         }
 
         SdkPackageViewTab ToSdkPackageViewTab(const SdkManagerTab tab) {
@@ -282,6 +286,24 @@ namespace CoreDeck {
         void PollSdkManagerWork(Context &context, char *sdkPathBuffer, const size_t sdkBufferSize) {
             auto &work = context.SdkManagerWork;
 
+            if (work.DetectionFuture.valid() && work.DetectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                work.Detecting = false;
+                try {
+                    context.Host.Sdk = work.DetectionFuture.get();
+                    context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
+                    context.Host.Manager.SetSdk(context.Host.Sdk);
+                    context.UI.HideInvalidSdkPathBanner = false;
+                    strncpy(sdkPathBuffer, context.Host.Sdk.SdkPath.c_str(), sdkBufferSize - 1);
+                    sdkPathBuffer[sdkBufferSize - 1] = '\0';
+                    context.SdkPathProbe.Ready = false;
+                    RefreshAvds(context);
+                    RefreshSdkPackageList(context);
+                    PersistAppSettings(context);
+                } catch (...) {
+                    work.Error = "SDK discovery failed. Check directory permissions and try again.";
+                }
+            }
+
             if (work.List.Future.valid() &&
                 work.List.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 try {
@@ -309,11 +331,8 @@ namespace CoreDeck {
                     work.OperationBusy = false;
                     ClearPendingSdkPackageInstall(work);
                     if (ok) {
-                        context.Host.Sdk = DetectAndroidSdk();
-                        context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
-                        context.Host.Manager.SetSdk(context.Host.Sdk);
-                        RefreshAvds(context);
-                        RefreshSdkPackageList(context);
+                        context.SdkPathProbe.Ready = false;
+                        RequestSdkDetection(context);
                     }
                 } catch (const std::exception &ex) {
                     work.OperationBusy = false;
@@ -738,6 +757,11 @@ namespace CoreDeck {
             ImGui::Spacing();
             LabelText("SDK Packages");
 
+            if (work.Detecting) {
+                ImGui::TextDisabled("%s", Tr("Checking SDK path..."));
+                return;
+            }
+
             if (!CanUseSdkManager(context)) {
                 ImGui::TextColored(
                     HexColor(Colors::WARNING),
@@ -1036,6 +1060,7 @@ namespace CoreDeck {
                 sdkPathBuffer[sdkBufferSize - 1] = '\0';
             }
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - browseWidth - spacing);
+            ImGui::BeginDisabled(context.SdkManagerWork.Detecting);
             ImGui::InputTextWithHint("##SdkPrefs", Tr("Path to Android SDK"), sdkPathBuffer, sdkBufferSize);
             ImGui::SameLine();
             if (PrimaryButton("Browse...###PrefsSdkBrowse", true, ImVec2(browseWidth, 0))) {
@@ -1045,14 +1070,22 @@ namespace CoreDeck {
                 }
             }
 
+            ImGui::EndDisabled();
             const std::string pathStr = sdkPathBuffer;
-            const bool pathOk = Paths::Onboarding::ValidateSdkPath(pathStr);
-            const bool hasSdkManager = HasSdkManager(pathStr);
-            const bool canInstallSdkHere = CanInstallAndroidSdkIntoDirectory(pathStr);
+            auto &probe = context.SdkPathProbe;
+            const bool pathReady = RefreshSdkPathStatusAsync(context, pathStr);
+            const bool pathOk = pathReady && probe.Value.Valid;
+            const bool hasSdkManager = pathReady && probe.Value.HasManager;
+            const bool canInstallSdkHere = pathReady && probe.Value.CanInstall;
             const bool sdkManagerBusy = IsSdkManagerBusy(context.SdkManagerWork);
             const bool bootstrapBusy = context.SdkManagerWork.BootstrapBusy.load();
 
-            if (!pathStr.empty()) {
+            if (!pathReady || context.SdkManagerWork.Detecting) {
+                ImGui::TextDisabled("%s", Tr("Checking SDK path..."));
+            } else if (!probe.Error.empty()) {
+                ImGui::TextWrapped("%s", Tr(probe.Error.c_str()));
+                if (PrimaryButton("Check Again")) probe.Ready = false;
+            } else if (!pathStr.empty()) {
                 if (pathOk) {
                     ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("Valid Android SDK path."));
                 } else if (hasSdkManager) {
@@ -1090,21 +1123,13 @@ namespace CoreDeck {
             ImGui::SameLine();
             if (PrimaryButton("Use Default Discovery", !sdkManagerBusy)) {
                 Paths::Onboarding::ClearSdkPathOverride();
-                context.Host.Sdk = DetectAndroidSdk();
-                context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
-                context.Host.Manager.SetSdk(context.Host.Sdk);
-                RefreshAvds(context);
-                context.UI.HideInvalidSdkPathBanner = false;
-                const std::string &p = context.Host.Sdk.SdkPath;
-                strncpy(sdkPathBuffer, p.c_str(), sdkBufferSize - 1);
-                sdkPathBuffer[sdkBufferSize - 1] = '\0';
-                PersistAppSettings(context);
+                RequestSdkDetection(context);
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("%s", Tr("Forget the saved override and detect the SDK from ANDROID_HOME / default paths."));
             }
 
-            if (!hasSdkManager) {
+            if (pathReady && !hasSdkManager) {
                 ImGui::SameLine();
                 if (PositiveButton("Install Command-line Tools", !sdkManagerBusy && !pathStr.empty() && canInstallSdkHere)) {
                     context.SdkManagerWork.Error.clear();
@@ -1160,18 +1185,20 @@ namespace CoreDeck {
             ImGui::SameLine();
             if (PrimaryButton("Browse...###PrefsJdkBrowse", true, ImVec2(browseWidth, 0))) {
                 if (const auto picked = FileDialog::PickFolder(Tr("Select JDK home directory"), javaHomeBuffer)) {
-                    const std::string normalized = NormalizeJavaHomePath(*picked);
-                    strncpy(javaHomeBuffer, normalized.c_str(), javaHomeBufferSize - 1);
+                    strncpy(javaHomeBuffer, picked->c_str(), javaHomeBufferSize - 1);
                     javaHomeBuffer[javaHomeBufferSize - 1] = '\0';
                 }
             }
 
-            const std::string javaHomePath = NormalizeJavaHomePath(javaHomeBuffer);
-            if (javaHomePath.empty()) {
+            const bool javaReady = RefreshJavaHomeStatusAsync(context, versionState, javaHomeBuffer);
+            const std::string javaHomePath = javaReady ? versionState.Path : std::string(javaHomeBuffer);
+            if (!javaReady) {
+                ImGui::TextDisabled("%s", Tr("Checking Java environment..."));
+            } else if (javaHomePath.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, HexColor(Colors::TEXT_SUBTLE));
                 ImGui::TextUnformatted(Tr("Leave empty to use the system default Java environment."));
                 ImGui::PopStyleColor();
-            } else if (LooksLikeJavaHome(javaHomePath)) {
+            } else if (versionState.HasJava) {
                 ImGui::TextColored(HexColor(Colors::POSITIVE), "%s", Tr("Java executable found under this JDK home."));
             } else {
                 ImGui::TextColored(
@@ -1181,10 +1208,9 @@ namespace CoreDeck {
                 );
             }
 
-            RefreshJavaHomeStatus(versionState, javaHomePath);
-            if (javaHomePath.empty()) {
+            if (javaReady && javaHomePath.empty()) {
                 ImGui::TextColored(HexColor(Colors::TEXT_MUTED), "%s", Tr(versionState.Text.c_str()));
-            } else {
+            } else if (javaReady) {
                 ImGui::TextColored(
                     versionState.HasJava ? HexColor(Colors::TEXT_SUBTLE) : HexColor(Colors::TEXT_MUTED),
                     Tr("Version: %s"),
@@ -1197,7 +1223,7 @@ namespace CoreDeck {
 
             const bool sdkManagerBusy = IsSdkManagerBusy(context.SdkManagerWork);
             const bool jdkDownloadBusy = IsJdkDownloadBusy(context);
-            if (versionState.HasJava && versionState.MajorVersion > 0 && versionState.MajorVersion < 17) {
+            if (javaReady && versionState.HasJava && versionState.MajorVersion > 0 && versionState.MajorVersion < 17) {
                 ImGui::TextColored(
                     HexColor(Colors::WARNING),
                     "%s",
@@ -1205,7 +1231,7 @@ namespace CoreDeck {
                 );
             }
 
-            if (ShouldOfferManagedJdkDownload(versionState)) {
+            if (jdkDownloadBusy || (javaReady && ShouldOfferManagedJdkDownload(versionState))) {
                 DrawJdkDownloadPanel(
                     context,
                     javaHomeBuffer,
@@ -1218,8 +1244,8 @@ namespace CoreDeck {
                 ImGui::Spacing();
             }
 
-            const std::string effectiveJavaHomePath = NormalizeJavaHomePath(javaHomeBuffer);
-            const bool canApplyJavaHome = (effectiveJavaHomePath.empty() || versionState.HasJava) && !sdkManagerBusy && !jdkDownloadBusy;
+            const std::string effectiveJavaHomePath = versionState.Path;
+            const bool canApplyJavaHome = javaReady && (effectiveJavaHomePath.empty() || versionState.HasJava) && !sdkManagerBusy && !jdkDownloadBusy;
             if (PrimaryButton("Apply JDK Path", canApplyJavaHome)) {
                 context.Prefs.JavaHomePath = effectiveJavaHomePath;
                 context.Host.Sdk.JavaHomePath = context.Prefs.JavaHomePath;
@@ -1250,6 +1276,79 @@ namespace CoreDeck {
         }
     }
 
+    static void DrawEnvironmentCheck(Context &context, PrefsSection &activeSection) {
+        auto &work = context.EnvironmentCheck;
+        SectionHeader("Environment Check", "Check the tools CoreDeck uses. Nothing is installed or changed automatically.");
+        if (work.Future.valid() && work.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            try {
+                work.Results = work.Future.get();
+                if (work.Cancel->load()) {
+                    work.Results.clear();
+                    work.Error = "Environment check cancelled.";
+                }
+            } catch (const std::exception &) {
+                work.Error = "Environment check failed. Check permissions and try again.";
+            }
+            work.Busy = false;
+        }
+        const bool canCheck = !work.Busy && !IsSdkManagerBusy(context.SdkManagerWork) && !IsJdkDownloadBusy(context);
+        const bool recheck = PrimaryButton("Check Again", canCheck);
+        if ((!work.Started || recheck) && canCheck) {
+            work.CheckedSdk = context.Host.Sdk;
+            work.Cancel = std::make_shared<std::atomic<bool>>(false);
+            work.Results.clear();
+            work.Error.clear();
+            const auto sdk = work.CheckedSdk;
+            const auto cancel = work.Cancel;
+            work.Future = std::async(std::launch::async, [sdk, cancel] {
+                return RunEnvironmentHealthCheck(sdk, cancel);
+            });
+            work.Started = true;
+            work.Busy = true;
+        }
+        if (work.Busy) {
+            ImGui::SameLine();
+            if (PrimaryButton("Cancel", !work.Cancel->load())) work.Cancel->store(true);
+            ImGui::TextWrapped("%s", Tr("Checking environment... Each command has a 15-second timeout."));
+        }
+        if (!work.Error.empty()) ImGui::TextWrapped("%s", Tr(work.Error.c_str()));
+        const auto &sdk = context.Host.Sdk;
+        const auto &checked = work.CheckedSdk;
+        if (work.Started && (sdk.SdkPath != checked.SdkPath || sdk.JavaHomePath != checked.JavaHomePath ||
+            sdk.AdbPath != checked.AdbPath || sdk.EmulatorPath != checked.EmulatorPath ||
+            sdk.SdkManagerPath != checked.SdkManagerPath || sdk.AvdManagerPath != checked.AvdManagerPath)) {
+            ImGui::TextWrapped("%s", Tr("Configuration changed. Check again to refresh these results."));
+        }
+        ImGui::Spacing();
+        for (const auto &item : work.Results) {
+            ImGui::PushID(item.Label.c_str());
+            ImGui::Separator();
+            ImGui::TextUnformatted(Tr(item.Label.c_str()));
+            ImGui::SameLine();
+            const char *status = "Skipped";
+            ImVec4 color = HexColor(Colors::TEXT_MUTED);
+            switch (item.Status) {
+                case HealthStatus::Passed: status = "Passed"; color = HexColor(Colors::POSITIVE); break;
+                case HealthStatus::Warning: status = "Needs attention"; color = HexColor(Colors::WARNING); break;
+                case HealthStatus::Failed: status = "Failed"; color = HexColor(Colors::NEGATIVE); break;
+                case HealthStatus::Skipped: break;
+            }
+            ImGui::TextColored(color, "%s", Tr(status));
+            ImGui::TextWrapped("%s", Tr(item.Detail.c_str()));
+            if (item.Fix == HealthFix::Sdk && PrimaryButton("Open SDK Settings")) {
+                activeSection = PrefsSection::AndroidSdk;
+            } else if (item.Fix == HealthFix::Jdk && PrimaryButton("Open JDK Settings")) {
+                activeSection = PrefsSection::JavaJdk;
+            } else if (item.Fix == HealthFix::Images && PrimaryButton("Create AVD", sdk.IsFound)) {
+                context.UI.ShowPreferences = false;
+                OpenCreateAvdDialog(context);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::Spacing();
+            ImGui::PopID();
+        }
+    }
+
     bool BuildPreferencesWindow(Context &context) {
         if (context.UI.ShowPreferences && !ImGui::IsPopupOpen("Preferences###CoreDeckPrefs")) {
             ImGui::OpenPopup("Preferences###CoreDeckPrefs");
@@ -1277,6 +1376,7 @@ namespace CoreDeck {
             ImGui::PopStyleVar();
 
             if (ImGui::IsWindowAppearing()) {
+                context.SdkPathProbe.Ready = false;
                 const std::string &p = context.Host.Sdk.SdkPath;
                 strncpy(sdkPathBuffer, p.c_str(), sizeof(sdkPathBuffer) - 1);
                 sdkPathBuffer[sizeof(sdkPathBuffer) - 1] = '\0';
@@ -1344,6 +1444,9 @@ namespace CoreDeck {
             ImGui::BeginChild("##PrefsContent", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
             ImGui::PopStyleVar();
             switch (activeSection) {
+                case PrefsSection::EnvironmentCheck:
+                    DrawEnvironmentCheck(context, activeSection);
+                    break;
                 case PrefsSection::General:
                     DrawGeneralSection(context);
                     break;

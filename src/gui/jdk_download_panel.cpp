@@ -69,8 +69,7 @@ namespace CoreDeck {
             context.Host.Manager.SetSdk(context.Host.Sdk);
             strncpy(javaHomeBuffer, javaHomePath.c_str(), javaHomeBufferSize - 1);
             javaHomeBuffer[javaHomeBufferSize - 1] = '\0';
-            versionState.Path.clear();
-            RefreshJavaHomeStatus(versionState, javaHomePath);
+            versionState = {};
             context.SdkManagerWork.List.Ready = false;
             PersistAppSettings(context);
         }
@@ -179,6 +178,26 @@ namespace CoreDeck {
     bool IsJdkDownloadBusy(const Context &context) {
         const auto &work = context.JdkDownloadWork;
         return work.Installing.load();
+    }
+
+    bool RefreshJavaHomeStatusAsync(Context &context, JavaHomeStatus &state, const std::string &path) {
+        auto &work = context.JavaProbe;
+        if (work.Future.valid() && work.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            try {
+                auto result = work.Future.get();
+                if (work.RequestedPath == path) state = std::move(result);
+            } catch (...) {
+                if (work.RequestedPath == path) state = {.Path = path, .Text = "Unable to read Java version."};
+            }
+        }
+        // The input may be a macOS bundle whose normalized Path differs from the text field.
+        if (!work.Future.valid() && work.RequestedPath == path && !state.Text.empty()) return true;
+        if (!work.Future.valid()) {
+            work.RequestedPath = path;
+            state = {};
+            work.Future = std::async(std::launch::async, [path] { return ReadJavaHomeStatus(path); });
+        }
+        return false;
     }
 
     bool ShouldOfferManagedJdkDownload(const JavaHomeStatus &versionState) {

@@ -641,6 +641,7 @@ namespace CoreDeck {
     }
 
     void Application::m_Build() {
+        PollAvdRefresh(m_Context);
         m_HandleNativeMenuActions();
         m_SyncNativeMenuState();
 
@@ -1051,6 +1052,8 @@ namespace CoreDeck {
     }
 
     void Application::m_DrainAsyncWork() {
+        if (m_Context.Catalog.RefreshCancel) m_Context.Catalog.RefreshCancel->store(true);
+        if (m_Context.EnvironmentCheck.Cancel) m_Context.EnvironmentCheck.Cancel->store(true);
         RequestProgressCancel(m_Context.SdkManagerWork.Progress);
         RequestProgressCancel(m_Context.JdkDownloadWork.Progress);
         if (m_Context.Updates.DownloadProgress) {
@@ -1061,6 +1064,11 @@ namespace CoreDeck {
         CancelDeviceExplorerWork(m_Context);
 
         ConsumeFuture(m_UpdateCheckFuture);
+        ConsumeFuture(m_Context.JavaProbe.Future);
+        ConsumeFuture(m_Context.SdkPathProbe.Future);
+        ConsumeFuture(m_Context.SdkManagerWork.DetectionFuture);
+        ConsumeFuture(m_Context.Catalog.RefreshFuture);
+        ConsumeFuture(m_Context.EnvironmentCheck.Future);
         ConsumeFuture(m_Context.Updates.DownloadFuture);
         ConsumeFuture(m_Context.AvdCreationWork.Prefetch.Future);
         ConsumeFuture(m_Context.AvdCreationWork.SystemImageRemoval.Future);
@@ -1347,25 +1355,109 @@ namespace CoreDeck {
     }
 
     void RefreshAvds(Context &context) {
-        context.Catalog.AvdNames = ListAvdNames(context.Host.Sdk);
-        context.Catalog.Avds = LoadAvds(context.Catalog.AvdNames);
-
-        for (const auto &avdName: context.Catalog.AvdNames) {
-            LoadAvdOptions(context, avdName);
+        auto &catalog = context.Catalog;
+        catalog.RefreshPending = true;
+        catalog.RefreshError.clear();
+        // Supersede old work without destroying a running future on the UI thread.
+        if (catalog.RefreshFuture.valid()) {
+            catalog.RefreshCancel->store(true);
+            return;
         }
+        catalog.RefreshPending = false;
+        catalog.RefreshCancel = std::make_shared<std::atomic<bool>>(false);
+        const auto cancel = catalog.RefreshCancel;
+        const SdkInfo sdk = context.Host.Sdk;
+        catalog.RefreshFuture = std::async(std::launch::async, [sdk, cancel] {
+            AvdCatalogResult result;
+            result.Names = ListAvdNames(sdk, [cancel] { return cancel->load(); });
+            if (cancel->load()) return result;
+            result.Avds = LoadAvds(result.Names);
+            for (const auto &name : result.Names) {
+                if (cancel->load()) break;
+                result.Options.emplace(name, LoadOptionsFromFile(GetOptionsConfigPath(name)));
+            }
+            return result;
+        });
+    }
 
-        context.DiskUsage.PerAvdCache.clear();
-        if (!context.DiskUsage.Loading.load()) {
-            context.DiskUsage.LastScan = {};
-            context.DiskUsage.Ready = false;
+    bool RefreshSdkPathStatusAsync(Context &context, const std::string &path) {
+        auto &probe = context.SdkPathProbe;
+        if (probe.Future.valid() && probe.Future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            try {
+                auto result = probe.Future.get();
+                if (probe.RequestedPath == path) {
+                    probe.Value = std::move(result);
+                    probe.ReadyPath = path;
+                    probe.Ready = true;
+                }
+            } catch (...) {
+                if (probe.RequestedPath == path) {
+                    probe.Value = {};
+                    probe.ReadyPath = path;
+                    probe.Ready = true;
+                    probe.Error = "SDK discovery failed. Check directory permissions and try again.";
+                }
+            }
         }
+        if (!probe.Future.valid() && (!probe.Ready || probe.ReadyPath != path)) {
+            probe.RequestedPath = path;
+            probe.Error.clear();
+            probe.Future = std::async(std::launch::async, [path] {
+                Context::SdkPathProbeWork::Result result;
+                if (!path.empty()) {
+                    result.Valid = Paths::Onboarding::ValidateSdkPath(path);
+                    result.HasManager = HasSdkManager(path);
+                    result.CanInstall = CanInstallAndroidSdkIntoDirectory(path);
+                    result.Sdk = BuildSdkInfoFromSdkRoot(path, "");
+                }
+                return result;
+            });
+        }
+        return probe.Ready && probe.ReadyPath == path && !probe.Future.valid();
+    }
 
-        if (!context.Catalog.Avds.empty()) {
-            context.Catalog.SelectedAvd = 0;
-        } else {
-            context.Catalog.SelectedAvd = -1;
+    void PollAvdRefresh(Context &context) {
+        auto &catalog = context.Catalog;
+        if (!catalog.RefreshFuture.valid() ||
+            catalog.RefreshFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+        try {
+            auto result = catalog.RefreshFuture.get();
+            if (!catalog.RefreshCancel->load() && !catalog.RefreshPending) {
+                // Read selection at completion, so navigation during a refresh is preserved.
+                std::string selectedName;
+                if (catalog.SelectedAvd >= 0 && catalog.SelectedAvd < static_cast<int>(catalog.Avds.size())) {
+                    selectedName = catalog.Avds[catalog.SelectedAvd].Name;
+                }
+                catalog.AvdNames = std::move(result.Names);
+                catalog.Avds = std::move(result.Avds);
+                // Existing options may have been edited while the worker was reading files.
+                for (auto &[name, options] : result.Options) {
+                    catalog.PerAvdOptions.try_emplace(name, std::move(options));
+                }
+                std::erase_if(catalog.PerAvdOptions, [&](const auto &entry) {
+                    return std::ranges::find(catalog.AvdNames, entry.first) == catalog.AvdNames.end();
+                });
+                catalog.SelectedAvd = catalog.Avds.empty() ? -1 : 0;
+                for (int i = 0; i < static_cast<int>(catalog.Avds.size()); ++i) {
+                    if (catalog.Avds[i].Name == selectedName) {
+                        catalog.SelectedAvd = i;
+                        break;
+                    }
+                }
+                catalog.PreviousSelectedAvd = -1;
+                catalog.FilteredIndices.clear();
+                context.DiskUsage.PerAvdCache.clear();
+                if (!context.DiskUsage.Loading.load()) {
+                    context.DiskUsage.LastScan = {};
+                    context.DiskUsage.Ready = false;
+                }
+            }
+        } catch (...) {
+            if (!catalog.RefreshCancel->load() && !catalog.RefreshPending) {
+                catalog.RefreshError = "Could not refresh AVDs. The emulator command failed or timed out.";
+            }
         }
-        context.Catalog.PreviousSelectedAvd = -1;
+        if (catalog.RefreshPending) RefreshAvds(context);
     }
 
     void LoadAvdOptions(Context &context, const std::string &avdName) {

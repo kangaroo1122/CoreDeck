@@ -447,9 +447,8 @@ namespace CoreDeck {
                 return;
             }
 
-            const auto bracket = line.find('[');
-            const auto closeBracket = line.find(']', bracket);
-            if (bracket == std::string::npos || closeBracket == std::string::npos) {
+            const auto parsed = ParseSdkManagerProgressLine(line);
+            if (parsed.Percent < 0) {
                 if (!line.empty()) {
                     std::lock_guard lock(progress->Mutex);
                     progress->DetailText = line;
@@ -457,32 +456,10 @@ namespace CoreDeck {
                 return;
             }
 
-            auto afterBracket = line.substr(closeBracket + 1);
-            const auto start = afterBracket.find_first_not_of(" \t");
-            if (start == std::string::npos) {
-                return;
-            }
-            afterBracket = afterBracket.substr(start);
-
-            const auto pctEnd = afterBracket.find('%');
-            if (pctEnd == std::string::npos) {
-                return;
-            }
-
-            const int pct = static_cast<int>(std::strtol(afterBracket.substr(0, pctEnd).c_str(), nullptr, 10));
-
-            std::string description;
-            if (pctEnd + 1 < afterBracket.size()) {
-                description = afterBracket.substr(pctEnd + 1);
-                if (const auto ds = description.find_first_not_of(" \t"); ds != std::string::npos) {
-                    description = description.substr(ds);
-                }
-            }
-
             ReportSdkProgress(
                 progress,
-                static_cast<float>(pct) / 100.0F,
-                description.empty() ? "Installing SDK packages..." : description,
+                static_cast<float>(parsed.Percent) / 100.0F,
+                parsed.Status.empty() ? "Installing SDK packages..." : parsed.Status,
                 line
             );
         }
@@ -687,8 +664,12 @@ namespace CoreDeck {
                 continue;
             }
 
-            SdkPackage &package = packages[columns[0]];
-            package.Path = columns[0];
+            // SDK package identifiers use '/' in newer tools; keep the legacy
+            // canonical form for grouping, deduplication and install commands.
+            std::string packagePath = columns[0];
+            std::ranges::replace(packagePath, '/', ';');
+            SdkPackage &package = packages[packagePath];
+            package.Path = packagePath;
 
             if (section == ListSection::Installed) {
                 if (columns.size() >= 2) {

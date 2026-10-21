@@ -1,3 +1,12 @@
+## [v0.14.0-beta.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.1) — 2026-10-21
+
+- Add an Environment Check page in Preferences for the SDK directory, Java runtime, ADB, emulator, command-line tools, licenses, compatible system images, and available disk space, with background checks, cancellation, command timeouts, and links to existing setup actions
+- Support newer Android SDK package identifiers with slash separators, normalize package paths for installed-state matching and deduplication, and recognize updated license messages and download/extraction progress formats
+- Refresh AVD lists in the background, preserve the selected device and in-memory options, discard superseded refresh results, and retain the previous list when refresh commands fail or time out
+- Move SDK path validation and discovery, together with JDK version checks, off the Preferences UI thread, cache path checks, and prevent outdated results from enabling configuration actions
+- Reuse background SDK/JDK checks during first-run setup and perform post-install SDK verification and directory switching asynchronously before allowing setup to continue
+- Add Simplified Chinese translations for environment checks and background-operation feedback while preserving the existing interface style and installation workflows
+
 ## [v0.13.1](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.13.1) — 2026-10-10
 
 - Ad-hoc sign macOS application bundles and embedded executables before DMG packaging on Intel and Apple Silicon, with strict signature verification that fails packaging if validation fails

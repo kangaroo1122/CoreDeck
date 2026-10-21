@@ -11,6 +11,14 @@
 namespace fs = std::filesystem;
 using namespace CoreDeck;
 
+TEST_CASE("AVD enumeration reports command failures", "[avd][list]") {
+    SdkInfo sdk;
+    CHECK(ListAvdNames(sdk).empty());
+    sdk.IsFound = true;
+    sdk.EmulatorPath = "/nonexistent/coredeck-test-emulator";
+    CHECK_THROWS(ListAvdNames(sdk));
+}
+
 namespace {
     fs::path UniqueTempDir(const std::string &prefix) {
         std::random_device rd;

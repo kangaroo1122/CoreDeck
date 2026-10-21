@@ -1,3 +1,8 @@
+## [v0.14.0-beta.3](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.3) — 2026-10-21
+
+- Add APK analysis with package metadata, API requirements, architectures, and permissions, plus background installation and package-based Logcat filtering
+- Add a startup update-check preference and support custom asset directories via `COREDECK_ASSETS_DIR`
+
 ## [v0.14.0-beta.2](https://github.com/kangaroo1122/CoreDeck/releases/tag/v0.14.0-beta.2) — 2026-10-21
 
 - Fix false SDK command-line tool failures in Environment Check when `avdmanager --help` returns valid output with a nonzero exit code, and provide more specific, localized diagnostics

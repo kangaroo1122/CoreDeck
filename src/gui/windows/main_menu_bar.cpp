@@ -59,8 +59,11 @@ namespace CoreDeck {
                 ImGui::EndMenu();
             }
 
-            if (HasSelectedRunningAvd(context) && RoundedBeginMenu("Tools")) {
-                if (RoundedBeginMenu("Shared Folder")) {
+            if (RoundedBeginMenu("Tools")) {
+                if (RoundedMenuItem("APK Analyzer")) {
+                    context.ApkAnalyzer.Open = true;
+                }
+                if (HasSelectedRunningAvd(context) && RoundedBeginMenu("Shared Folder")) {
                     if (RoundedMenuItem(GetOpenSharedFolderHostLabel())) {
                         OpenSharedFolderOnHost(context);
                     }

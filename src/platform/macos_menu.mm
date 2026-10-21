@@ -31,6 +31,7 @@ namespace {
     NSMenuItem *g_ToggleDeviceExplorerItem = nil;
     NSMenuItem *g_StorageOverviewItem = nil;
     NSMenuItem *g_ToolsMenuItem = nil;
+    NSMenuItem *g_ApkAnalyzerItem = nil;
     NSMenuItem *g_SharedFolderMenuItem = nil;
     NSMenuItem *g_OpenSharedFolderHostItem = nil;
     NSMenuItem *g_OpenSharedFolderEmulatorItem = nil;
@@ -163,7 +164,8 @@ namespace {
         SetMenuTitle(g_SharedFolderMenuItem, Translated("Shared Folder"));
         [g_OpenSharedFolderHostItem setTitle:Translated(CoreDeck::GetOpenSharedFolderHostLabel())];
         [g_OpenSharedFolderEmulatorItem setTitle:Translated("Open Shared Folder in Emulator")];
-        [g_ToolsMenuItem setHidden:!state.ShowToolsMenu];
+        [g_ApkAnalyzerItem setTitle:Translated("APK Analyzer")];
+        [g_SharedFolderMenuItem setHidden:!state.ShowToolsMenu];
 
         SetMenuTitle(g_HelpMenuItem, Translated("Help"));
         [g_CheckForUpdatesItem setTitle:Translated("Check for Updates...")];
@@ -177,7 +179,8 @@ namespace {
         [g_ToggleOutputLogItem setEnabled:state.Interactive];
         [g_ToggleDeviceExplorerItem setEnabled:state.Interactive];
         [g_StorageOverviewItem setEnabled:state.Interactive];
-        [g_ToolsMenuItem setEnabled:state.Interactive && state.ShowToolsMenu];
+        [g_ToolsMenuItem setEnabled:state.Interactive];
+        [g_ApkAnalyzerItem setEnabled:state.Interactive];
         [g_SharedFolderMenuItem setEnabled:state.Interactive && state.ShowToolsMenu];
         [g_OpenSharedFolderHostItem setEnabled:state.Interactive && state.ShowToolsMenu];
         [g_OpenSharedFolderEmulatorItem setEnabled:state.Interactive && state.ShowToolsMenu];
@@ -242,6 +245,8 @@ namespace CoreDeck::MacosMenu {
             [mainMenu addItem:g_ToolsMenuItem];
             NSMenu *toolsMenu = [[NSMenu alloc] initWithTitle:Translated("Tools")];
             [g_ToolsMenuItem setSubmenu:toolsMenu];
+            g_ApkAnalyzerItem = ActionItem(Translated("APK Analyzer"), NativeMenuAction::ApkAnalyzer);
+            [toolsMenu addItem:g_ApkAnalyzerItem];
             g_SharedFolderMenuItem = [[NSMenuItem alloc] initWithTitle:Translated("Shared Folder") action:nil keyEquivalent:@""];
             NSMenu *sharedFolderMenu = [[NSMenu alloc] initWithTitle:Translated("Shared Folder")];
             [g_SharedFolderMenuItem setSubmenu:sharedFolderMenu];
@@ -284,6 +289,7 @@ namespace CoreDeck::MacosMenu {
             g_ToggleDeviceExplorerItem = nil;
             g_StorageOverviewItem = nil;
             g_ToolsMenuItem = nil;
+            g_ApkAnalyzerItem = nil;
             g_SharedFolderMenuItem = nil;
             g_OpenSharedFolderHostItem = nil;
             g_OpenSharedFolderEmulatorItem = nil;

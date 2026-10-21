@@ -9,8 +9,29 @@
 
 #include "core/system_image.h"
 #include "core/health_check.h"
+#include "core/apk_analyzer.h"
 
 using namespace CoreDeck;
+
+TEST_CASE("APK badging parses versions permissions and architectures", "[apk_analyzer]") {
+    const auto report = ParseApkBadging(
+        "package: name='com.example.demo' versionCode='42' versionName='1.2'\n"
+        "application-label:'Demo app'\nminSdkVersion:'23'\ntargetSdkVersion:'36'\n"
+        "uses-permission: name='android.permission.INTERNET'\n"
+        "uses-permission-sdk-23: name='android.permission.INTERNET'\n"
+        "native-code: 'arm64-v8a' 'x86_64'\n");
+    CHECK(report.Error.empty());
+    CHECK(report.PackageName == "com.example.demo");
+    CHECK(report.Label == "Demo app");
+    CHECK(report.VersionCode == "42");
+    CHECK(report.VersionName == "1.2");
+    CHECK(report.MinSdk == "23");
+    CHECK(report.TargetSdk == "36");
+    CHECK(report.Permissions.size() == 1);
+    CHECK(report.Abis == std::vector<std::string>{"arm64-v8a", "x86_64"});
+    CHECK(ParseApkBadging("package: name='com.example.app'\nsdkVersion:'21'\n").MinSdk == "21");
+    CHECK_FALSE(ParseApkBadging("error: invalid archive").Error.empty());
+}
 
 TEST_CASE("AVD manager health check recognizes help rather than diagnostic mentions", "[system_image]") {
     CHECK(IsAvdManagerHelpOutput("Usage:\n avdmanager [global options] [action]\n- list avd\n- create avd\n"));
@@ -181,6 +202,40 @@ TEST_CASE("failed image installation does not succeed because an old image exist
     CHECK(ListDeviceProfiles(sdk, cancelled).empty());
     CHECK_THROWS_AS(ListRemoteSystemImages(sdk, {}), std::runtime_error);
     CHECK_THROWS_AS(ListDeviceProfiles(sdk), std::runtime_error);
+}
+
+TEST_CASE("APK analyzer reports missing tools and honors cancellation", "[apk_analyzer]") {
+    const auto root = MakeTempDir("coredeck_apk_analyzer");
+    struct Cleanup {
+        std::filesystem::path Path;
+        ~Cleanup() { std::error_code ignored; std::filesystem::remove_all(Path, ignored); }
+    } cleanup{root};
+    const auto apk = root / "demo app.apk";
+    std::ofstream(apk) << "test fixture";
+    SdkInfo sdk;
+    sdk.SdkPath = root.string();
+    CHECK_FALSE(AnalyzeApk(sdk, apk.string(), {}).Error.empty());
+    CHECK(AnalyzeApk(sdk, apk.string(), [] { return true; }).Cancelled);
+
+#ifndef _WIN32
+    // Native aapt2 is an executable rather than a batch file on Windows.
+    // Exercise orchestration with a local executable fixture on POSIX hosts.
+    const auto tools = root / "build-tools" / "37.0.0";
+    std::filesystem::create_directories(tools);
+    const auto tool = tools / "aapt2";
+    std::ofstream(tool) << "#!/bin/sh\necho \"package: name='com.example.demo' versionCode='1' versionName='1.0'\"\necho \"minSdkVersion:'23'\"\n";
+    std::filesystem::permissions(tool, std::filesystem::perms::owner_exec, std::filesystem::perm_options::add);
+    const auto report = AnalyzeApk(sdk, apk.string(), {});
+    CHECK(report.Error.empty());
+    CHECK(report.PackageName == "com.example.demo");
+    CHECK(report.MinSdk == "23");
+    CHECK(report.Path == apk.string());
+    sdk.AdbPath = tool.string();
+    CHECK_FALSE(InstallApk(sdk, "emulator-5554", apk.string(), {}).Succeeded);
+    std::ofstream(tool) << "#!/bin/sh\necho Success\n";
+    CHECK(InstallApk(sdk, "emulator-5554", apk.string(), {}).Succeeded);
+    CHECK(InstallApk(sdk, "emulator-5554", apk.string(), [] { return true; }).Cancelled);
+#endif
 }
 
 TEST_CASE("remote system image names use sdkmanager descriptions", "[system_image][list]") {

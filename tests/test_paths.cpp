@@ -3,8 +3,33 @@
 #include "core/paths.h"
 #include <chrono>
 #include <fstream>
+#include <cstdlib>
+#include <optional>
 
 using namespace CoreDeck::Paths;
+
+TEST_CASE("Assets directory override preserves the default when unset or empty", "[paths][assets]") {
+    const auto set = [](const char *value) {
+#ifdef _WIN32
+        _putenv_s("COREDECK_ASSETS_DIR", value ? value : "");
+#else
+        if (value) setenv("COREDECK_ASSETS_DIR", value, 1);
+        else unsetenv("COREDECK_ASSETS_DIR");
+#endif
+    };
+    const char *previous = std::getenv("COREDECK_ASSETS_DIR");
+    struct Restore {
+        decltype(set) Set;
+        std::optional<std::string> Previous;
+        ~Restore() { Set(Previous ? Previous->c_str() : nullptr); }
+    } restore{set, previous ? std::optional<std::string>(previous) : std::nullopt};
+    set(nullptr);
+    CHECK(GetAssetsDirectory() == JoinPaths({GetResourcesDirectory(), "assets"}));
+    set("");
+    CHECK(GetAssetsDirectory() == JoinPaths({GetResourcesDirectory(), "assets"}));
+    set("/custom/coredeck/assets");
+    CHECK(GetAssetsDirectory() == "/custom/coredeck/assets");
+}
 
 TEST_CASE("Text file replacement preserves the destination on failure", "[paths][write]") {
     const auto root = std::filesystem::temp_directory_path() /

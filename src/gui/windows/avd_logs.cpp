@@ -584,6 +584,8 @@ namespace CoreDeck {
 
         const LogcatFilterResult &ResolveLogcatFilter(Context::LogcatViewState &state) {
             const bool cacheMatches =
+                state.FilteredPackage == state.PackageFilter &&
+                state.FilteredPackagePids == state.PackagePids &&
                 state.FilteredRevision == state.CachedRevision &&
                 state.FilteredMinimumPriority == state.MinimumPriority &&
                 state.FilteredPid == state.SelectedPid &&
@@ -594,11 +596,14 @@ namespace CoreDeck {
             }
 
             LogcatFilterOptions options;
+            if (!state.PackageFilter.empty()) options.PackagePids = state.PackagePids;
             options.MinimumPriority = state.MinimumPriority;
             options.Pid = state.SelectedPid;
             options.Query = state.Search;
             options.UseRegex = state.UseRegex;
             state.CachedFilter = FilterLogcatEntries(state.CachedEntries, options);
+            state.FilteredPackage = state.PackageFilter;
+            state.FilteredPackagePids = state.PackagePids;
             state.FilteredRevision = state.CachedRevision;
             state.FilteredMinimumPriority = state.MinimumPriority;
             state.FilteredPid = state.SelectedPid;
@@ -628,13 +633,14 @@ namespace CoreDeck {
         }
 
         void DrawProcessCombo(Context::LogcatViewState &state, const std::vector<LogcatProcess> &processes) {
-            const std::string preview = ProcessLabel(state.SelectedPid, processes);
+            const std::string preview = state.PackageFilter.empty() ? ProcessLabel(state.SelectedPid, processes) : state.PackageFilter;
             ImGui::SetNextItemWidth(Em(19.0F));
             ImGui::SetNextWindowSizeConstraints(ImVec2(Em(18.0F), 0), ImVec2(Em(36.0F), Eh(20.0F)));
             ComboStyle style;
             if (ImGui::BeginCombo("##LogcatProcess", preview.c_str())) {
-                if (RoundedSelectable(Tr("All processes"), state.SelectedPid == 0)) {
+                if (RoundedSelectable(Tr("All processes"), state.SelectedPid == 0 && state.PackageFilter.empty())) {
                     state.SelectedPid = 0;
+                    state.PackageFilter.clear();
                 }
                 for (const auto &process: processes) {
                     const std::string label = process.Name.empty()
@@ -642,6 +648,7 @@ namespace CoreDeck {
                         : process.Name + " · " + std::to_string(process.Pid);
                     if (RoundedSelectable(label.c_str(), state.SelectedPid == process.Pid)) {
                         state.SelectedPid = process.Pid;
+                        state.PackageFilter.clear();
                     }
                 }
                 ImGui::EndCombo();
@@ -872,6 +879,15 @@ namespace CoreDeck {
                 state.CachedEntries
             );
 
+            state.PackagePids.clear();
+            if (!state.PackageFilter.empty()) {
+                for (const auto &process: processes) {
+                    if (process.Name == state.PackageFilter || process.Name.starts_with(state.PackageFilter + ":")) {
+                        state.PackagePids.push_back(process.Pid);
+                    }
+                }
+                if (state.PackagePids.empty()) ImGui::TextDisabled("%s", Tr("Waiting for the app process. Launch the app in the emulator."));
+            }
             const LogcatFilterResult filtered = DrawLogcatToolbar(context, inputs, state, processes, targetReady);
             if (!state.ExportStatus.empty()) {
                 ImGui::TextColored(

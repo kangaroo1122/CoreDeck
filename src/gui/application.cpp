@@ -46,6 +46,7 @@
 #include "windows/avd_info.h"
 #include "windows/avd_list.h"
 #include "windows/avd_logs.h"
+#include "windows/apk_analyzer.h"
 #include "windows/avd_snapshots.h"
 #include "windows/avd_options.h"
 #include "windows/create_avd.h"
@@ -683,6 +684,7 @@ namespace CoreDeck {
             BuildInstallImageWindow(m_Context);
         }
         BuildStorageWindow(m_Context);
+        BuildApkAnalyzerWindow(m_Context);
         BuildQuitConfirmWindow(m_Context);
 
         m_Context.Host.Manager.Update();
@@ -777,16 +779,16 @@ namespace CoreDeck {
     void Application::m_LoadFonts() const {
         ImGuiIO &io = ImGui::GetIO();
 
-        const std::string resourcesDir = Paths::GetResourcesDirectory();
+        const std::string assetsDir = Paths::GetAssetsDirectory();
         const std::vector<std::string> bundledFonts = FindBundledFontPaths();
         const std::string defaultTextFontPath = !bundledFonts.empty()
                                                     ? bundledFonts.front()
-                                                    : Paths::JoinPaths({resourcesDir, "assets", "fonts", "PingFang SC Heavy.ttf"});
+                                                    : Paths::JoinPaths({assetsDir, "fonts", "PingFang SC Heavy.ttf"});
         const std::string fallbackTextFontPath = Paths::JoinPaths(
-            {resourcesDir, "assets", "fonts", "JetBrainsMono-Regular.ttf"}
+            {assetsDir, "fonts", "JetBrainsMono-Regular.ttf"}
         );
         const std::string iconFontPath = Paths::JoinPaths(
-            {resourcesDir, "assets", "fonts", "FontAwesome7Free-Solid-900.otf"}
+            {assetsDir, "fonts", "FontAwesome7Free-Solid-900.otf"}
         );
 
         const float textSize = ResolveUiFontPixelSize(m_Context, m_FontPixelScale);
@@ -1033,6 +1035,7 @@ namespace CoreDeck {
 
     void Application::m_DrainAsyncWork() {
         m_Context.ShutdownRequested->store(true);
+        if (m_Context.ApkAnalyzer.Cancel) m_Context.ApkAnalyzer.Cancel->store(true);
         if (m_Context.Catalog.RefreshCancel) m_Context.Catalog.RefreshCancel->store(true);
         if (m_Context.EnvironmentCheck.Cancel) m_Context.EnvironmentCheck.Cancel->store(true);
         RequestProgressCancel(m_Context.SdkManagerWork.Progress);
@@ -1050,6 +1053,7 @@ namespace CoreDeck {
         ShutdownSdkPreferencesWork(m_Context);
         ShutdownJdkDownloadWork(m_Context);
         ShutdownImageInstallationWork(m_Context);
+        ShutdownApkAnalyzer(m_Context);
         ConsumeFuture(m_UpdateCheckFuture);
         ConsumeFuture(m_Context.JavaProbe.Future);
         ConsumeFuture(m_Context.SdkPathProbe.Future);
@@ -1149,7 +1153,7 @@ namespace CoreDeck {
         if (!m_AutoUpdateCheckStarted) {
             m_AutoUpdateCheckStarted = true;
             m_UpdateCheckWasManual = false;
-            start = true;
+            start = m_Context.Prefs.CheckForUpdatesOnLaunch;
         } else if (m_Context.Updates.RequestManualUpdateCheck) {
             m_Context.Updates.RequestManualUpdateCheck = false;
             m_UpdateCheckWasManual = true;
@@ -1217,6 +1221,9 @@ namespace CoreDeck {
                 case NativeMenuAction::StorageOverview:
                     m_Context.UI.ShowStorageDialog = true;
                     break;
+                case NativeMenuAction::ApkAnalyzer:
+                    m_Context.ApkAnalyzer.Open = true;
+                    break;
                 case NativeMenuAction::OpenSharedFolderHost:
                     OpenSharedFolderOnHost(m_Context);
                     break;
@@ -1263,6 +1270,7 @@ namespace CoreDeck {
         s.UiFontSize = NormalizeUiFontSize(context.Prefs.UiFontSize);
         s.JavaHomePath = context.Prefs.JavaHomePath;
         s.IncludeBetaUpdates = context.Prefs.IncludeBetaUpdates;
+        s.CheckForUpdatesOnLaunch = context.Prefs.CheckForUpdatesOnLaunch;
         s.WindowWidth = context.UI.WindowWidth;
         s.WindowHeight = context.UI.WindowHeight;
         s.WindowMaximized = context.UI.WindowMaximized;
@@ -1294,6 +1302,7 @@ namespace CoreDeck {
         context.Prefs.UiFontSize = NormalizeUiFontSize(settings.UiFontSize);
         context.Prefs.JavaHomePath = settings.JavaHomePath;
         context.Prefs.IncludeBetaUpdates = settings.IncludeBetaUpdates;
+        context.Prefs.CheckForUpdatesOnLaunch = settings.CheckForUpdatesOnLaunch;
         context.Host.Sdk.JavaHomePath = settings.JavaHomePath;
         context.Host.Manager.SetSdk(context.Host.Sdk);
         context.UI.WindowWidth = NormalizeWindowDimension(settings.WindowWidth, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_WIDTH);

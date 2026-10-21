@@ -11,11 +11,11 @@
 namespace CoreDeck {
     namespace {
         std::vector<std::string> BundledFontCandidates() {
-            const std::string resourcesDir = Paths::GetResourcesDirectory();
+            const std::string assetsDir = Paths::GetAssetsDirectory();
             return {
-                Paths::JoinPaths({resourcesDir, "assets", "fonts", "PingFang SC Heavy.ttf"}),
-                Paths::JoinPaths({resourcesDir, "assets", "fonts", "JetBrainsMono-Regular.ttf"}),
-                Paths::JoinPaths({resourcesDir, "assets", "fonts", "JetBrainsMono-Bold.ttf"}),
+                Paths::JoinPaths({assetsDir, "fonts", "PingFang SC Heavy.ttf"}),
+                Paths::JoinPaths({assetsDir, "fonts", "JetBrainsMono-Regular.ttf"}),
+                Paths::JoinPaths({assetsDir, "fonts", "JetBrainsMono-Bold.ttf"}),
             };
         }
 

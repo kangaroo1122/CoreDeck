@@ -6,6 +6,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -46,6 +47,7 @@ namespace CoreDeck {
     };
 
     struct LogcatFilterOptions {
+        std::optional<std::vector<int>> PackagePids;
         LogcatPriority MinimumPriority = LogcatPriority::Debug;
         int Pid = 0;
         std::string Query;

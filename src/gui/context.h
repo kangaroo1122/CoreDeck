@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "../core/adb.h"
+#include "../core/apk_analyzer.h"
 #include "../core/health_check.h"
 #include "../core/avd.h"
 #include "../core/device_file.h"
@@ -122,6 +123,16 @@ namespace CoreDeck {
     };
 
     struct Context {
+        struct ApkAnalyzerState {
+            bool Open = false;
+            std::string Path;
+            std::string Status;
+            std::string Details;
+            ApkReport Report;
+            std::future<ApkReport> Analysis;
+            std::future<ApkInstallResult> Installation;
+            std::shared_ptr<std::atomic<bool>> Cancel;
+        } ApkAnalyzer;
         // Shared by short-lived SDK maintenance commands; set before joining any worker on exit.
         std::shared_ptr<std::atomic<bool>> ShutdownRequested = std::make_shared<std::atomic<bool>>(false);
         struct JavaProbeWork {
@@ -190,6 +201,10 @@ namespace CoreDeck {
         };
 
         struct LogcatViewState {
+            std::string PackageFilter;
+            std::vector<int> PackagePids;
+            std::string FilteredPackage;
+            std::vector<int> FilteredPackagePids;
             std::string Search;
             bool UseRegex = false;
             LogcatPriority MinimumPriority = LogcatPriority::Debug;
@@ -229,6 +244,7 @@ namespace CoreDeck {
             float UiFontSize = 16.0F;
             std::string JavaHomePath;
             bool IncludeBetaUpdates = false;
+            bool CheckForUpdatesOnLaunch = true;
         } Prefs;
 
         struct UI {

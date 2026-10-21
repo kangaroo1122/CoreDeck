@@ -729,6 +729,17 @@ namespace CoreDeck {
             SectionHeader("System Updates", "Choose which CoreDeck release channel to monitor.");
 
             if (SubtitledCheckbox(
+                    "CheckForUpdatesOnLaunch",
+                    &context.Prefs.CheckForUpdatesOnLaunch,
+                    "Check for updates on launch",
+                    "Look for a new CoreDeck release when the app starts."
+                )) {
+                PersistAppSettings(context);
+            }
+
+            ImGui::Dummy(ImVec2(0, 8));
+
+            if (SubtitledCheckbox(
                     "IncludeBetaUpdates",
                     &context.Prefs.IncludeBetaUpdates,
                     "Monitor beta releases",

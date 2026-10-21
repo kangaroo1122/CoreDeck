@@ -11,6 +11,7 @@ using namespace CoreDeck;
 TEST_CASE("AppSettings enables wipe-and-run confirmation by default", "[app_settings][defaults]") {
     const AppSettings settings;
     REQUIRE(settings.ConfirmBeforeWipeAndRun);
+    REQUIRE(settings.CheckForUpdatesOnLaunch);
     REQUIRE(settings.JavaHomePath.empty());
     REQUIRE(settings.UiFontSize == 16.0F);
     REQUIRE_FALSE(settings.ShowDeviceExplorerPanel);
@@ -37,6 +38,7 @@ TEST_CASE("AppSettings keeps old settings and defaults missing new fields", "[ap
     const auto settings = rfl::json::read<AppSettings, rfl::DefaultIfMissing>(oldSettingsJson).value();
 
     REQUIRE_FALSE(settings.ConfirmBeforeDeleteAvd);
+    REQUIRE(settings.CheckForUpdatesOnLaunch);
     REQUIRE(settings.ConfirmBeforeWipeAndRun);
     REQUIRE_FALSE(settings.CrashReportingEnabled);
     REQUIRE_FALSE(settings.ShowAvdListPanel);
@@ -63,4 +65,11 @@ TEST_CASE("AppSettings preserves a saved UI font size", "[app_settings][font]") 
     const auto settings = rfl::json::read<AppSettings, rfl::DefaultIfMissing>(settingsJson).value();
 
     REQUIRE(settings.UiFontSize == 20.0F);
+}
+
+TEST_CASE("AppSettings preserves disabled startup update checks", "[app_settings][updates]") {
+    AppSettings settings;
+    settings.CheckForUpdatesOnLaunch = false;
+    const auto restored = rfl::json::read<AppSettings, rfl::DefaultIfMissing>(rfl::json::write(settings)).value();
+    CHECK_FALSE(restored.CheckForUpdatesOnLaunch);
 }

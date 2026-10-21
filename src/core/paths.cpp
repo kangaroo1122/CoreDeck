@@ -4,6 +4,7 @@
 
 #include "paths.h"
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
 #include <mutex>
 
@@ -250,6 +251,13 @@ namespace CoreDeck::Paths {
         }
 #endif
         return std::move(exeDir);
+    }
+
+    std::string GetAssetsDirectory() {
+        if (const char *directory = std::getenv("COREDECK_ASSETS_DIR"); directory && directory[0] != '\0') {
+            return directory;
+        }
+        return JoinPaths({GetResourcesDirectory(), "assets"});
     }
 
     std::string JoinPaths(const std::vector<std::string> &components) {

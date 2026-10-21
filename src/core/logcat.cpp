@@ -261,6 +261,9 @@ namespace CoreDeck {
             if (options.Pid > 0 && entry.Pid != options.Pid) {
                 continue;
             }
+            if (options.PackagePids && std::ranges::find(*options.PackagePids, entry.Pid) == options.PackagePids->end()) {
+                continue;
+            }
             if (!options.Query.empty()) {
                 if (options.UseRegex) {
                     if (!std::regex_search(entry.Raw, compiled)) {

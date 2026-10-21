@@ -191,6 +191,7 @@ add_library(coredeck_core STATIC
     src/core/health_check.cpp
     src/core/skin.cpp
     src/core/system_image.cpp
+    src/core/apk_analyzer.cpp
     src/core/utilities.cpp
     src/core/version_check.cpp
     src/core/update_download.cpp
@@ -243,6 +244,7 @@ add_executable(${PROJECT_NAME}
     src/gui/windows/create_avd.cpp
     src/gui/windows/device_profile.cpp
     src/gui/windows/install_image.cpp
+    src/gui/windows/apk_analyzer.cpp
     src/gui/windows/main_menu_bar.cpp
     src/gui/windows/onboarding.cpp
     src/gui/windows/preferences.cpp

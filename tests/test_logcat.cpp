@@ -87,6 +87,19 @@ TEST_CASE("Logcat regex filter reports invalid expressions", "[logcat][filter]")
     CHECK(result.Indices.empty());
 }
 
+TEST_CASE("Logcat package PID filter does not fall back to all processes", "[logcat][filter]") {
+    const auto entries = SampleEntries();
+    LogcatFilterOptions options;
+    options.PackagePids = std::vector<int>{};
+    CHECK(FilterLogcatEntries(entries, options).Indices.empty());
+    options.PackagePids = std::vector<int>{1842};
+    const auto result = FilterLogcatEntries(entries, options);
+    REQUIRE_FALSE(result.Indices.empty());
+    for (auto index: result.Indices) CHECK(entries[index].Pid == 1842);
+    options.PackagePids.reset();
+    CHECK(FilterLogcatEntries(entries, options).Indices.size() >= result.Indices.size());
+}
+
 TEST_CASE("Logcat buffer arguments match adb names", "[logcat][buffer]") {
     CHECK(std::string(LogcatBufferArgument(LogcatBuffer::Main)) == "main");
     CHECK(std::string(LogcatBufferArgument(LogcatBuffer::System)) == "system");

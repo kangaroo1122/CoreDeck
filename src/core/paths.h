@@ -44,6 +44,7 @@ namespace CoreDeck::Paths {
     std::string GetExecutableDirectory();
 
     std::string GetResourcesDirectory();
+    std::string GetAssetsDirectory();
 
     std::string JoinPaths(const std::vector<std::string> &components);
 

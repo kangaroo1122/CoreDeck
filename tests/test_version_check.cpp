@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "core/version_check.h"
 
@@ -60,15 +61,28 @@ TEST_CASE("Release assets select the package for a platform and architecture", "
     REQUIRE(selected->Name == "coredeck-windows-arm64.msi");
 }
 
-TEST_CASE("Release assets use the published macOS DMG name", "[version_check][assets]") {
+TEST_CASE("Release assets prefer current macOS names and accept legacy names", "[version_check][assets]") {
+    const std::string architecture = GENERATE("arm64", "x86-64");
+    const std::string base = "coredeck-darwin-" + architecture;
     CoreDeck::RemoteRelease release;
     release.Assets = {
-        {.Name = "coredeck-darwin-arm64-unsigned.dmg", .DownloadUrl = "https://example/macos-arm64", .Size = 10},
+        {.Name = base + "-unsigned.dmg", .DownloadUrl = "https://example/legacy", .Size = 10},
     };
 
-    const auto selected = SelectReleaseAsset(release, "macos", "arm64");
+    auto selected = SelectReleaseAsset(release, "macos", architecture);
     REQUIRE(selected.has_value());
-    REQUIRE(selected->Name == "coredeck-darwin-arm64-unsigned.dmg");
+    REQUIRE(selected->Name == base + "-unsigned.dmg");
+
+    release.Assets.push_back({.Name = base + ".dmg", .DownloadUrl = "https://example/current", .Size = 10});
+    selected = SelectReleaseAsset(release, "macos", architecture);
+    REQUIRE(selected.has_value());
+    REQUIRE(selected->Name == base + ".dmg");
+
+    release.Assets.erase(release.Assets.begin());
+    selected = SelectReleaseAsset(release, "macos", architecture);
+    REQUIRE(selected.has_value());
+    REQUIRE(selected->Name == base + ".dmg");
+    REQUIRE_FALSE(SelectReleaseAsset(release, "macos", "unsupported").has_value());
 }
 
 TEST_CASE("Release channel controls prerelease selection", "[version_check][channel]") {

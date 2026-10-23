@@ -208,11 +208,17 @@ namespace CoreDeck {
         ) {
             std::string expected;
             if (platform == "windows") expected = "coredeck-windows-" + architecture + ".msi";
-            else if (platform == "macos") expected = "coredeck-darwin-" + architecture + "-unsigned.dmg";
+            else if (platform == "macos") expected = "coredeck-darwin-" + architecture + ".dmg";
             else if (platform == "linux") expected = "coredeck-linux-" + architecture + ".tar.gz";
             if (expected.empty()) return std::nullopt;
             for (const auto &asset: release.Assets) {
                 if (asset.Name == expected) return asset;
+            }
+            if (platform == "macos") {
+                const std::string legacyName = "coredeck-darwin-" + architecture + "-unsigned.dmg";
+                for (const auto &asset: release.Assets) {
+                    if (asset.Name == legacyName) return asset;
+                }
             }
             return std::nullopt;
         }

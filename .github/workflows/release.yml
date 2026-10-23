@@ -32,11 +32,11 @@ jobs:
             target_arch: x86-64
           - os: macos-15-intel
             artifact_name: coredeck-darwin-x86-64
-            asset_name: coredeck-darwin-x86-64-unsigned.dmg
+            asset_name: coredeck-darwin-x86-64.dmg
             target_arch: x86-64
           - os: macos-latest
             artifact_name: coredeck-darwin-arm64
-            asset_name: coredeck-darwin-arm64-unsigned.dmg
+            asset_name: coredeck-darwin-arm64.dmg
             target_arch: arm64
 
     steps:
@@ -244,6 +244,13 @@ jobs:
             echo "__EOF__"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Add macOS compatibility filenames for older clients
+        run: |
+          for arch in x86-64 arm64; do
+            package="artifacts/coredeck-darwin-$arch/coredeck-darwin-$arch"
+            cp "$package.dmg" "$package-unsigned.dmg"
+          done
+
       - name: Generate SHA256 checksums
         run: |
           cd artifacts
@@ -273,9 +280,9 @@ jobs:
             - `coredeck-windows-x86-64.msi` - Professional installer (recommended)
             - `coredeck-windows-x86-64.zip` - Portable version
 
-            **macOS (Intel x86-64):** `coredeck-darwin-x86-64-unsigned.dmg`
+            **macOS (Intel x86-64):** `coredeck-darwin-x86-64.dmg`
 
-            **macOS (Apple Silicon):** `coredeck-darwin-arm64-unsigned.dmg`
+            **macOS (Apple Silicon):** `coredeck-darwin-arm64.dmg`
 
             **Linux (x86-64):** `coredeck-linux-x86-64.tar.gz`
 

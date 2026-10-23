@@ -30,10 +30,6 @@ jobs:
             artifact_name: coredeck-windows-x86-64
             asset_name: coredeck-windows-x86-64
             target_arch: x86-64
-          - os: windows-11-arm
-            artifact_name: coredeck-windows-arm64
-            asset_name: coredeck-windows-arm64
-            target_arch: arm64
           - os: macos-15-intel
             artifact_name: coredeck-darwin-x86-64
             asset_name: coredeck-darwin-x86-64-unsigned.dmg
@@ -85,9 +81,7 @@ jobs:
             -DCOREDECK_VERSION_OVERRIDE="$COREDECK_VERSION_REF"
             -DCOREDECK_TARGET_ARCH="$COREDECK_TARGET_ARCH"
           )
-          if [[ "$RUNNER_OS" == "Windows" && "$COREDECK_TARGET_ARCH" == "arm64" ]]; then
-            cmake_args+=(-A ARM64)
-          elif [[ "$RUNNER_OS" == "Windows" && "$COREDECK_TARGET_ARCH" == "x86-64" ]]; then
+          if [[ "$RUNNER_OS" == "Windows" && "$COREDECK_TARGET_ARCH" == "x86-64" ]]; then
             cmake_args+=(-A x64)
           fi
           cmake "${cmake_args[@]}"
@@ -278,11 +272,6 @@ jobs:
             **Windows (x86-64):**
             - `coredeck-windows-x86-64.msi` - Professional installer (recommended)
             - `coredeck-windows-x86-64.zip` - Portable version
-
-            **Windows (ARM64):**
-            - `coredeck-windows-arm64.msi` - Professional installer
-            - `coredeck-windows-arm64.zip` - Portable version
-            - Note: Google's Android SDK and Emulator do not currently provide official Windows ARM64 support, so this build is provided for compatibility testing only.
 
             **macOS (Intel x86-64):** `coredeck-darwin-x86-64-unsigned.dmg`
 

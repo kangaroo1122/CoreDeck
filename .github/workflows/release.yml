@@ -290,11 +290,7 @@ jobs:
 
             **Linux:** Extract the archive and run the `CoreDeck` executable.
 
-            ### Troubleshooting (macOS)
-            This DMG is currently unsigned. If the app won't open after copying it out of the DMG, remove the quarantine attribute:
-            ```bash
-            xattr -cr /Applications/CoreDeck.app
-            ```
+            The macOS app is ad-hoc signed.
           files: |
             artifacts/**/coredeck-*.msi
             artifacts/**/coredeck-*.zip
